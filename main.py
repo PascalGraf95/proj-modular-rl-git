@@ -17,10 +17,10 @@ def main():
     # 3. Choose Interface, Exploration and Training Algorithm
     # trainer.change_interface('OpenAIGym')
     # trainer.environment_selection = "LunarLanderContinuous-v2"
-    trainer.change_interface('MLAgentsV12')
+    trainer.change_interface('MLAgentsV15')
     trainer.change_exploration_algorithm('None')
     trainer.change_training_algorithm('SAC')
-    trainer.change_curriculum_strategy('CrossFadeCurriculum')
+    trainer.change_curriculum_strategy('None')
 
     # 4. Get and Validate Configurations
     trainer.get_agent_configuration()
@@ -184,7 +184,7 @@ def streamlit_app():
             col_interface_name, col_exploration_name, col_rl_name = st.beta_columns(3)
 
             with col_interface_name:
-                interface_name = st.selectbox(label="Select an Interface:", options=["MLAgentsV12", "OpenAIGym"])
+                interface_name = st.selectbox(label="Select an Interface:", options=["MLAgentsV15", "OpenAIGym"])
             with col_exploration_name:
                 exploration_name = st.selectbox(label="Select an Exploration Algorithm:", options=["None",
                                                                                                    "EpsilonGreedy"])

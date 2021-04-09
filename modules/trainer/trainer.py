@@ -5,7 +5,7 @@ The Trainer connects an Unity environment to the learning python agent utilizing
 Furthermore, it initiates and manages the training procedure.
 
 Created by Pascal Graf
-Last edited 04.08.2020
+Last edited 09.04.2021
 """
 
 from mlagents_envs.environment import UnityEnvironment
@@ -145,8 +145,8 @@ class Trainer:
 
     def change_interface(self, interface):
         global AgentInterface
-        if interface == "MLAgentsV12":
-            from ..interfaces.mlagents_v12 import MlAgentsV12Interface as AgentInterface
+        if interface == "MLAgentsV15":
+            from ..interfaces.mlagents_v15 import MlAgentsV15Interface as AgentInterface
             self.connect = self.connect_to_unity_environment
         elif interface == "OpenAIGym":
             from ..interfaces.openaigym import OpenAIGymInterface as AgentInterface
