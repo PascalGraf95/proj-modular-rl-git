@@ -17,7 +17,7 @@ class MlAgentsV15Interface:
     def get_observation_shapes(env: UnityEnvironment):
         spec = env.behavior_specs
         behavior_spec = [v for v in spec.values()][0].observation_specs
-        observation_shape = [behavior_spec[0].shape]
+        observation_shape = [b.shape for b in behavior_spec]
         return observation_shape
 
     @staticmethod

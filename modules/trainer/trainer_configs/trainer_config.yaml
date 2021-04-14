@@ -175,10 +175,10 @@ sac:
         Epsilon: 0.7
         EpsilonDecay: 0.999
         EpsilonMin: 0.0
-        FeatureSpaceSize: 288
+        FeatureSpaceSize: 16
         ForwardModelLearningRate: 0.001
         InverseModelLearningRate: 0.001
-        ScalingFactor: 0.01
+        ScalingFactor: 0.05
         StepDown: 0
     Gamma: 0.99
     LearningRateActor: 0.0005
@@ -186,15 +186,15 @@ sac:
     NSteps: 4
     NetworkParameters:
     -   Filters: 64
-        Units: 32
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     -   Filters: 64
-        Units: 32
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     -   Filters: 64
-        Units: 32
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: false
@@ -203,8 +203,8 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingDescription: SAC_Pushing_CrossFadeCurriculum
-    TrainingID: SAC_Pushing_CrossFadeCurriculum
+    TrainingDescription: SAC_SpaceAgent
+    TrainingID: SAC_SpaceAgent
     TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3

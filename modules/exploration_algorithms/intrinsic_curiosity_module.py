@@ -135,11 +135,11 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
         return False
 
     def calculate_intrinsic_reward(self, replay_buffer: ReplayBuffer):
-        if replay_buffer.new_samples < self.batch_size:
+        if replay_buffer.new_unmodified_samples < self.batch_size:
             return False
 
         new_replay_samples = list(itertools.islice(replay_buffer.buffer,
-                                                   len(replay_buffer.buffer)-replay_buffer.new_samples,
+                                                   len(replay_buffer.buffer)-replay_buffer.new_unmodified_samples,
                                                    len(replay_buffer.buffer)))
         state_batch, action_batch, \
             reward_batch, next_state_batch, \
