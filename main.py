@@ -10,8 +10,8 @@ np.set_printoptions(precision=2)
 def main():
     # region  --- Parameter Choice ---
     # 1. Choose between Training and Testing
-    mode = "testing"
-    model_path = r"training/pretrained_weights/AirHockey/SAC_Actor_Step89355_Reward0.26.h5"
+    mode = "training"
+    model_path = r"training/pretrained_weights/AirHockey/SAC_Actor_Defending0.3.h5"
     # 2. Instantiate Trainer
     trainer = instantiate_trainer()
     # 3. Choose Interface, Exploration and Training Algorithm

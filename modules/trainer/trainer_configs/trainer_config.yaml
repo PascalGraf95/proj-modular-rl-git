@@ -199,12 +199,12 @@ sac:
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: false
     ReplayCapacity: 100000
-    ReplayMinSize: 1000
+    ReplayMinSize: 5000
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingDescription: SAC_SpaceAgent
-    TrainingID: SAC_SpaceAgent
+    TrainingDescription: SAC_AirHockey_ContinuedTrainingDefending_WithBoundaries
+    TrainingID: SAC_AirHockey_ContinuedTrainingDefending_WithBoundaries
     TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3
