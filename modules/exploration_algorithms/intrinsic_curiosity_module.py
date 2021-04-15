@@ -2,7 +2,7 @@ import numpy as np
 from ..misc.replay_buffer import ReplayBuffer
 from .exploration_algorithm_blueprint import ExplorationAlgorithm
 from tensorflow.keras.losses import MeanSquaredError
-from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam, SGD
 from ..misc.network_constructor import construct_network
 import tensorflow as tf
 from ..training_algorithms.agent_blueprint import Agent
@@ -31,8 +31,8 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
         self.scaling_factor = parameters["ScalingFactor"]
         self.batch_size = parameters["BatchSize"]
         self.mse = MeanSquaredError()
-        self.forward_optimizer = Adam(parameters["ForwardModelLearningRate"])
-        self.inverse_optimizer = Adam(parameters["InverseModelLearningRate"])
+        self.forward_optimizer = SGD(parameters["ForwardModelLearningRate"])
+        self.inverse_optimizer = SGD(parameters["InverseModelLearningRate"])
 
         self.inverse_loss = 0
         self.forward_loss = 0

@@ -11,7 +11,7 @@ def main():
     # region  --- Parameter Choice ---
     # 1. Choose between Training and Testing
     mode = "training"
-    model_path = r"training/pretrained_weights/AirHockey/SAC_Actor_Defending0.3.h5"
+    model_path = r""#"training/pretrained_weights/AirHockey/SAC_Actor_Defending_NoBoundary_0.26.h5"
     # 2. Instantiate Trainer
     trainer = instantiate_trainer()
     # 3. Choose Interface, Exploration and Training Algorithm
