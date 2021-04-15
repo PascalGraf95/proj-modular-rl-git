@@ -11,7 +11,8 @@ def main():
     # region  --- Parameter Choice ---
     # 1. Choose between Training and Testing
     mode = "training"
-    model_path = r""#"training/pretrained_weights/AirHockey/SAC_Actor_Defending_NoBoundary_0.26.h5"
+    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210415_111951_SAC_AirHockey_Defending_ExtraRewards_Continued\SAC_Actor_Step23130_Reward0.20.h5"
+    #model_path = r"training/pretrained_weights/SpaceEvader/SAC_Actor_Step532028_Reward41.12.h5"
     # 2. Instantiate Trainer
     trainer = instantiate_trainer()
     # 3. Choose Interface, Exploration and Training Algorithm

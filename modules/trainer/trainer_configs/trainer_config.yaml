@@ -175,10 +175,10 @@ sac:
         Epsilon: 0.7
         EpsilonDecay: 0.999
         EpsilonMin: 0.0
-        FeatureSpaceSize: 16
+        FeatureSpaceSize: 8
         ForwardModelLearningRate: 0.001
         InverseModelLearningRate: 0.001
-        ScalingFactor: 0.05
+        ScalingFactor: 0.005
         StepDown: 0
     Gamma: 0.99
     LearningRateActor: 0.0005
@@ -203,8 +203,8 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingDescription: SAC_AirHockey_Scoring
-    TrainingID: SAC_AirHockey_Scoring
+    TrainingDescription: SAC_AirHockey_Defending_ExtraRewards_Continued
+    TrainingID: SAC_AirHockey_Defending_ExtraRewards_Continued
     TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3
