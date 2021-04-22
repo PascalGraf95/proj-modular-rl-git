@@ -10,9 +10,9 @@ np.set_printoptions(precision=2)
 def main():
     # region  --- Parameter Choice ---
     # 1. Choose between Training and Testing
-    mode = "training"
-    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210415_111951_SAC_AirHockey_Defending_ExtraRewards_Continued\SAC_Actor_Step23130_Reward0.20.h5"
-    #model_path = r"training/pretrained_weights/SpaceEvader/SAC_Actor_Step532028_Reward41.12.h5"
+    mode = "testing"
+    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210419_120232_SAC_AirHockey_DefendingBackWallGoal_Dense_Continued"
+    time_scale = 100
     # 2. Instantiate Trainer
     trainer = instantiate_trainer()
     # 3. Choose Interface, Exploration and Training Algorithm
@@ -41,7 +41,7 @@ def main():
 
     # Set Unity Parameters
     if mode == "training" or mode == "fastTesting":
-        trainer.set_unity_parameters(time_scale=1000.0)
+        trainer.set_unity_parameters(time_scale=time_scale)
     else:
         trainer.set_unity_parameters(time_scale=1.0)
 
@@ -53,7 +53,7 @@ def main():
         trainer.instantiate_agent('testing', model_path)
         trainer.instantiate_logger(tensorboard=False)
     trainer.save_all_models = True
-    trainer.remove_old_checkpoints = True
+    trainer.remove_old_checkpoints = False
     trainer.instantiate_exploration_algorithm()
     trainer.instantiate_replay_buffer()
     # endregion

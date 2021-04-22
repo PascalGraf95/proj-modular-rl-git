@@ -47,7 +47,7 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
         network_parameters[0]['Output'] = [self.feature_space_size]
         network_parameters[0]['OutputActivation'] = ["selu"]
         network_parameters[0]['VectorNetworkArchitecture'] = "SingleDense"
-        network_parameters[0]['Units'] = 256
+        network_parameters[0]['Units'] = 64
         network_parameters[0]['NetworkType'] = "ICMForwardModel"
 
         # Feature Extractor
@@ -66,7 +66,7 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
         network_parameters[2]['Output'] = [self.action_shape]
         network_parameters[2]['OutputActivation'] = ["tanh"]
         network_parameters[2]['VectorNetworkArchitecture'] = "SingleDense"
-        network_parameters[2]['Units'] = 256
+        network_parameters[2]['Units'] = 64
         network_parameters[2]['NetworkType'] = "ICMInverseModel"
 
         # Build
