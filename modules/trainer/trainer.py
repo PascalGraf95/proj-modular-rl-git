@@ -145,8 +145,8 @@ class Trainer:
 
     def change_interface(self, interface):
         global AgentInterface
-        if interface == "MLAgentsV15":
-            from ..interfaces.mlagents_v15 import MlAgentsV15Interface as AgentInterface
+        if interface == "MLAgentsV17":
+            from ..interfaces.mlagents_v17 import MlAgentsV17Interface as AgentInterface
             self.connect = self.connect_to_unity_environment
         elif interface == "OpenAIGym":
             from ..interfaces.openaigym import OpenAIGymInterface as AgentInterface
@@ -169,6 +169,8 @@ class Trainer:
             from ..training_algorithms.TD3 import TD3Agent as Agent
         elif training_algorithm == "SAC":
             from ..training_algorithms.SAC import SACAgent as Agent
+        elif training_algorithm == "PPO":
+            from ..training_algorithms.PPO import PPOAgent as Agent
         else:
             raise ValueError("There is no {} training algorithm.".format(training_algorithm))
 

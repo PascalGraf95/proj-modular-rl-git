@@ -5,7 +5,7 @@ from mlagents_envs.environment import UnityEnvironment, ActionTuple
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
 
 
-class MlAgentsV15Interface:
+class MlAgentsV17Interface:
     @staticmethod
     def get_behavior_name(env: UnityEnvironment):
         spec = env.behavior_specs
@@ -43,7 +43,7 @@ class MlAgentsV15Interface:
 
     @staticmethod
     def get_agent_number(env: UnityEnvironment, behavior_name: str):
-        MlAgentsV15Interface.reset(env)
+        MlAgentsV17Interface.reset(env)
         decision_steps, terminal_steps = env.get_steps(behavior_name)
         return len(decision_steps)
 

@@ -9,7 +9,7 @@ from tensorflow.keras import backend as K
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras import Model
 from tensorflow.keras.models import clone_model
-from tensorflow.keras.initializers import RandomUniform
+from tensorflow.keras.initializers import RandomUniform, Orthogonal, Constant
 from tensorflow.keras.layers.experimental.preprocessing import Resizing
 from .noisy_dense import NoisyDense
 from .resnet import create_res_net12
@@ -161,10 +161,10 @@ def build_network_body(network_input, network_parameters):
         else:
             net_architecture = network_parameters.get("VisualNetworkArchitecture")
             filters = network_parameters.get("Filters")
-        network_branches.append(get_network_component(net_input, net_architecture, units=units, filters=filters))
+        network_branches.append(get_network_component(net_input, net_architecture, network_parameters, units=units, filters=filters))
     network_body = connect_branches(network_branches, network_parameters)
     if len(network_branches) > 1:
-        network_body = [get_network_component(network_body[0], "SingleDense", units=network_parameters.get("Units")*5)]
+        network_body = [get_network_component(network_body[0], "SingleDense", network_parameters, units=network_parameters.get("Units")*5)]
     return network_body[0]
 
 
@@ -188,8 +188,12 @@ def build_network_output(net_in, network_parameters):
             else:
                 if network_parameters.get('KernelInitializer') == "RandomUniform":
                     net_out = Dense(net_out_shape, activation=net_out_act,
-                                    kernel_initializer=RandomUniform(minval=3e-3, maxval=3e-3),
-                                    bias_initializer=RandomUniform(minval=3e-3, maxval=3e-3))(net_in)
+                                    kernel_initializer=RandomUniform(minval=-3e-3, maxval=3e-3),
+                                    bias_initializer=RandomUniform(minval=-3e-3, maxval=3e-3))(net_in)
+                elif network_parameters.get('KernelInitializer') == "Orthogonal":
+                    net_out = Dense(net_out_shape, activation=net_out_act,
+                                    kernel_initializer=Orthogonal(0.5),
+                                    bias_initializer=Constant(0.0))(net_in)
                 else:
                     net_out = Dense(net_out_shape, activation=net_out_act)(net_in)
             network_output.append(net_out)
@@ -207,33 +211,86 @@ def connect_network_branches(network_branches, network_parameters):
     return x
 
 
-def get_network_component(net_inp, net_architecture, units=32, filters=32):
+def get_network_component(net_inp, net_architecture, network_parameters, units=32, filters=32):
     if net_architecture == NetworkArchitecture.NONE.value:
         x = net_inp
     elif net_architecture == NetworkArchitecture.SINGLE_DENSE.value:
-        x = Dense(units, activation='selu')(net_inp)
+        if network_parameters.get('KernelInitializer') == "Orthogonal":
+            x = Dense(units, activation='selu',
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(net_inp)
+        else:
+            x = Dense(units, activation='selu')(net_inp)
 
     elif net_architecture == NetworkArchitecture.SMALL_DENSE.value:
-        x = Dense(units, activation='selu')(net_inp)
-        x = Dense(units, activation='selu')(x)
+        if network_parameters.get('KernelInitializer') == "Orthogonal":
+            x = Dense(units, activation='selu',
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(net_inp)
+            x = Dense(units, activation='selu',
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(x)
+        else:
+            x = Dense(units, activation='selu')(net_inp)
+            x = Dense(units, activation='selu')(x)
 
     elif net_architecture == NetworkArchitecture.DENSE.value:
-        x = Dense(units, activation='selu')(net_inp)
-        x = Dense(units, activation='selu')(x)
-        x = Dense(2*units, activation='selu')(x)
+        if network_parameters.get('KernelInitializer') == "Orthogonal":
+            x = Dense(units, activation='selu',
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(net_inp)
+            x = Dense(units, activation='selu',
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(x)
+            x = Dense(2*units, activation='selu',
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(x)
+        else:
+            x = Dense(units, activation='selu')(net_inp)
+            x = Dense(units, activation='selu')(x)
+            x = Dense(2*units, activation='selu')(x)
 
     elif net_architecture == NetworkArchitecture.LARGE_DENSE.value:
-        x = Dense(units, activation='selu')(net_inp)
-        x = Dense(units, activation='selu')(x)
-        x = Dense(2*units, activation='selu')(x)
-        x = Dense(2*units, activation='selu')(x)
+        if network_parameters.get('KernelInitializer') == "Orthogonal":
+            x = Dense(units, activation='selu',
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(net_inp)
+            x = Dense(units, activation='selu',
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(x)
+            x = Dense(2*units, activation='selu',
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(x)
+            x = Dense(2*units, activation='selu',
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(x)
+        else:
+            x = Dense(units, activation='selu')(net_inp)
+            x = Dense(units, activation='selu')(x)
+            x = Dense(2*units, activation='selu')(x)
+            x = Dense(2*units, activation='selu')(x)
 
     elif net_architecture == NetworkArchitecture.CNN.value:
-        x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
-        x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
-        x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu")(x)
-        x = Flatten()(x)
-        x = Dense(512, activation="selu")(x)
+        if network_parameters.get('KernelInitializer') == "Orthogonal":
+            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(net_inp)
+            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(x)
+            x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(x)
+            x = Flatten()(x)
+            x = Dense(512, activation="selu",
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(x)
+        else:
+            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
+            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
+            x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu")(x)
+            x = Flatten()(x)
+            x = Dense(512, activation="selu")(x)
 
     elif net_architecture == NetworkArchitecture.CNN_ICM.value:
         x = Conv2D(filters, kernel_size=3, strides=2, padding="same", activation="selu")(net_inp)
@@ -243,14 +300,32 @@ def get_network_component(net_inp, net_architecture, units=32, filters=32):
         x = Flatten()(x)
 
     elif net_architecture == NetworkArchitecture.CNN_BATCHNORM.value:
-        x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
-        x = BatchNormalization()(x)
-        x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
-        x = BatchNormalization()(x)
-        x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu")(x)
-        x = BatchNormalization()(x)
-        x = Flatten()(x)
-        x = Dense(512, activation="selu")(x)
+        if network_parameters.get('KernelInitializer') == "Orthogonal":
+            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(net_inp)
+            x = BatchNormalization()(x)
+            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(x)
+            x = BatchNormalization()(x)
+            x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(x)
+            x = BatchNormalization()(x)
+            x = Flatten()(x)
+            x = Dense(512, activation="selu",
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(x)
+        else:
+            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
+            x = BatchNormalization()(x)
+            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
+            x = BatchNormalization()(x)
+            x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu")(x)
+            x = BatchNormalization()(x)
+            x = Flatten()(x)
+            x = Dense(512, activation="selu")(x)
 
     elif net_architecture == NetworkArchitecture.RESNET12.value:
         x = create_res_net12(net_inp, filters)
@@ -259,24 +334,64 @@ def get_network_component(net_inp, net_architecture, units=32, filters=32):
         pass
 
     elif net_architecture == NetworkArchitecture.DEEP_CNN.value:
-        x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
-        x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
-        x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
-        x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu")(x)
-        x = Flatten()(x)
-        x = Dense(512, activation="selu")(x)
+        if network_parameters.get('KernelInitializer') == "Orthogonal":
+            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(net_inp)
+            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(x)
+            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(x)
+            x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(x)
+            x = Flatten()(x)
+            x = Dense(512, activation="selu",
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(x)
+        else:
+            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
+            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
+            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
+            x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu")(x)
+            x = Flatten()(x)
+            x = Dense(512, activation="selu")(x)
 
     elif net_architecture == NetworkArchitecture.DEEP_CNN_BATCHNORM.value:
-        x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
-        x = BatchNormalization()(x)
-        x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
-        x = BatchNormalization()(x)
-        x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
-        x = BatchNormalization()(x)
-        x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu")(x)
-        x = BatchNormalization()(x)
-        x = Flatten()(x)
-        x = Dense(512, activation="selu")(x)
+        if network_parameters.get('KernelInitializer') == "Orthogonal":
+            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(net_inp)
+            x = BatchNormalization()(x)
+            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(x)
+            x = BatchNormalization()(x)
+            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(x)
+            x = BatchNormalization()(x)
+            x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu",
+                       kernel_initializer=Orthogonal(np.sqrt(2)),
+                       bias_initializer=Constant(0.0))(x)
+            x = BatchNormalization()(x)
+            x = Flatten()(x)
+            x = Dense(512, activation="selu",
+                      kernel_initializer=Orthogonal(np.sqrt(2)),
+                      bias_initializer=Constant(0.0))(x)
+        else:
+            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
+            x = BatchNormalization()(x)
+            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
+            x = BatchNormalization()(x)
+            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
+            x = BatchNormalization()(x)
+            x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu")(x)
+            x = BatchNormalization()(x)
+            x = Flatten()(x)
+            x = Dense(512, activation="selu")(x)
 
     else:
         raise ValueError("Unknown Network Architecture \"{}\"".format(net_architecture))

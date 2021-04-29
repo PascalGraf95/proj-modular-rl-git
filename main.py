@@ -10,23 +10,23 @@ np.set_printoptions(precision=2)
 def main():
     # region  --- Parameter Choice ---
     # 1. Choose between Training and Testing
-    mode = "testing"
-    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210419_120232_SAC_AirHockey_DefendingBackWallGoal_Dense_Continued"
-    time_scale = 100
+    mode = "training"
+    model_path = r"" # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\pretrained_weights\SpaceEvader\SAC_Actor_Step532028_Reward41.12.h5"
+    time_scale = 1000
     # 2. Instantiate Trainer
     trainer = instantiate_trainer()
     # 3. Choose Interface, Exploration and Training Algorithm
     # trainer.change_interface('OpenAIGym')
     # trainer.environment_selection = "LunarLanderContinuous-v2"
-    trainer.change_interface('MLAgentsV15')
+    trainer.change_interface('MLAgentsV17')
     trainer.change_exploration_algorithm('None')
-    trainer.change_training_algorithm('SAC')
+    trainer.change_training_algorithm('PPO')
     trainer.change_curriculum_strategy('None')
 
     # 4. Get and Validate Configurations
     trainer.get_agent_configuration()
     trainer.get_exploration_configuration()
-    trainer.parse_training_parameters("modules/trainer/trainer_configs/trainer_config.yaml", "sac")
+    trainer.parse_training_parameters("modules/trainer/trainer_configs/trainer_config.yaml", "ppo")
     print(trainer.validate_trainer_configuration())
 
     # endregion
@@ -185,7 +185,7 @@ def streamlit_app():
             col_interface_name, col_exploration_name, col_rl_name = st.beta_columns(3)
 
             with col_interface_name:
-                interface_name = st.selectbox(label="Select an Interface:", options=["MLAgentsV15", "OpenAIGym"])
+                interface_name = st.selectbox(label="Select an Interface:", options=["MLAgentsV17", "OpenAIGym"])
             with col_exploration_name:
                 exploration_name = st.selectbox(label="Select an Exploration Algorithm:", options=["None",
                                                                                                    "EpsilonGreedy"])

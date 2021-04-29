@@ -117,11 +117,14 @@ class ReplayBuffer:
                             self.action_deque[agent_id].append(None)
                             self.reward_deque[agent_id].append(0)
                     else:
-                        discounted_return = self.calculate_discounted_return(self.reward_deque[agent_id])
-                        for i, (state, action, ret) in enumerate(zip(self.state_deque[agent_id][:-1],
-                                                                     self.action_deque[agent_id][:-1],
-                                                                     discounted_return[1:])):
-                            self.append(state, action, ret, state, False)
+                        # discounted_return = self.calculate_discounted_return(self.reward_deque[agent_id])
+                        for i, (state, action, reward) in enumerate(zip(self.state_deque[agent_id][:-1],
+                                                                        self.action_deque[agent_id][:-1],
+                                                                        self.reward_deque[agent_id][1:])):
+                            if i == len(self.state_deque[agent_id][:-1])-1:
+                                self.append(state, action, reward, state, True)
+                            else:
+                                self.append(state, action, reward, state, False)
                         self.collected_trajectories += 1
                 if self.mode == "trajectory" or self.agent_num == 1 or add_to_done:
                     self.done_indices.add(agent_id)
