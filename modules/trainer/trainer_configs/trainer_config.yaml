@@ -167,13 +167,13 @@ dqn:
 ppo:
     BatchSize: 64
     ClipGrad: 10.0
-    EntropyCoefficient: 0.0005
+    EntropyCoefficient: 5.0e-4
     Episodes: 1000000
     ExplorationParameters:
         abc: 0
     GAELambda: 0.95
     Gamma: 0.99
-    LearningRateActor: 0.005
+    LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
     NEpochs: 10
     NetworkParameters:
@@ -189,7 +189,7 @@ ppo:
     TrainingDescription: PPO_3DBall
     TrainingID: PPO_3DBall
     TrainingInterval: 1
-    TrajectoryNum: 10
+    TrajectoryNum: 20
 sac:
     ActorTrainingFreq: 1
     BatchSize: 64
@@ -229,8 +229,8 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingDescription: SAC_AirHockey_DefendingBackWallGoal_Dense_Continued
-    TrainingID: SAC_AirHockey_DefendingBackWallGoal_Dense_Continued
+    TrainingDescription: SAC_AirHockey_DefendingBackWallGoal_Dense_Continued_Fixed
+    TrainingID: SAC_AirHockey_DefendingBackWallGoal_Dense_Continued_Fixed
     TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3

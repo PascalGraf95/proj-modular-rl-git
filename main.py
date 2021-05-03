@@ -11,7 +11,7 @@ def main():
     # region  --- Parameter Choice ---
     # 1. Choose between Training and Testing
     mode = "training"
-    model_path = r"" # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\pretrained_weights\SpaceEvader\SAC_Actor_Step532028_Reward41.12.h5"
+    model_path = ""#r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210430_141530_SAC_AirHockey_DefendingBackWallGoal_Dense_Continued_Fixed"
     time_scale = 1000
     # 2. Instantiate Trainer
     trainer = instantiate_trainer()
@@ -53,7 +53,7 @@ def main():
         trainer.instantiate_agent('testing', model_path)
         trainer.instantiate_logger(tensorboard=False)
     trainer.save_all_models = True
-    trainer.remove_old_checkpoints = False
+    trainer.remove_old_checkpoints = True
     trainer.instantiate_exploration_algorithm()
     trainer.instantiate_replay_buffer()
     # endregion

@@ -11,6 +11,8 @@ from tensorflow.keras import losses
 from tensorflow.keras.models import clone_model
 import tensorflow_probability as tfp
 import os
+from tensorflow.keras.layers import Dense
+from tensorflow.keras import initializers
 import math
 tfd = tfp.distributions
 
@@ -85,8 +87,6 @@ class PPOAgent(Agent):
                                                clipvalue=self.clip_grad), loss="mse")
             self.actor_optimizer = Adam(learning_rate=learning_parameters.get('LearningRateActor'),
                                         clipvalue=self.clip_grad)
-            # log_std weights learnable & independent of states (Implementation Detail)
-            self.log_std = tf.Variable(tf.zeros((1, self.action_shape), dtype=tf.float32), trainable=True)
 
         elif mode == 'testing':
             assert model_path, "No model path entered."
@@ -98,6 +98,7 @@ class PPOAgent(Agent):
         network_parameters[0]['Output'] = [environment_parameters.get('ActionShape')]
         network_parameters[0]['OutputActivation'] = ["tanh"]
         network_parameters[0]['NetworkType'] = self.NetworkTypes[0]
+        network_parameters[0]['LogStdOutput'] = True
         network_parameters[0]['KernelInitializer'] = "Orthogonal"
 
         # Critic
@@ -120,32 +121,27 @@ class PPOAgent(Agent):
         if not agent_num:
             return Agent.get_dummy_action(agent_num, self.action_shape, self.action_type)
 
-        mean = self.actor(states)
+        mean, log_std = self.actor(states)
+        std = tf.exp(tf.broadcast_to(log_std, shape=mean.shape))
+        dist = tfp.distributions.Normal(mean, std)
         if mode == 'training':
-            log_std = tf.broadcast_to(self.log_std, shape=mean.shape)
-            normal = tfp.distributions.Normal(mean, tf.exp(log_std))
-            actions = normal.sample()
+            actions = dist.sample()
         else:
             actions = mean
         actions = np.clip(actions, -1, 1)
         return actions
 
     def forward(self, states):
-        mean = self.actor(states)
-        log_std = tf.broadcast_to(self.log_std, shape=mean.shape)
-        normal = tfp.distributions.Normal(mean, tf.exp(log_std))
-
-        actions = normal.sample()
-        # actions = tf.tanh(z)
-
-        log_prob = tf.reduce_sum(normal.log_prob(actions), axis=1, keepdims=True)
-        return actions, log_prob, normal
+        mean, log_std = self.actor(states)
+        std = tf.exp(tf.broadcast_to(log_std, shape=mean.shape))
+        dist = tfp.distributions.Normal(mean, std)
+        return std, dist
 
     def learn(self, replay_batch):
         state_batch, action_batch, reward_batch, _, done_batch \
             = self.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, self.action_shape)
 
-        value_batch = self.critic.predict(state_batch, batch_size=64)
+        value_batch = self.critic(state_batch)
         last_advantage_estimation = 0.0
         advantage_batch = []
         return_batch = []
@@ -165,43 +161,53 @@ class PPOAgent(Agent):
         return_batch = np.array(list(reversed(return_batch)))
 
         # Get Old Policy
-        _, _, normal = self.forward(state_batch)
-        old_log_prob = tf.squeeze(tf.reduce_sum(normal.log_prob(action_batch), axis=1, keepdims=True))
+        # std, dist = self.forward(state_batch)
+        # old_log_prob = tf.squeeze(tf.reduce_sum(dist.log_prob(action_batch), axis=1, keepdims=True))
+        # Get Old Policy
+        mean, log_std = self.actor(state_batch)
+        std = tf.exp(tf.broadcast_to(log_std, shape=mean.shape))
+        old_log_prob = - tf.square(mean - action_batch)
+        old_log_prob /= 2 * std**2 + 1.0e-8
+        old_log_prob -= tf.math.log(tf.sqrt(2 * np.pi * std**2))
+        #old_log_prob = tf.reduce_mean(old_log_prob, axis=-1)
 
         state_batch = [s[:-1].copy() for s in state_batch]
         action_batch = action_batch[:-1].copy()
         old_log_prob = old_log_prob[:-1]
 
         # Stabilize Advantage
-        advantage_batch = advantage_batch - np.mean(advantage_batch)
-        advantage_batch /= np.std(advantage_batch) + 1e-8
+        #advantage_batch = advantage_batch - np.mean(advantage_batch)
+        #advantage_batch /= np.std(advantage_batch) + 1e-8
 
         for _ in range(self.n_epochs):
             # Critic Training
             value_loss = self.critic.train_on_batch(state_batch, return_batch)
             # Actor Training
-            with tf.GradientTape(persistent=True) as tape:
-                _, _, normal = self.forward(state_batch)
-
-                new_log_prob = tf.squeeze(tf.reduce_sum(normal.log_prob(action_batch), axis=1, keepdims=True))
+            with tf.GradientTape() as tape:
+                # std, dist = self.forward(state_batch)
+                # new_log_prob = tf.squeeze(tf.reduce_sum(dist.log_prob(action_batch), axis=1, keepdims=True))
+                mean, log_std = self.actor(state_batch)
+                std = tf.exp(tf.broadcast_to(log_std, shape=mean.shape))
+                new_log_prob = - tf.square(mean - action_batch)
+                new_log_prob /= 2 * std**2 + 1.0e-8
+                new_log_prob -= tf.math.log(tf.sqrt(2 * np.pi * std**2))
+                #new_log_prob = tf.reduce_mean(new_log_prob, axis=-1)
 
                 policy_ratio = tf.exp(new_log_prob - old_log_prob)
                 objective = advantage_batch * policy_ratio
                 clipped_objective = advantage_batch * tf.clip_by_value(policy_ratio,
                                                                        1 - self.ppo_clip, 1 + self.ppo_clip)
-                min_objective = - tf.reduce_mean(tf.minimum(objective, clipped_objective))
-                ppo_entropy_loss = - tf.reduce_mean(self.entropy_coefficient * normal.entropy())
-                policy_loss = min_objective + ppo_entropy_loss
-                if np.any(np.isnan(policy_loss)):
-                    print("STOP POLICY")
+                objective_loss = - tf.reduce_mean(tf.minimum(objective, clipped_objective))
+                entropy_loss = tf.reduce_mean(- log_std + 0.5 * tf.math.log(2.0 * np.pi * np.e)) * self.entropy_coefficient
+                # ppo_entropy_loss = - tf.reduce_mean(self.entropy_coefficient * dist.entropy())
+                policy_loss = objective_loss + entropy_loss
             grad_actor = tape.gradient(policy_loss, self.actor.trainable_variables)
-            grad_log = tape.gradient(policy_loss, [self.log_std])
             self.actor_optimizer.apply_gradients(zip(grad_actor, self.actor.trainable_variables))
-            self.actor_optimizer.apply_gradients(zip(grad_log, [self.log_std]))
-            del tape
 
         self.training_step += 1
-        return {'Losses/Loss': policy_loss + value_loss, 'Losses/PolicyLoss': policy_loss,
+        return {'Losses/Std': np.mean(std),
+                'Losses/Loss': policy_loss + value_loss,
+                'Losses/PolicyLoss': policy_loss,
                 'Losses/ValueLoss': value_loss}, 0, self.training_step
 
     def load_checkpoint(self, path):

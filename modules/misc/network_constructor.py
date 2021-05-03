@@ -14,6 +14,7 @@ from tensorflow.keras.layers.experimental.preprocessing import Resizing
 from .noisy_dense import NoisyDense
 from .resnet import create_res_net12
 import numpy as np
+import tensorflow as tf
 import os
 os.environ["PATH"] += os.pathsep + 'C:/Graphviz/bin/'
 
@@ -199,6 +200,18 @@ def build_network_output(net_in, network_parameters):
             network_output.append(net_out)
         else:
             network_output.append(net_in)
+    if network_parameters.get('LogStdOutput'):
+        class LogStdLayer(tf.keras.layers.Layer):
+            def build(self, input_shape):
+                self.log_std = tf.Variable(tf.ones(net_out_shape) * -1.6, name='LOG_STD',
+                                           trainable=True,
+                                           constraint=lambda x: tf.clip_by_value(x, -20, 1))
+
+            def call(self, inputs):
+                return self.log_std
+
+        log_std = LogStdLayer()(net_in)
+        network_output.append(log_std)
     return network_output
 
 
