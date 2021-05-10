@@ -186,13 +186,13 @@ ppo:
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PPOClip: 0.2
-    TrainingDescription: PPO_3DBall
-    TrainingID: PPO_3DBall
+    TrainingDescription: PPO_AirHockeyDeflect
+    TrainingID: PPO_AirHockeyDeflect
     TrainingInterval: 1
     TrajectoryNum: 20
 sac:
     ActorTrainingFreq: 1
-    BatchSize: 64
+    BatchSize: 128
     ClipGrad: 10.0
     Episodes: 1000000
     ExplorationParameters:
@@ -208,7 +208,7 @@ sac:
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: 0.1
+    LogAlpha: -1.0
     NSteps: 4
     NetworkParameters:
     -   Filters: 64
@@ -229,8 +229,8 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingDescription: SAC_AirHockey_DefendingBackWallGoal_Dense_Continued_Fixed
-    TrainingID: SAC_AirHockey_DefendingBackWallGoal_Dense_Continued_Fixed
+    TrainingDescription: SAC_AirHockey_FullGameVsAI
+    TrainingID: SAC_AirHockey_FullGameVsAI
     TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3

@@ -5,7 +5,7 @@ from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 import tensorflow.keras.backend as K
 from .agent_blueprint import Agent
 from tensorflow.keras.models import load_model
-from ..misc.network_constructor import construct_network
+from ..misc.network_constructor import construct_network, LogStdLayer
 import tensorflow as tf
 from tensorflow.keras import losses
 from tensorflow.keras.models import clone_model
@@ -212,14 +212,16 @@ class PPOAgent(Agent):
 
     def load_checkpoint(self, path):
         if os.path.isfile(path):
-            self.actor = load_model(path)
+            with tf.keras.utils.CustomObjectScope({'LogStdLayer': LogStdLayer}):
+                self.actor = load_model(path)
         elif os.path.isdir(path):
             file_names = [f for f in os.listdir(path) if f.endswith(".h5")]
             for file_name in file_names:
                 if "Critic" in file_name:
                     self.critic = load_model(os.path.join(path, file_name))
                 elif "Actor" in file_name:
-                    self.actor = load_model(os.path.join(path, file_name))
+                    with tf.keras.utils.CustomObjectScope({'LogStdLayer': LogStdLayer}):
+                        self.actor = load_model(os.path.join(path, file_name))
             if not self.actor or not self.critic:
                 raise FileNotFoundError("Could not find all necessary model files.")
         else:

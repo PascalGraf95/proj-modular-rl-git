@@ -10,8 +10,8 @@ np.set_printoptions(precision=2)
 def main():
     # region  --- Parameter Choice ---
     # 1. Choose between Training and Testing
-    mode = "training"
-    model_path = ""#r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210430_141530_SAC_AirHockey_DefendingBackWallGoal_Dense_Continued_Fixed"
+    mode = "testing"
+    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210506_181539_SAC_AirHockey_FullGameVsAI"
     time_scale = 1000
     # 2. Instantiate Trainer
     trainer = instantiate_trainer()
@@ -20,13 +20,13 @@ def main():
     # trainer.environment_selection = "LunarLanderContinuous-v2"
     trainer.change_interface('MLAgentsV17')
     trainer.change_exploration_algorithm('None')
-    trainer.change_training_algorithm('PPO')
+    trainer.change_training_algorithm('SAC')
     trainer.change_curriculum_strategy('None')
 
     # 4. Get and Validate Configurations
     trainer.get_agent_configuration()
     trainer.get_exploration_configuration()
-    trainer.parse_training_parameters("modules/trainer/trainer_configs/trainer_config.yaml", "ppo")
+    trainer.parse_training_parameters("modules/trainer/trainer_configs/trainer_config.yaml", "sac")
     print(trainer.validate_trainer_configuration())
 
     # endregion

@@ -201,16 +201,7 @@ def build_network_output(net_in, network_parameters):
         else:
             network_output.append(net_in)
     if network_parameters.get('LogStdOutput'):
-        class LogStdLayer(tf.keras.layers.Layer):
-            def build(self, input_shape):
-                self.log_std = tf.Variable(tf.ones(net_out_shape) * -1.6, name='LOG_STD',
-                                           trainable=True,
-                                           constraint=lambda x: tf.clip_by_value(x, -20, 1))
-
-            def call(self, inputs):
-                return self.log_std
-
-        log_std = LogStdLayer()(net_in)
+        log_std = LogStdLayer(net_out_shape)(net_in)
         network_output.append(log_std)
     return network_output
 
@@ -410,3 +401,22 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         raise ValueError("Unknown Network Architecture \"{}\"".format(net_architecture))
 
     return x
+
+
+class LogStdLayer(tf.keras.layers.Layer):
+    def __init__(self, net_out_shape, **kwargs):
+        super(LogStdLayer, self).__init__()
+        self.net_out_shape = net_out_shape
+        self.log_std = tf.Variable(tf.ones(self.net_out_shape) * -1.6, name='LOG_STD',
+                                   trainable=True,
+                                   constraint=lambda x: tf.clip_by_value(x, -20, 1))
+
+    def call(self, inputs):
+        return self.log_std
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'net_out_shape': self.net_out_shape,
+        })
+        return config

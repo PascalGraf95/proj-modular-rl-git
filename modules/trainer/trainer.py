@@ -224,7 +224,7 @@ class Trainer:
                              mode=self.agent_configuration["ReplayBuffer"],
                              tensorboard=tensorboard)
         if tensorboard:
-            with open(os.path.join("./training/summaries", self.logging_name, "trainer_config.yaml"), 'w') as file:
+            with open(os.path.join("./training/summaries", self.logging_name, "training_parameters.yaml"), 'w') as file:
                 _ = yaml.dump(self.trainer_configuration, file)
                 _ = yaml.dump(self.environment_configuration, file)
                 _ = yaml.dump(self.exploration_configuration, file)
