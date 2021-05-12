@@ -84,6 +84,7 @@ class Logger:
         new_episodes = len(self.episode_rewards)
         if len(self.episode_rewards):
             mean_reward = np.mean(self.episode_rewards)
+            print(mean_reward);
             mean_length = np.mean(self.episode_lengths)
 
             if track_stats:

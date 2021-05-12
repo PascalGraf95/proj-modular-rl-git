@@ -10,10 +10,15 @@ np.set_printoptions(precision=2)
 def main():
     # region  --- Parameter Choice ---
     # 1. Choose between Training and Testing
-    mode = "training"
-    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210415_111951_SAC_AirHockey_Defending_ExtraRewards_Continued\SAC_Actor_Step23130_Reward0.20.h5"
-    #model_path = r"training/pretrained_weights/SpaceEvader/SAC_Actor_Step532028_Reward41.12.h5"
-    # 2. Instantiate Trainer
+    mode = "testing"
+    #model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210415_111951_SAC_AirHockey_Defending_ExtraRewards_Continued\SAC_Actor_Step23130_Reward0.20.h5"
+    #model_path = r"/Users/nicobrandstetter/Documents/GitHub/proj-modular-reinforcement-learning/training/summaries/210505_185435_SAC_AirHockey_Defending_ExtraRewards_Continued"
+    #model_path = r"/Users/nicobrandstetter/Documents/GitHub/proj-modular-reinforcement-learning/training/summaries/210507_103728_SAC_Dobot_Pushing"
+    #model_path = r"/Users/nicobrandstetter/Documents/GitHub/proj-modular-reinforcement-learning/training/pretrained_weights/VectorRobot0.8"
+    #model_path = r"/Users/nicobrandstetter/Documents/GitHub/proj-modular-reinforcement-learning/training/summaries/210511_183123_SAC_Dobot_Pushing"
+    model_path = r"/Users/nicobrandstetter/Documents/GitHub/proj-modular-reinforcement-learning/training/summaries/210511_230503_SAC_Dobot_Pushing"
+
+# 2. Instantiate Trainers
     trainer = instantiate_trainer()
     # 3. Choose Interface, Exploration and Training Algorithm
     # trainer.change_interface('OpenAIGym')
@@ -21,7 +26,7 @@ def main():
     trainer.change_interface('MLAgentsV15')
     trainer.change_exploration_algorithm('None')
     trainer.change_training_algorithm('SAC')
-    trainer.change_curriculum_strategy('None')
+    trainer.change_curriculum_strategy('LinearCurriculum')
 
     # 4. Get and Validate Configurations
     trainer.get_agent_configuration()

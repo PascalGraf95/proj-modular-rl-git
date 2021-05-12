@@ -203,8 +203,8 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingDescription: SAC_AirHockey_Defending_ExtraRewards_Continued
-    TrainingID: SAC_AirHockey_Defending_ExtraRewards_Continued
+    TrainingDescription: SAC_Dobot_Pushing
+    TrainingID: SAC_Dobot_Pushing
     TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3
