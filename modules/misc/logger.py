@@ -145,10 +145,6 @@ class Logger:
     def log_scalar(self, tag, value, step):
         with self.tensorboard_writer.as_default():
             tf.summary.scalar(tag, value, step)
-        # if tag not in self.logger_dict.keys():
-        #     self.logger_dict[tag] = [], []
-        # self.logger_dict[tag][0].append(value)
-        # self.logger_dict[tag][1].append(step)
 
     def log_running_average(self, tag, run_avg_len=20):
         tag_len = len(self.logger_dict[tag][0])

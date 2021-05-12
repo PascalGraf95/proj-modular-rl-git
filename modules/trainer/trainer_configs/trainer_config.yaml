@@ -229,8 +229,8 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingDescription: SAC_AirHockey_FullGameVsAI
-    TrainingID: SAC_AirHockey_FullGameVsAI
+    TrainingDescription: SAC_RobotEasyReaching_SegmentationBased_LinearCurriculum
+    TrainingID: SAC_RobotEasyReaching_SegmentationBased_LinearCurriculum
     TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3

@@ -55,6 +55,8 @@ class Trainer:
         # Curriculum Learning Strategy
         self.curriculum_strategy = None
         self.last_debug_message = 0
+        # Preprocessing Algorithm
+        self.preprocessing_algorithm = None
         # Initiation Progress
         self.initiation_progress = 0
         # Logger
@@ -63,6 +65,7 @@ class Trainer:
         self.replay_buffer = None
         self.prediction_error_based = False
         # Training Loop
+        self.logging_frequency = 100
         self.training_loop = self.training_loop_generator()
         self.testing_loop = self.testing_loop_generator()
         # Testing
@@ -187,6 +190,16 @@ class Trainer:
         else:
             raise ValueError("There is no {} exploration algorithm.".format(exploration_algorithm))
 
+    def change_preprocessing_algorithm(self, preprocessing_algorithm):
+        global PreprocessingAlgorithm
+
+        if preprocessing_algorithm == "None":
+            from ..preprocessing.preprocessing_blueprint import PreprocessingAlgorithm
+        elif preprocessing_algorithm == "SemanticSegmentation":
+            from ..preprocessing.semantic_segmentation import SemanticSegmentation as PreprocessingAlgorithm
+        else:
+            raise ValueError("There is no {} preprocessing algorithm.".format(preprocessing_algorithm))
+
     def change_curriculum_strategy(self, curriculum_strategy):
         global CurriculumStrategy
 
@@ -229,6 +242,11 @@ class Trainer:
                 _ = yaml.dump(self.environment_configuration, file)
                 _ = yaml.dump(self.exploration_configuration, file)
         return self.logger
+
+    def instantiate_preprocessing_algorithm(self, model_path):
+        self.preprocessing_algorithm = PreprocessingAlgorithm(model_path)
+        self.environment_configuration["ObservationShapes"] = \
+            self.preprocessing_algorithm.get_output_shapes(self.environment_configuration)
 
     def get_elapsed_training_time(self):
         return self.logger.get_elapsed_time()
@@ -275,6 +293,8 @@ class Trainer:
         # 1. Obtain first environment observation
         decision_steps, terminal_steps = AgentInterface.get_steps(self.env, self.behavior_name)
         while True:
+            decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
+                                                                                                  terminal_steps)
             # 2. Choose an action either by exploration algorithm or agent
             actions = self.exploration_algorithm.act(decision_steps)
             if actions is None:
@@ -309,8 +329,9 @@ class Trainer:
                 self.replay_buffer.update_priorities(indices, sample_errors)
                 self.exploration_algorithm.learning_step()
                 # Log training results to Tensorboard and console
-                self.logger.log_dict(training_metrics, training_step)
-                self.logger.log_dict(self.exploration_algorithm.get_logs(), training_step)
+                if training_step % self.logging_frequency == 0:
+                    self.logger.log_dict(training_metrics, training_step)
+                    self.logger.log_dict(self.exploration_algorithm.get_logs(), training_step)
 
                 if self.test_frequency and training_step % self.test_frequency == 0:
                     self.test_flag = True
@@ -319,8 +340,10 @@ class Trainer:
                 self.logger.get_episode_stats(track_stats=True)
 
             if mean_episode_length or mean_episode_reward:
-                self.curriculum_strategy.check_task_level_change_condition(self.logger.episode_reward_memory,
-                                                                           self.logger.episodes_played_memory)
+                if self.curriculum_strategy.check_task_level_change_condition(self.logger.episode_reward_memory,
+                                                                              self.logger.episodes_played_memory):
+                    self.logger.best_running_average_reward = -10000
+                    print("Reset Average Reward")
                 task_level, average_episodes, average_reward = self.curriculum_strategy.get_logs()
                 # Log episode results to Tensorboard
                 self.logger.log_scalar("Performance/TrainingEpisodeLength", mean_episode_length, episodes)
@@ -408,6 +431,8 @@ class Trainer:
         decision_steps, terminal_steps = AgentInterface.get_steps(self.env, self.behavior_name)
 
         while True:
+            decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
+                                                                                                  terminal_steps)
             if self.environment_selection:
                 self.env.render()
             # 2. Choose an action either by exploration algorithm or agent
