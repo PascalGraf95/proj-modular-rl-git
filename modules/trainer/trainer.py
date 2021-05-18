@@ -342,7 +342,9 @@ class Trainer:
             if mean_episode_length or mean_episode_reward:
                 if self.curriculum_strategy.check_task_level_change_condition(self.logger.episode_reward_memory,
                                                                               self.logger.episodes_played_memory):
+                    self.save_agent_models(training_step)
                     self.logger.best_running_average_reward = -10000
+                    self.agent.boost_exploration()
                     print("Reset Average Reward")
                 task_level, average_episodes, average_reward = self.curriculum_strategy.get_logs()
                 # Log episode results to Tensorboard

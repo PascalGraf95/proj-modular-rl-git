@@ -22,8 +22,8 @@ def main():
     trainer.change_interface('MLAgentsV17')
     trainer.change_exploration_algorithm('None')
     trainer.change_training_algorithm('SAC')
-    trainer.change_curriculum_strategy('LinearCurriculum')
-    trainer.change_preprocessing_algorithm('SemanticSegmentation')
+    trainer.change_curriculum_strategy('CrossFadeCurriculum')
+    trainer.change_preprocessing_algorithm('None')
 
     # 4. Get and Validate Configurations
     trainer.get_agent_configuration()
@@ -40,7 +40,7 @@ def main():
     # 5. Connect to the Environment and set/get its Configuration
     trainer.connect()
     trainer.get_environment_configuration()
-    trainer.instantiate_preprocessing_algorithm(r"C:\PGraf\Arbeit\RL\SemanticSegmentation\vae\models\210511_131829_VAE_encoder_57.h5")
+    trainer.instantiate_preprocessing_algorithm(r"C:\PGraf\Arbeit\RL\SemanticSegmentation\vae\models\210517_114012_VAE_encoder_17.h5")
 
     # Set Unity Parameters
     if mode == "training" or mode == "fastTesting":

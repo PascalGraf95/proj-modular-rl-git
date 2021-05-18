@@ -208,29 +208,29 @@ sac:
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -1.0
+    LogAlpha: 0.0
     NSteps: 4
     NetworkParameters:
     -   Filters: 64
         Units: 64
-        VectorNetworkArchitecture: Dense
+        VectorNetworkArchitecture: LargeDense
         VisualNetworkArchitecture: CNN
     -   Filters: 64
         Units: 64
-        VectorNetworkArchitecture: Dense
+        VectorNetworkArchitecture: LargeDense
         VisualNetworkArchitecture: CNN
     -   Filters: 64
         Units: 64
-        VectorNetworkArchitecture: Dense
+        VectorNetworkArchitecture: LargeDense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: false
     ReplayCapacity: 100000
-    ReplayMinSize: 5000
+    ReplayMinSize: 1000
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingDescription: SAC_RobotEasyReaching_SegmentationBased_LinearCurriculum
-    TrainingID: SAC_RobotEasyReaching_SegmentationBased_LinearCurriculum
+    TrainingDescription: SAC_PushingCurriculum_SegmentationBasedPLusTool
+    TrainingID: SAC_PushingCurriculum_SegmentationBasedPLusTool
     TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3

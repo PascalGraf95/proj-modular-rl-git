@@ -80,7 +80,7 @@ class SACAgent(Agent):
 
         # Temperature Parameter Configuration
         self.log_alpha = tf.Variable(tf.ones(1)*learning_parameters.get('LogAlpha'),
-                                     constraint=lambda x: tf.clip_by_value(x, -5, 20), trainable=True)
+                                     constraint=lambda x: tf.clip_by_value(x, -10, 20), trainable=True)
         self.target_entropy = -tf.reduce_sum(tf.ones(self.action_shape))
         self.alpha_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_parameters.get('LearningRateActor'),
                                                         clipvalue=self.clip_grad)
@@ -213,7 +213,8 @@ class SACAgent(Agent):
                sample_errors, self.training_step
 
     def boost_exploration(self):
-        self.log_alpha.assign_add(tf.ones(1))
+        self.log_alpha = tf.Variable(tf.ones(1)*-1.0,
+                                     constraint=lambda x: tf.clip_by_value(x, -10, 20), trainable=True)
         return True
 
     def load_checkpoint(self, path):
