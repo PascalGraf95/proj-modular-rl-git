@@ -211,16 +211,16 @@ sac:
     LogAlpha: 0.0
     NSteps: 4
     NetworkParameters:
-    -   Filters: 64
-        Units: 64
+    -   Filters: 128
+        Units: 128
         VectorNetworkArchitecture: LargeDense
         VisualNetworkArchitecture: CNN
-    -   Filters: 64
-        Units: 64
+    -   Filters: 128
+        Units: 128
         VectorNetworkArchitecture: LargeDense
         VisualNetworkArchitecture: CNN
-    -   Filters: 64
-        Units: 64
+    -   Filters: 128
+        Units: 128
         VectorNetworkArchitecture: LargeDense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: false

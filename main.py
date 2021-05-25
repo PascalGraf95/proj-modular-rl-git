@@ -23,7 +23,7 @@ def main():
     trainer.change_exploration_algorithm('None')
     trainer.change_training_algorithm('SAC')
     trainer.change_curriculum_strategy('CrossFadeCurriculum')
-    trainer.change_preprocessing_algorithm('None')
+    trainer.change_preprocessing_algorithm('SemanticSegmentation')
 
     # 4. Get and Validate Configurations
     trainer.get_agent_configuration()

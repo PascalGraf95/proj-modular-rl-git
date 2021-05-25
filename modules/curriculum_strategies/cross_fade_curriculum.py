@@ -17,8 +17,8 @@ class CrossFadeCurriculum(CurriculumStrategy):
 
             if np.random.rand() <= self.remembering_probability:
                 self.temporary_task_level = np.random.randint(0, self.task_level)
-                self.curriculum_sidechannel.send_current_task(task_level=self.temporary_task_level)
                 self.remembering_probability = np.max([self.remembering_probability - 1/self.transition_episodes, 0])
+            self.curriculum_sidechannel.send_current_task(task_level=self.temporary_task_level)
 
         self.update_average_reward(episode_reward_memory)
         if self.remembering_probability < 0.01:
