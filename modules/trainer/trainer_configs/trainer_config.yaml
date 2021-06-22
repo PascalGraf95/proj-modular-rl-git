@@ -211,17 +211,17 @@ sac:
     LogAlpha: 0.0
     NSteps: 4
     NetworkParameters:
-    -   Filters: 128
-        Units: 128
-        VectorNetworkArchitecture: LargeDense
+    -   Filters: 64
+        Units: 64
+        VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 128
-        Units: 128
-        VectorNetworkArchitecture: LargeDense
+    -   Filters: 64
+        Units: 64
+        VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 128
-        Units: 128
-        VectorNetworkArchitecture: LargeDense
+    -   Filters: 64
+        Units: 64
+        VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: false
     ReplayCapacity: 100000
@@ -229,8 +229,8 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingDescription: SAC_PushingCurriculum_SegmentationBasedPLusTool
-    TrainingID: SAC_PushingCurriculum_SegmentationBasedPLusTool
+    TrainingDescription: SAC
+    TrainingID: SAC_RobotArUcoTest
     TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3

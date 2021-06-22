@@ -197,6 +197,8 @@ class Trainer:
             from ..preprocessing.preprocessing_blueprint import PreprocessingAlgorithm
         elif preprocessing_algorithm == "SemanticSegmentation":
             from ..preprocessing.semantic_segmentation import SemanticSegmentation as PreprocessingAlgorithm
+        elif preprocessing_algorithm == "ArUcoMarkerDetection":
+            from ..preprocessing.aruco_marker_detection import ArUcoMarkerDetection as PreprocessingAlgorithm
         else:
             raise ValueError("There is no {} preprocessing algorithm.".format(preprocessing_algorithm))
 

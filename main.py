@@ -10,8 +10,8 @@ np.set_printoptions(precision=2)
 def main():
     # region  --- Parameter Choice ---
     # 1. Choose between Training and Testing
-    mode = "training"
-    model_path = r""
+    mode = "testing"
+    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\pretrained_weights\ArUcoModel\SAC_Actor_Step195028_Reward0.89.h5"#r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210519_123426_SAC_PushingCurriculum_SegmentationBasedPLusTool"
     time_scale = 1000
     # 2. Instantiate Trainer
     trainer = instantiate_trainer()
@@ -22,8 +22,8 @@ def main():
     trainer.change_interface('MLAgentsV17')
     trainer.change_exploration_algorithm('None')
     trainer.change_training_algorithm('SAC')
-    trainer.change_curriculum_strategy('CrossFadeCurriculum')
-    trainer.change_preprocessing_algorithm('SemanticSegmentation')
+    trainer.change_curriculum_strategy('None')
+    trainer.change_preprocessing_algorithm('ArUcoMarkerDetection')
 
     # 4. Get and Validate Configurations
     trainer.get_agent_configuration()
@@ -40,7 +40,7 @@ def main():
     # 5. Connect to the Environment and set/get its Configuration
     trainer.connect()
     trainer.get_environment_configuration()
-    trainer.instantiate_preprocessing_algorithm(r"C:\PGraf\Arbeit\RL\SemanticSegmentation\vae\models\210517_114012_VAE_encoder_17.h5")
+    trainer.instantiate_preprocessing_algorithm(r"C:\PGraf\Arbeit\RL\MarkerDetection")
 
     # Set Unity Parameters
     if mode == "training" or mode == "fastTesting":
