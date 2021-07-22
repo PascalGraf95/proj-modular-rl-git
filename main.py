@@ -11,7 +11,7 @@ def main():
     # region  --- Parameter Choice ---
     # 1. Choose between Training and Testing
     mode = "testing"
-    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\pretrained_weights\ArUcoModel\SAC_Actor_Step195028_Reward0.89.h5"#r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210519_123426_SAC_PushingCurriculum_SegmentationBasedPLusTool"
+    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210715_072854_SAC_RobotGrabbingCrossFade"#r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210713_183619_SAC_RobotGrabbingCrossFade"#r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210712_144215_SAC_RobotGrabbingRememberingCurriculum"
     time_scale = 1000
     # 2. Instantiate Trainer
     trainer = instantiate_trainer()
@@ -19,11 +19,11 @@ def main():
     # 3. Choose Interface, Exploration and Training Algorithm
     # trainer.change_interface('OpenAIGym')
     # trainer.environment_selection = "LunarLanderContinuous-v2"
-    trainer.change_interface('MLAgentsV17')
+    trainer.change_interface('MLAgentsV18')
     trainer.change_exploration_algorithm('None')
     trainer.change_training_algorithm('SAC')
-    trainer.change_curriculum_strategy('None')
-    trainer.change_preprocessing_algorithm('ArUcoMarkerDetection')
+    trainer.change_curriculum_strategy('CrossFadeCurriculum')
+    trainer.change_preprocessing_algorithm('None')
 
     # 4. Get and Validate Configurations
     trainer.get_agent_configuration()
@@ -85,6 +85,7 @@ def main():
                                                                               *training_duration))
             print("-------------------------------------------------")
     # endregion
+
 
 @st.cache(allow_output_mutation=True)
 def instantiate_trainer():
@@ -188,7 +189,7 @@ def streamlit_app():
             col_interface_name, col_exploration_name, col_rl_name = st.beta_columns(3)
 
             with col_interface_name:
-                interface_name = st.selectbox(label="Select an Interface:", options=["MLAgentsV17", "OpenAIGym"])
+                interface_name = st.selectbox(label="Select an Interface:", options=["MLAgentsV18", "OpenAIGym"])
             with col_exploration_name:
                 exploration_name = st.selectbox(label="Select an Exploration Algorithm:", options=["None",
                                                                                                    "EpsilonGreedy"])
@@ -511,11 +512,6 @@ def streamlit_app():
                            *training_duration))
     # endregion
     # endregion
-
-
-@st.cache(allow_output_mutation=True)
-def instantiate_trainer():
-    return Trainer()
 
 
 if __name__ == '__main__':

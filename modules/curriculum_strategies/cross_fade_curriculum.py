@@ -8,7 +8,7 @@ class CrossFadeCurriculum(CurriculumStrategy):
     def __init__(self):
         super().__init__()
         self.remembering_probability = 0.0
-        self.transition_episodes = 300
+        self.transition_episodes = 800
         self.temporary_task_level = 0
 
     def check_task_level_change_condition(self, episode_reward_memory, episodes_played_memory):

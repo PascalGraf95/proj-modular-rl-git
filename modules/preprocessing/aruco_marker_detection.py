@@ -99,7 +99,7 @@ class ArUcoMarkerDetection(PreprocessingAlgorithm):
 
             take_rvec = np.array([[0.00, 0.00, 0.0]])
 
-            all_tvecs = np.zeros(shape=(rvec.shape[0],3))
+            all_tvecs = np.zeros(shape=(rvec.shape[0], 3))
             for i in range(rvec.shape[0]):
                 rvecmid = rvec[i, :, :].copy()
                 tvecmid = tvec[i, :, :].copy()

@@ -204,11 +204,11 @@ sac:
         ForwardModelLearningRate: 0.001
         InverseModelLearningRate: 0.001
         ScalingFactor: 0.005
-        StepDown: 0
+        StepDown: 100
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: 0.0
+    LogAlpha: 0
     NSteps: 4
     NetworkParameters:
     -   Filters: 64
@@ -225,12 +225,12 @@ sac:
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: false
     ReplayCapacity: 100000
-    ReplayMinSize: 1000
+    ReplayMinSize: 10000
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
     TrainingDescription: SAC
-    TrainingID: SAC_RobotArUcoTest
+    TrainingID: SAC_RobotGrabbingCrossFade
     TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3

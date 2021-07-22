@@ -148,8 +148,8 @@ class Trainer:
 
     def change_interface(self, interface):
         global AgentInterface
-        if interface == "MLAgentsV17":
-            from ..interfaces.mlagents_v17 import MlAgentsV17Interface as AgentInterface
+        if interface == "MLAgentsV18":
+            from ..interfaces.mlagents_v18 import MlAgentsV18Interface as AgentInterface
             self.connect = self.connect_to_unity_environment
         elif interface == "OpenAIGym":
             from ..interfaces.openaigym import OpenAIGymInterface as AgentInterface

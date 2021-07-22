@@ -13,7 +13,6 @@ class SemanticSegmentation(PreprocessingAlgorithm):
         if len(decision_steps):
             for idx, o in enumerate(decision_steps.obs):
                 if len(o.shape) == 4:
-
                     decision_steps.obs[idx] = self.segmentation_model.predict(o)[0]
         if len(terminal_steps):
             for idx, o in enumerate(terminal_steps.obs):
