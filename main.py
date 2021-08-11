@@ -3,6 +3,9 @@ import numpy as np
 import streamlit as st
 import pandas as pd
 import tensorflow as tf
+import sys
+import time
+import msvcrt
 st.set_option('deprecation.showfileUploaderEncoding', False)
 np.set_printoptions(precision=2)
 
@@ -11,7 +14,7 @@ def main():
     # region  --- Parameter Choice ---
     # 1. Choose between Training and Testing
     mode = "testing"
-    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210715_072854_SAC_RobotGrabbingCrossFade"#r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210713_183619_SAC_RobotGrabbingCrossFade"#r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210712_144215_SAC_RobotGrabbingRememberingCurriculum"
+    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\pretrained_weights\VectorGrabbingICM1.26"
     time_scale = 1000
     # 2. Instantiate Trainer
     trainer = instantiate_trainer()
@@ -40,7 +43,7 @@ def main():
     # 5. Connect to the Environment and set/get its Configuration
     trainer.connect()
     trainer.get_environment_configuration()
-    trainer.instantiate_preprocessing_algorithm(r"C:\PGraf\Arbeit\RL\MarkerDetection")
+    trainer.instantiate_preprocessing_algorithm(r"C:\PGraf\Arbeit\RL\SemanticSegmentation\vae\models\210809_101443_VAE_encoder_235")
 
     # Set Unity Parameters
     if mode == "training" or mode == "fastTesting":
@@ -84,12 +87,40 @@ def main():
                                                                               int(number_of_episodes_for_average),
                                                                               *training_duration))
             print("-------------------------------------------------")
+
+            x = read_input("Press + proceed to the next level", "", 1)
+            print(x)
+            if x == "+":
+                trainer.curriculum_strategy.check_task_level_change_condition([], 0, True)
+
     # endregion
 
 
 @st.cache(allow_output_mutation=True)
 def instantiate_trainer():
     return Trainer()
+
+
+def read_input(caption, default, timeout=5):
+    start_time = time.time()
+    sys.stdout.write('{}{}:'.format(caption, default))
+    sys.stdout.flush()
+    input_text = ''
+    while True:
+        if msvcrt.kbhit():
+            byte_arr = msvcrt.getche()
+            if ord(byte_arr) == 13:  # enter_key
+                break
+            elif ord(byte_arr) >= 32:  # space_char
+                input_text += "".join(map(chr, byte_arr))
+        if len(input_text) == 0 and (time.time() - start_time) > timeout:
+            break
+
+    print('')  # needed to move to next line
+    if len(input_text) > 0:
+        return input_text
+    else:
+        return default
 
 
 def print_parameter_mismatches(mis_par, obs_par, mis_net_par, obs_net_par, mis_expl_par, obs_expl_par,

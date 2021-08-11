@@ -22,7 +22,7 @@ class CurriculumStrategy:
         if len(episode_reward_memory) > 0:
             self.average_reward = np.mean(list(episode_reward_memory)[-self.average_episodes:])
 
-    def check_task_level_change_condition(self, episode_reward_memory, episodes_played_memory):
+    def check_task_level_change_condition(self, episode_reward_memory, episodes_played_memory, force=False):
         self.update_average_reward(episode_reward_memory)
         return False
 

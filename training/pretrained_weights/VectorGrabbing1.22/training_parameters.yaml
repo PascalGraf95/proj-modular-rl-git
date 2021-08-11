@@ -1,0 +1,81 @@
+ActorTrainingFreq: 1
+BatchSize: 128
+ClipGrad: 10.0
+Episodes: 1000000
+ExplorationParameters:
+  BatchSize: 128
+  Epsilon: 0.7
+  EpsilonDecay: 0.999
+  EpsilonMin: 0.0
+  FeatureSpaceSize: 6
+  ForwardModelLearningRate: 0.001
+  InverseModelLearningRate: 0.001
+  ScalingFactor: 0.005
+  StepDown: 100
+Gamma: 0.99
+LearningRateActor: 0.0005
+LearningRateCritic: 0.0005
+LogAlpha: 0.0
+NSteps: 5
+NetworkParameters:
+- Filters: 128
+  Input:
+  - &id001 !!python/tuple
+    - 17
+  KernelInitializer: RandomUniform
+  NetworkType: Actor
+  Output:
+  - 5
+  - 5
+  OutputActivation:
+  - null
+  - null
+  Units: 128
+  VectorNetworkArchitecture: Dense
+  VisualNetworkArchitecture: CNN
+- Filters: 128
+  Input: &id002
+  - *id001
+  - 5
+  KernelInitializer: RandomUniform
+  NetworkType: Critic1
+  Output: &id003
+  - 1
+  OutputActivation: &id004
+  - null
+  TargetNetwork: true
+  Units: 128
+  Vec2Img: false
+  VectorNetworkArchitecture: Dense
+  VisualNetworkArchitecture: CNN
+- Filters: 128
+  Input: *id002
+  KernelInitializer: RandomUniform
+  NetworkType: Critic2
+  Output: *id003
+  OutputActivation: *id004
+  TargetNetwork: true
+  Units: 128
+  Vec2Img: false
+  VectorNetworkArchitecture: Dense
+  VisualNetworkArchitecture: CNN
+PrioritizedReplay: false
+ReplayCapacity: 100000
+ReplayMinSize: 2000
+SyncMode: soft_sync
+SyncSteps: 50
+Tau: 0.01
+TrainingDescription: SAC
+TrainingID: SAC_RobotGrabbingCrossFade
+TrainingInterval: 1
+ActionShape: 5
+ActionType: CONTINUOUS
+AgentNumber: 1
+BehaviorName: My Behavior?team=0
+ObservationShapes:
+- !!python/tuple
+  - 17
+ActionAltering: false
+IntrinsicReward: false
+Name: None
+ParameterSpace: {}

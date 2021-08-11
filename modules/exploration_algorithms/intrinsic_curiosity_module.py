@@ -7,6 +7,8 @@ from ..misc.network_constructor import construct_network
 import tensorflow as tf
 from ..training_algorithms.agent_blueprint import Agent
 import itertools
+from tensorflow.keras import Input, Model
+from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
 
 
 class IntrinsicCuriosityModule(ExplorationAlgorithm):
@@ -16,10 +18,9 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
 
     ParameterSpace = {
         "FeatureSpaceSize": int,
-        "ScalingFactor": float,
-        "BatchSize": int,
-        "ForwardModelLearningRate": float,
-        "InverseModelLearningRate": float,
+        "CuriosityScalingFactor": float,
+        "ForwardLossWeight": float,
+        "LearningRate": float,
     }
 
     def __init__(self, action_shape, observation_shapes, action_space, parameters):
@@ -28,75 +29,114 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
         self.observation_shapes = observation_shapes
 
         self.feature_space_size = parameters["FeatureSpaceSize"]
-        self.scaling_factor = parameters["ScalingFactor"]
-        self.batch_size = parameters["BatchSize"]
+        self.reward_scaling_factor = parameters["CuriosityScalingFactor"]
+        self.forward_loss_weight = parameters["ForwardLossWeight"]
         self.mse = MeanSquaredError()
-        self.forward_optimizer = SGD(parameters["ForwardModelLearningRate"])
-        self.inverse_optimizer = SGD(parameters["InverseModelLearningRate"])
+        self.optimizer = Adam(parameters["LearningRate"])
 
         self.inverse_loss = 0
         self.forward_loss = 0
-        self.mean_intrinsic_reward = 0
+        self.max_intrinsic_reward = 0
+        self.loss = 0
 
         self.forward_model, self.inverse_model, self.feature_extractor = self.build_network()
 
     def build_network(self):
         network_parameters = [{}, {}, {}]
-        # Forward Model
-        network_parameters[0]['Input'] = [self.feature_space_size, self.action_shape]
-        network_parameters[0]['Output'] = [self.feature_space_size]
-        network_parameters[0]['OutputActivation'] = ["selu"]
-        network_parameters[0]['VectorNetworkArchitecture'] = "SingleDense"
-        network_parameters[0]['Units'] = 64
-        network_parameters[0]['NetworkType'] = "ICMForwardModel"
+        # Feature Extractor: Extracts relevant state features
+        if len(self.observation_shapes) == 1:
+            feature_input = Input(self.observation_shapes[0])
+            x = feature_input
+        else:
+            feature_input = []
+            for obs_shape in self.observation_shapes:
+                feature_input.append(Input(obs_shape))
+            x = Concatenate()(feature_input)
+        x = Dense(self.feature_space_size*4, activation="elu")(x)
+        x = Dense(self.feature_space_size*2, activation="elu")(x)
+        x = Dense(self.feature_space_size, activation="elu")(x)
+        feature_extractor = Model(feature_input, x, name="ICM Feature Extractor")
 
-        # Feature Extractor
-        network_parameters[1]['Input'] = self.observation_shapes
-        network_parameters[1]['InputResize'] = (42, 42)
-        network_parameters[1]['Output'] = [None]
-        network_parameters[1]['OutputActivation'] = [None]
-        network_parameters[1]['VisualNetworkArchitecture'] = "ICMCNN"
-        network_parameters[1]['VectorNetworkArchitecture'] = "SmallDense"
-        network_parameters[1]['Units'] = self.feature_space_size
-        network_parameters[1]['Filters'] = 32
-        network_parameters[1]['NetworkType'] = "ICMFeatureExtractor"
+        # Inverse Model: Predicts the action given features for the current and the next state
+        state_feature_input = Input(self.feature_space_size)
+        next_state_feature_input = Input(self.feature_space_size)
+        x = Concatenate(axis=-1)([state_feature_input, next_state_feature_input])
+        x = Dense(32, 'elu')(x)
+        x = Dense(self.action_shape, 'tanh')(x)
+        inverse_model = Model([state_feature_input, next_state_feature_input], x, name="ICM Inverse Model")
 
-        # Inverse Model
-        network_parameters[2]['Input'] = [self.feature_space_size, self.feature_space_size]
-        network_parameters[2]['Output'] = [self.action_shape]
-        network_parameters[2]['OutputActivation'] = ["tanh"]
-        network_parameters[2]['VectorNetworkArchitecture'] = "SingleDense"
-        network_parameters[2]['Units'] = 64
-        network_parameters[2]['NetworkType'] = "ICMInverseModel"
+        # Forward Model: Predicts the next state's features given the current state features and the action
+        state_feature_input = Input(self.feature_space_size)
+        action_input = Input(self.action_shape)
+        x = Concatenate(axis=-1)([state_feature_input, action_input])
+        x = Dense(32, 'elu')(x)
+        x = Dense(self.feature_space_size, 'elu')(x)
+        forward_model = Model([state_feature_input, action_input], x, name="ICM Forward Model")
 
-        # Build
-        forward_model = construct_network(network_parameters[0])
-        feature_extractor = construct_network(network_parameters[1])
-        inverse_model = construct_network(network_parameters[2])
+        # Summaries
+        forward_model.summary()
+        inverse_model.summary()
+        feature_extractor.summary()
 
         return forward_model, inverse_model, feature_extractor
 
-    def update(self, state_batch, action_batch, next_state_batch):
-        feature_vector_state = self.feature_extractor(state_batch)
-        feature_vector_next_state = self.feature_extractor(next_state_batch)
-    
+    def learning_step(self, replay_batch):
+        state_batch, action_batch, \
+         reward_batch, next_state_batch, \
+         done_batch = Agent.get_training_batch_from_replay_batch(replay_batch,
+                                                                 self.observation_shapes,
+                                                                 self.action_shape)
+
+        # Calculate Loss
         with tf.GradientTape() as tape:
-            forward_model_feature_prediction = self.forward_model([feature_vector_state, action_batch])
-            self.forward_loss = self.mse(feature_vector_next_state, forward_model_feature_prediction)
-        grad = tape.gradient(self.forward_loss, self.forward_model.trainable_weights)
-        self.forward_optimizer.apply_gradients(zip(grad, self.forward_model.trainable_weights))
-    
-        with tf.GradientTape() as tape:
-            feature_vector_state = self.feature_extractor(state_batch)
-            feature_vector_next_state = self.feature_extractor(next_state_batch)
-            action_prediction = self.inverse_model([feature_vector_state, feature_vector_next_state])
+            # Feature Extraction
+            state_features = self.feature_extractor(state_batch)
+            next_state_features = self.feature_extractor(next_state_batch)
+
+            # Forward Loss
+            next_state_prediction = self.forward_model([state_features, action_batch])
+            self.forward_loss = self.mse(next_state_features, next_state_prediction)
+
+            # Inverse Loss
+            action_prediction = self.inverse_model([state_features, next_state_features])
             self.inverse_loss = self.mse(action_batch, action_prediction)
 
-        grad = tape.gradient(self.inverse_loss, [self.inverse_model.trainable_weights,
-                                                 self.feature_extractor.trainable_weights])
-        self.inverse_optimizer.apply_gradients(zip(grad[0], self.inverse_model.trainable_weights))
-        self.inverse_optimizer.apply_gradients(zip(grad[1], self.feature_extractor.trainable_weights))
+            # Combined Loss
+            self.loss = self.forward_loss*self.forward_loss_weight + self.inverse_loss*(1-self.forward_loss_weight)
+
+        # Calculate Gradients
+        grad = tape.gradient(self.loss, [self.forward_model.trainable_weights,
+                                         self.inverse_model.trainable_weights,
+                                         self.feature_extractor.trainable_weights])
+        # Apply Gradients to all models
+        self.optimizer.apply_gradients(zip(grad[0], self.forward_model.trainable_weights))
+        self.optimizer.apply_gradients(zip(grad[1], self.inverse_model.trainable_weights))
+        self.optimizer.apply_gradients(zip(grad[2], self.feature_extractor.trainable_weights))
         return
+
+    def get_intrinsic_reward(self, replay_batch):
+        state_batch, action_batch, \
+            reward_batch, next_state_batch, \
+            done_batch = Agent.get_training_batch_from_replay_batch(replay_batch,
+                                                                    self.observation_shapes,
+                                                                    self.action_shape)
+
+        # Extract features from the current and next state
+        state_features = self.feature_extractor(state_batch)
+        next_state_features = self.feature_extractor(next_state_batch)
+        # Predict next state features given current features and action
+        next_state_prediction = self.forward_model([state_features, action_batch])
+        # Calculate the intrinsic reward by MSE between prediction and actual next state feature
+        intrinsic_reward = tf.math.reduce_sum(
+            tf.math.square(next_state_features - next_state_prediction), axis=-1).numpy()
+        # Scale the reward
+        intrinsic_reward *= self.reward_scaling_factor
+        self.max_intrinsic_reward = np.max(intrinsic_reward)
+
+        # Replace the original reward in the replay batch
+        for idx, int_rew in enumerate(intrinsic_reward):
+            replay_batch[idx]["reward"] = replay_batch[idx]["reward"]*(1-self.reward_scaling_factor)+int_rew
+        return replay_batch
 
     @staticmethod
     def get_config():
@@ -109,40 +149,7 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
     def get_logs(self):
         return {"Exploration/InverseLoss": self.inverse_loss,
                 "Exploration/ForwardLoss": self.forward_loss,
-                "Exploration/MeanIntrinsicReward": self.mean_intrinsic_reward}
-
-    def get_intrinsic_reward(self, replay_batch):
-        state_batch, action_batch, \
-            reward_batch, next_state_batch, \
-            done_batch = Agent.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, self.action_shape)
-
-        feature_vector_state = self.feature_extractor(state_batch)
-        feature_vector_next_state = self.feature_extractor(next_state_batch)
-
-        forward_model_feature_prediction = self.forward_model([feature_vector_state, action_batch])
-        intrinsic_reward = tf.math.reduce_sum(tf.math.square(feature_vector_next_state - forward_model_feature_prediction), axis=-1).numpy()
-        intrinsic_reward *= self.scaling_factor
-        self.mean_intrinsic_reward = np.mean(intrinsic_reward)
-        # print("Max and Mean Intrinsic Reward: ", np.max(intrinsic_reward), np.mean(intrinsic_reward))
-        for idx, intr_rew in enumerate(intrinsic_reward):
-            replay_batch[idx]["reward"] += intr_rew
-        return replay_batch
-
-    def learning_step(self):
-        return
+                "Exploration/MaxIntrinsicReward": self.max_intrinsic_reward}
 
     def prevent_checkpoint(self):
         return False
-
-    def calculate_intrinsic_reward(self, replay_buffer: ReplayBuffer):
-        if replay_buffer.new_unmodified_samples < self.batch_size:
-            return False
-
-        new_replay_samples = list(itertools.islice(replay_buffer.buffer,
-                                                   len(replay_buffer.buffer)-replay_buffer.new_unmodified_samples,
-                                                   len(replay_buffer.buffer)))
-        state_batch, action_batch, \
-            reward_batch, next_state_batch, \
-            done_batch = Agent.get_training_batch_from_replay_batch(new_replay_samples, self.observation_shapes, self.action_shape)
-        self.update(state_batch, action_batch, next_state_batch)
-        return True

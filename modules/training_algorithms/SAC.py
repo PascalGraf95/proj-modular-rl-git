@@ -213,7 +213,7 @@ class SACAgent(Agent):
                sample_errors, self.training_step
 
     def boost_exploration(self):
-        self.log_alpha = tf.Variable(tf.ones(1)*-0.9,
+        self.log_alpha = tf.Variable(tf.ones(1)*-0.7,
                                      constraint=lambda x: tf.clip_by_value(x, -10, 20), trainable=True)
         return True
 

@@ -79,6 +79,7 @@ class Trainer:
     def reset(self):
         self.__init__()
 
+    # region Environment Communication
     def connect_to_unity_environment(self, environment_path=None):
         self.engine_configuration_channel = EngineConfigurationChannel()
         self.curriculum_channel_task_info = CurriculumSideChannelTaskInfo()
@@ -88,13 +89,15 @@ class Trainer:
                                                    self.curriculum_channel_task_info])
         self.env.reset()
 
-    def connect_to_gym_environment(self):
-        self.env = gym.make(self.environment_selection)
-        self.env.reset()
-
     def set_unity_parameters(self, **kwargs):
         self.engine_configuration_channel.set_configuration_parameters(**kwargs)
 
+    def connect_to_gym_environment(self):
+        self.env = gym.make(self.environment_selection)
+        self.env.reset()
+    # endregion
+
+    # region Configuration Acquirement
     def get_environment_configuration(self):
         assert self.env, "The trainer has not been connected to an Unity environment yet."
         self.behavior_name = AgentInterface.get_behavior_name(self.env)
@@ -110,42 +113,16 @@ class Trainer:
                                           "AgentNumber": agent_number}
         return self.environment_configuration
 
-    def parse_training_parameters(self, parameter_path, parameter_dict=None):
-        with open(parameter_path) as file:
-            trainer_configuration = yaml.safe_load(file)
-        if parameter_dict:
-            self.trainer_configuration = trainer_configuration[parameter_dict]
-        else:
-            return [key for key, val in trainer_configuration.items()]
-        return self.trainer_configuration
-
-    def delete_training_configuration(self, parameter_path, parameter_dict):
-        with open(parameter_path) as file:
-            trainer_configuration = yaml.safe_load(file)
-            del trainer_configuration[parameter_dict]
-        with open(parameter_path, 'w') as file:
-            yaml.safe_dump(trainer_configuration, file, indent=4)
-
-    def save_training_parameters(self, parameter_path, parameter_dict):
-        with open(parameter_path) as file:
-            trainer_configuration = yaml.safe_load(file)
-            trainer_configuration[parameter_dict] = self.trainer_configuration
-        with open(parameter_path, 'w') as file:
-            yaml.safe_dump(trainer_configuration, file, indent=4)
-        return True
-
     def get_agent_configuration(self):
         self.agent_configuration = Agent.get_config()
         return self.agent_configuration
 
-    def boost_exploration(self):
-        if not self.agent.boost_exploration():
-            self.exploration_algorithm.boost_exploration()
-
     def get_exploration_configuration(self):
         self.exploration_configuration = ExplorationAlgorithm.get_config()
         return self.exploration_configuration
+    # endregion
 
+    # region Algorithm Choice
     def change_interface(self, interface):
         global AgentInterface
         if interface == "MLAgentsV18":
@@ -215,7 +192,9 @@ class Trainer:
             from ..curriculum_strategies.cross_fade_curriculum import CrossFadeCurriculum as CurriculumStrategy
         else:
             raise ValueError("There is no {} curriculum strategy.".format(curriculum_strategy))
+    # endregion
 
+    # region Validation
     def validate_trainer_configuration(self):
         return Agent.validate_config(self.trainer_configuration,
                                      self.agent_configuration,
@@ -223,7 +202,9 @@ class Trainer:
 
     def validate_action_space(self):
         return Agent.validate_action_space(self.agent_configuration, self.environment_configuration)
+    # endregion
 
+    # region Instantiation
     def instantiate_agent(self, mode, model_path=None):
         self.agent = Agent(mode,
                            learning_parameters=self.trainer_configuration,
@@ -250,9 +231,6 @@ class Trainer:
         self.environment_configuration["ObservationShapes"] = \
             self.preprocessing_algorithm.get_output_shapes(self.environment_configuration)
 
-    def get_elapsed_training_time(self):
-        return self.logger.get_elapsed_time()
-
     def instantiate_replay_buffer(self):
         if self.agent_configuration["ReplayBuffer"] == "memory":
             self.replay_buffer = ReplayBuffer(capacity=self.trainer_configuration["ReplayCapacity"],
@@ -278,12 +256,47 @@ class Trainer:
 
     def instantiate_curriculum_strategy(self):
         self.curriculum_strategy = CurriculumStrategy()
+    # endregion
+
+    # region Misc
+    def get_elapsed_training_time(self):
+        return self.logger.get_elapsed_time()
 
     def save_agent_models(self, training_step):
         self.agent.save_checkpoint(os.path.join("training/summaries", self.logging_name),
                                    self.logger.best_running_average_reward,
                                    training_step, save_all_models=self.save_all_models)
 
+    def boost_exploration(self):
+        if not self.agent.boost_exploration():
+            self.exploration_algorithm.boost_exploration()
+
+    def parse_training_parameters(self, parameter_path, parameter_dict=None):
+        with open(parameter_path) as file:
+            trainer_configuration = yaml.safe_load(file)
+        if parameter_dict:
+            self.trainer_configuration = trainer_configuration[parameter_dict]
+        else:
+            return [key for key, val in trainer_configuration.items()]
+        return self.trainer_configuration
+
+    def delete_training_configuration(self, parameter_path, parameter_dict):
+        with open(parameter_path) as file:
+            trainer_configuration = yaml.safe_load(file)
+            del trainer_configuration[parameter_dict]
+        with open(parameter_path, 'w') as file:
+            yaml.safe_dump(trainer_configuration, file, indent=4)
+
+    def save_training_parameters(self, parameter_path, parameter_dict):
+        with open(parameter_path) as file:
+            trainer_configuration = yaml.safe_load(file)
+            trainer_configuration[parameter_dict] = self.trainer_configuration
+        with open(parameter_path, 'w') as file:
+            yaml.safe_dump(trainer_configuration, file, indent=4)
+        return True
+    # endregion
+
+    # region Environment Interaction
     def training_loop_generator(self):
         training_step = 0
         training_metrics = {}
@@ -318,18 +331,19 @@ class Trainer:
 
             # Train the agent if enough samples have been collected
             if self.replay_buffer.check_training_condition(self.trainer_configuration):
-                # Some exploration algorithms modify samples from the replay buffer
-                if self.exploration_algorithm.calculate_intrinsic_reward(self.replay_buffer):
-                    self.replay_buffer.new_unmodified_samples = 0
                 # Gives the ability to work with a prioritized replay buffer
                 self.replay_buffer.update_parameters(training_step)
                 # Obtain replay buffer or trajectory samples
                 samples, indices = self.replay_buffer.sample(self.trainer_configuration.get("BatchSize"))
+                # Alter the sample rewards by intrinsic motivation
                 samples = self.exploration_algorithm.get_intrinsic_reward(samples)
                 # Train the agent
                 training_metrics, sample_errors, training_step = self.agent.learn(samples)
+                # Update Replay Buffer
                 self.replay_buffer.update_priorities(indices, sample_errors)
-                self.exploration_algorithm.learning_step()
+                # Update Exploration Algorithm
+                self.exploration_algorithm.learning_step(samples)
+
                 # Log training results to Tensorboard and console
                 if training_step % self.logging_frequency == 0:
                     self.logger.log_dict(training_metrics, training_step)
@@ -474,6 +488,7 @@ class Trainer:
                 AgentInterface.step_action(self.env, self.behavior_name, actions)
             # 7. Obtain observation from the environment
             decision_steps, terminal_steps = AgentInterface.get_steps(self.env, self.behavior_name)
+    # endregion
 
 
 def main():

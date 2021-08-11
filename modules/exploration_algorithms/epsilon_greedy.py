@@ -51,7 +51,7 @@ class EpsilonGreedy(ExplorationAlgorithm):
             return True
         return False
 
-    def learning_step(self):
+    def learning_step(self, replay_batch):
         self.training_step += 1
         if self.epsilon >= self.epsilon_min and not self.step_down:
             self.epsilon *= self.epsilon_decay

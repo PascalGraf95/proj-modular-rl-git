@@ -11,7 +11,7 @@ class CrossFadeCurriculum(CurriculumStrategy):
         self.transition_episodes = 800
         self.temporary_task_level = 0
 
-    def check_task_level_change_condition(self, episode_reward_memory, episodes_played_memory):
+    def check_task_level_change_condition(self, episode_reward_memory, episodes_played_memory, force=False):
         if self.task_level > 0:
             self.temporary_task_level = self.task_level
 
@@ -21,10 +21,10 @@ class CrossFadeCurriculum(CurriculumStrategy):
             self.curriculum_sidechannel.send_current_task(task_level=self.temporary_task_level)
 
         self.update_average_reward(episode_reward_memory)
-        if self.remembering_probability < 0.01:
-            if episodes_played_memory - self.last_level_transition > self.average_episodes*3:
-                if self.task_level < self.number_of_tasks-1:
-                    if self.average_reward >= self.transition_value:
+        if self.remembering_probability < 0.01 or force:
+            if episodes_played_memory - self.last_level_transition > self.average_episodes*3 or force:
+                if self.task_level < self.number_of_tasks-1 or force:
+                    if self.average_reward >= self.transition_value or force:
                         self.curriculum_sidechannel.send_current_task(task_level=self.task_level+1)
                         self.last_level_transition = episodes_played_memory
                         self.curriculum_sidechannel.unity_responded = False

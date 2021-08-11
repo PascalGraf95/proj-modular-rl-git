@@ -38,7 +38,6 @@ class ReplayBuffer:
 
         # New Sample and Trajectory Counters
         self.new_training_samples = 0
-        self.new_unmodified_samples = 0
         self.collected_trajectories = 0
 
         # TEST: Prioritized Experience Replay
@@ -165,7 +164,6 @@ class ReplayBuffer:
             self.prioritized_deque.append(prioritized_experience(priority, probability))
         self.buffer.append({"state": s, "action": a, "reward": r, "next_state": next_s, "done": done})
         self.new_training_samples += 1
-        self.new_unmodified_samples += 1
 
     def check_training_condition(self, trainer_configuration):
         if self.mode == "memory":
@@ -204,14 +202,14 @@ class ReplayBuffer:
                     if self.prio_update >= self.prioritized_update_frequency:
                         self.prio_update = 0
                     if self.prio_update == 0:
-                        self.sampled_indices = np.random.choice(len(self.buffer) - self.new_unmodified_samples,
+                        self.sampled_indices = np.random.choice(len(self.buffer),
                                                                 batch_size*self.prioritized_update_frequency,
                                                                 p=[p.probability for p in self.prioritized_deque],
                                                                 replace=True)
                     indices = self.sampled_indices[self.prio_update*batch_size: (self.prio_update+1)*batch_size]
                     self.prio_update += 1
                 else:
-                    indices = np.random.choice(len(self.buffer) - self.new_unmodified_samples, batch_size, replace=False)
+                    indices = np.random.choice(len(self.buffer), batch_size, replace=False)
                 replay_batch = [self.buffer[idx] for idx in indices]
                 self.new_training_samples = 0
             else:

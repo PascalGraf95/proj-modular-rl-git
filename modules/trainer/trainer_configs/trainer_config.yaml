@@ -196,41 +196,36 @@ sac:
     ClipGrad: 10.0
     Episodes: 1000000
     ExplorationParameters:
-        BatchSize: 128
-        Epsilon: 0.7
-        EpsilonDecay: 0.999
-        EpsilonMin: 0.0
-        FeatureSpaceSize: 6
-        ForwardModelLearningRate: 0.001
-        InverseModelLearningRate: 0.001
-        ScalingFactor: 0.005
-        StepDown: 100
+        FeatureSpaceSize: 25
+        LearningRate: 1.0e-3
+        CuriosityScalingFactor: 0.1
+        ForwardLossWeight: 0.2
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: 0
-    NSteps: 4
+    LogAlpha: 0.0
+    NSteps: 5
     NetworkParameters:
-    -   Filters: 64
-        Units: 64
+    -   Filters: 128
+        Units: 128
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 64
-        Units: 64
+    -   Filters: 128
+        Units: 128
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 64
-        Units: 64
+    -   Filters: 128
+        Units: 128
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: false
     ReplayCapacity: 100000
-    ReplayMinSize: 10000
+    ReplayMinSize: 2000
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
     TrainingDescription: SAC
-    TrainingID: SAC_RobotGrabbingCrossFade
+    TrainingID: SAC_RobotGrabbing_CrossFadeCurriculum_SemanticSegmentation_ICM
     TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3

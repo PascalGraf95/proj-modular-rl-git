@@ -35,7 +35,7 @@ class ExplorationAlgorithm:
     def get_intrinsic_reward(self, replay_batch):
         return replay_batch
 
-    def learning_step(self):
+    def learning_step(self, replay_batch):
         return
 
     def prevent_checkpoint(self):
