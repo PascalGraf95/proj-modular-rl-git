@@ -1,18 +1,10 @@
 #!/usr/bin/env python
 
-"""
-The Trainer connects an Unity environment to the learning python agent utilizing the Unity Python API.
-Furthermore, it initiates and manages the training procedure.
-
-Created by Pascal Graf
-Last edited 09.04.2021
-"""
-
 from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
 from ..sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
-from ..misc.replay_buffer import ReplayBuffer
-from ..misc.logger import Logger
+from ..misc.replay_buffer import FIFOBuffer
+from ..misc.logger import GlobalLogger
 import gym
 import tensorflow as tf
 
@@ -30,156 +22,100 @@ import collections
 
 
 class Trainer:
+    """ Modular Reinforcement Learning© Trainer-class
+    This base class contains all the relevant functions to acquire information from the environment and other modules
+    so that agents can be constructed and algorithms can be adjusted accordingly.
+    Furthermore, this class controls the training and testing loop and validates the given parameters.
+    """
+
     def __init__(self):
-        # Config
+        # Trainer Configuration
         self.config_key = ""
         self.trainer_configuration = None
+
+        # Logger
+        self.global_logger = None
         self.logging_name = None
+
         # Environment
         self.env = None
         self.engine_configuration_channel = None
         self.environment_configuration = None
         self.environment_selection = None
+
         # Interface
         self.connect = None
+
         # Agent
-        self.agent = None
+        self.actors = []
+        self.learner = None
         self.agent_configuration = None
         self.behavior_name = None
         self.model_path = None
         self.save_all_models = False
         self.remove_old_checkpoints = False
+
         # Exploration Algorithm
         self.exploration_configuration = None
         self.exploration_algorithm = None
+
         # Curriculum Learning Strategy
-        self.curriculum_strategy = None
-        self.last_debug_message = 0
+        self.global_curriculum_strategy = None
+        self.curriculum_channel_task_info = None
+
         # Preprocessing Algorithm
         self.preprocessing_algorithm = None
-        # Initiation Progress
-        self.initiation_progress = 0
-        # Logger
-        self.logger = None
+
         # ReplayBuffer
-        self.replay_buffer = None
-        self.prediction_error_based = False
+        self.global_buffer = None
+
         # Training Loop
         self.logging_frequency = 100
         self.training_loop = self.training_loop_generator()
         self.testing_loop = self.testing_loop_generator()
+        self.actor_playing_generator = None
+
         # Testing
         self.test_frequency = 0
         self.test_episodes = 10
         self.played_test_episodes = 0
         self.test_flag = False
-        # Curriculum SideChannel
-        self.curriculum_channel_task_info = None
 
-    def reset(self):
-        self.__init__()
-
-    # region Environment Communication
-    def connect_to_unity_environment(self, environment_path=None):
-        self.engine_configuration_channel = EngineConfigurationChannel()
-        self.curriculum_channel_task_info = CurriculumSideChannelTaskInfo()
-        self.curriculum_strategy.register_side_channels(self.curriculum_channel_task_info)
-        self.env = UnityEnvironment(file_name=environment_path, base_port=5004,
-                                    side_channels=[self.engine_configuration_channel,
-                                                   self.curriculum_channel_task_info])
-        self.env.reset()
-
-    def set_unity_parameters(self, **kwargs):
-        self.engine_configuration_channel.set_configuration_parameters(**kwargs)
-
-    def connect_to_gym_environment(self):
-        self.env = gym.make(self.environment_selection)
-        self.env.reset()
-    # endregion
+        # Misc
+        self.last_debug_message = 0
 
     # region Configuration Acquirement
-    def get_environment_configuration(self):
-        assert self.env, "The trainer has not been connected to an Unity environment yet."
-        self.behavior_name = AgentInterface.get_behavior_name(self.env)
-        action_shape = AgentInterface.get_action_shape(self.env)
-        action_type = AgentInterface.get_action_type(self.env)
-        observation_shapes = AgentInterface.get_observation_shapes(self.env)
-        agent_number = AgentInterface.get_agent_number(self.env, self.behavior_name)
-
-        self.environment_configuration = {"BehaviorName": self.behavior_name,
-                                          "ActionShape": action_shape,
-                                          "ActionType": action_type,
-                                          "ObservationShapes": observation_shapes,
-                                          "AgentNumber": agent_number}
-        return self.environment_configuration
-
     def get_agent_configuration(self):
-        self.agent_configuration = Agent.get_config()
-        return self.agent_configuration
+        """Gather the parameters requested by the agent for the selected algorithm.
 
-    def get_exploration_configuration(self):
-        self.exploration_configuration = ExplorationAlgorithm.get_config()
-        return self.exploration_configuration
+        :return: None
+        """
+        self.agent_configuration = Learner.get_config()
+        return self.agent_configuration
     # endregion
 
     # region Algorithm Choice
-    def change_interface(self, interface):
-        global AgentInterface
-        if interface == "MLAgentsV18":
-            from ..interfaces.mlagents_v18 import MlAgentsV18Interface as AgentInterface
-            self.connect = self.connect_to_unity_environment
-        elif interface == "OpenAIGym":
-            from ..interfaces.openaigym import OpenAIGymInterface as AgentInterface
-            self.connect = self.connect_to_gym_environment
-        else:
-            raise ValueError("An interface for {} is not (yet) supported by this trainer. "
-                             "You can implement an interface yourself by utilizing the interface blueprint class "
-                             "in the respective folder. "
-                             "After that add the respective if condition here.".format(interface))
+    def select_training_algorithm(self, training_algorithm):
+        """ Imports the agent according to the algorithm choice.
 
-    def change_training_algorithm(self, training_algorithm):
-        global Agent
+        :param training_algorithm: str
+            Training algorithm name either "DQN", "DDPG", "TD3", "SAC"
+        :return:
+        """
+        global Actor, Learner
         if training_algorithm == "DQN":
             from ..training_algorithms.DQN import DQNAgent as Agent
-        elif training_algorithm == "A2C":
-            from ..training_algorithms.A2C import A2CAgent as Agent
         elif training_algorithm == "DDPG":
             from ..training_algorithms.DDPG import DDPGAgent as Agent
         elif training_algorithm == "TD3":
             from ..training_algorithms.TD3 import TD3Agent as Agent
         elif training_algorithm == "SAC":
-            from ..training_algorithms.SAC import SACAgent as Agent
-        elif training_algorithm == "PPO":
-            from ..training_algorithms.PPO import PPOAgent as Agent
+            from ..training_algorithms.SAC import SACActor as Actor
+            from ..training_algorithms.SAC import SACLearner as Learner
         else:
             raise ValueError("There is no {} training algorithm.".format(training_algorithm))
 
-    def change_exploration_algorithm(self, exploration_algorithm):
-        global ExplorationAlgorithm
-        if exploration_algorithm == "EpsilonGreedy":
-            from ..exploration_algorithms.epsilon_greedy import EpsilonGreedy as ExplorationAlgorithm
-        elif exploration_algorithm == "None":
-            from ..exploration_algorithms.exploration_algorithm_blueprint import ExplorationAlgorithm
-        elif exploration_algorithm == "PseudoCount":
-            from ..exploration_algorithms.pseudo_counts import PseudoCount as ExplorationAlgorithm
-        elif exploration_algorithm == "ICM":
-            from ..exploration_algorithms.intrinsic_curiosity_module import IntrinsicCuriosityModule as ExplorationAlgorithm
-        else:
-            raise ValueError("There is no {} exploration algorithm.".format(exploration_algorithm))
-
-    def change_preprocessing_algorithm(self, preprocessing_algorithm):
-        global PreprocessingAlgorithm
-
-        if preprocessing_algorithm == "None":
-            from ..preprocessing.preprocessing_blueprint import PreprocessingAlgorithm
-        elif preprocessing_algorithm == "SemanticSegmentation":
-            from ..preprocessing.semantic_segmentation import SemanticSegmentation as PreprocessingAlgorithm
-        elif preprocessing_algorithm == "ArUcoMarkerDetection":
-            from ..preprocessing.aruco_marker_detection import ArUcoMarkerDetection as PreprocessingAlgorithm
-        else:
-            raise ValueError("There is no {} preprocessing algorithm.".format(preprocessing_algorithm))
-
-    def change_curriculum_strategy(self, curriculum_strategy):
+    def select_curriculum_strategy(self, curriculum_strategy):
         global CurriculumStrategy
 
         if curriculum_strategy == "None":
@@ -196,82 +132,141 @@ class Trainer:
 
     # region Validation
     def validate_trainer_configuration(self):
-        return Agent.validate_config(self.trainer_configuration,
-                                     self.agent_configuration,
-                                     self.exploration_configuration)
+        """ Compare the content of the trainer configuration file with the parameter requests by the agent and the
+        exploration algorithm.
+
+        :return: Multiple lists with missing, obsolete and wrong type parameters. If all lists are empty, no
+        warning or errors will occur.
+        """
+        return Learner.validate_config(self.trainer_configuration,
+                                       self.agent_configuration,
+                                       self.exploration_configuration)
 
     def validate_action_space(self):
-        return Agent.validate_action_space(self.agent_configuration, self.environment_configuration)
+        """Validate that the action spaces of the selected algorithm and the connected environment are compatible.
+
+        :return: None
+        """
+        return Learner.validate_action_space(self.agent_configuration, self.environment_configuration)
     # endregion
 
     # region Instantiation
-    def instantiate_agent(self, mode, model_path=None):
-        self.agent = Agent(mode,
-                           learning_parameters=self.trainer_configuration,
-                           environment_configuration=self.environment_configuration,
-                           network_parameters=self.trainer_configuration.get("NetworkParameters"),
-                           model_path=model_path)
+    def instantiate_agent(self, mode, interface, preprocessing_algorithm, exploration_algorithm,
+                          environment_path=None, model_path=None, preprocessing_path=None):
+        """
 
-    def instantiate_logger(self, tensorboard=True):
+        :param exploration_algorithm:
+        :param interface:
+        :param preprocessing_algorithm:
+        :param preprocessing_path:
+        :param environment_path:
+        :param mode: str
+        :param model_path: str
+        :return:
+        """
+        # If the connection is established directly with the Unity Editor or if we are in testing mode, override
+        # the number of actors with 1.
+        if not environment_path or mode == "testing":
+            actor_num = 1
+            exploration_degree = [1.0]
+        else:
+            actor_num = self.trainer_configuration.get("ActorNum")
+            exploration_degree = np.linspace(0, 1, actor_num)
+
+        # Create actors and connect them to one environment each, also instantiate all the modules
+        for i in range(actor_num):
+            actor = Actor(mode,
+                          interface,
+                          preprocessing_algorithm,
+                          preprocessing_path,
+                          exploration_algorithm,
+                          environment_path)
+            actor.connect()
+
+            actor.instantiate_modules(self.trainer_configuration, exploration_degree[i])
+
+            if mode == "training":
+                actor.set_unity_parameters(time_scale=1000)
+            else:
+                actor.set_unity_parameters(time_scale=1)
+            self.actors.append(actor)
+
+        # Get the environment configuration from the first actor's env
+        self.environment_configuration = self.actors[0].get_environment_configuration()
+        self.exploration_configuration = self.actors[0].get_exploration_configuration()
+        self.agent_configuration = self.get_agent_configuration()
+
+        # Check if parameters in trainer configuration match the requested algorithm parameters
+        assert print_parameter_mismatches(*self.validate_trainer_configuration()), \
+            "ERROR: Execution failed due to parameter mismatch."
+
+        # Construct the learner
+        self.learner = Learner(mode, self.trainer_configuration,
+                               self.environment_configuration,
+                               self.trainer_configuration.get("NetworkParameters"),
+                               model_path)
+
+        # Give the initial actor network to each actor
+        for actor in self.actors:
+            actor.update_actor_network(self.learner.get_actor_network())
+
+        # Initialize the global buffer
+        self.global_buffer = FIFOBuffer(capacity=self.trainer_configuration["ReplayCapacity"],
+                                        agent_num=self.environment_configuration["AgentNumber"],
+                                        n_steps=self.trainer_configuration.get("NSteps"),
+                                        gamma=self.trainer_configuration["Gamma"],
+                                        store_trajectories=False,
+                                        prioritized=self.trainer_configuration["PrioritizedReplay"])
+
+        # Initialize the global curriculum strategy
+        self.global_curriculum_strategy = CurriculumStrategy()
+
+        # Initialize the global logger
         self.logging_name = \
             datetime.strftime(datetime.now(), '%y%m%d_%H%M%S_') + self.trainer_configuration['TrainingID']
-        self.logger = Logger(os.path.join("training/summaries", self.logging_name),
-                             agent_num=self.environment_configuration["AgentNumber"],
-                             mode=self.agent_configuration["ReplayBuffer"],
-                             tensorboard=tensorboard)
-        if tensorboard:
+        self.global_logger = GlobalLogger(os.path.join("training/summaries", self.logging_name),
+                                          actor_num=self.environment_configuration["AgentNumber"],
+                                          tensorboard=(mode=='training'))
+        if mode == 'training':
             with open(os.path.join("./training/summaries", self.logging_name, "training_parameters.yaml"), 'w') as file:
                 _ = yaml.dump(self.trainer_configuration, file)
                 _ = yaml.dump(self.environment_configuration, file)
                 _ = yaml.dump(self.exploration_configuration, file)
-        return self.logger
-
-    def instantiate_preprocessing_algorithm(self, model_path):
-        self.preprocessing_algorithm = PreprocessingAlgorithm(model_path)
-        self.environment_configuration["ObservationShapes"] = \
-            self.preprocessing_algorithm.get_output_shapes(self.environment_configuration)
-
-    def instantiate_replay_buffer(self):
-        if self.agent_configuration["ReplayBuffer"] == "memory":
-            self.replay_buffer = ReplayBuffer(capacity=self.trainer_configuration["ReplayCapacity"],
-                                              agent_num=self.environment_configuration["AgentNumber"],
-                                              n_steps=self.trainer_configuration.get("NSteps"),
-                                              gamma=self.trainer_configuration["Gamma"],
-                                              mode=self.agent_configuration["ReplayBuffer"],
-                                              prioritized=self.trainer_configuration["PrioritizedReplay"])
-        else:
-            self.replay_buffer = ReplayBuffer(capacity=10000,
-                                              agent_num=self.environment_configuration["AgentNumber"],
-                                              n_steps=1,
-                                              gamma=self.trainer_configuration["Gamma"],
-                                              mode=self.agent_configuration["ReplayBuffer"])
-        return self.replay_buffer
-
-    def instantiate_exploration_algorithm(self):
-        self.exploration_algorithm = ExplorationAlgorithm(self.environment_configuration["ActionShape"],
-                                                          self.environment_configuration["ObservationShapes"],
-                                                          self.environment_configuration["ActionType"],
-                                                          self.trainer_configuration["ExplorationParameters"])
-        return self.exploration_algorithm
-
-    def instantiate_curriculum_strategy(self):
-        self.curriculum_strategy = CurriculumStrategy()
     # endregion
 
     # region Misc
     def get_elapsed_training_time(self):
-        return self.logger.get_elapsed_time()
+        """
+
+        :return:
+        """
+        return self.global_logger.get_elapsed_time()
 
     def save_agent_models(self, training_step):
-        self.agent.save_checkpoint(os.path.join("training/summaries", self.logging_name),
-                                   self.logger.best_running_average_reward,
-                                   training_step, save_all_models=self.save_all_models)
+        """
+
+        :param training_step:
+        :return:
+        """
+        self.learner.save_checkpoint(os.path.join("training/summaries", self.logging_name),
+                                     self.global_logger.best_running_average_reward,
+                                     training_step, save_all_models=self.save_all_models)
 
     def boost_exploration(self):
-        if not self.agent.boost_exploration():
+        """
+
+        :return:
+        """
+        if not self.learner.boost_exploration():
             self.exploration_algorithm.boost_exploration()
 
     def parse_training_parameters(self, parameter_path, parameter_dict=None):
+        """
+
+        :param parameter_path:
+        :param parameter_dict:
+        :return:
+        """
         with open(parameter_path) as file:
             trainer_configuration = yaml.safe_load(file)
         if parameter_dict:
@@ -279,221 +274,150 @@ class Trainer:
         else:
             return [key for key, val in trainer_configuration.items()]
         return self.trainer_configuration
-
-    def delete_training_configuration(self, parameter_path, parameter_dict):
-        with open(parameter_path) as file:
-            trainer_configuration = yaml.safe_load(file)
-            del trainer_configuration[parameter_dict]
-        with open(parameter_path, 'w') as file:
-            yaml.safe_dump(trainer_configuration, file, indent=4)
-
-    def save_training_parameters(self, parameter_path, parameter_dict):
-        with open(parameter_path) as file:
-            trainer_configuration = yaml.safe_load(file)
-            trainer_configuration[parameter_dict] = self.trainer_configuration
-        with open(parameter_path, 'w') as file:
-            yaml.safe_dump(trainer_configuration, file, indent=4)
-        return True
     # endregion
 
     # region Environment Interaction
     def training_loop_generator(self):
-        training_step = 0
-        training_metrics = {}
+        """
 
-        # Check current Task properties
-        self.curriculum_strategy.update_task_properties()
+        :return:
+        """
+        # Update to the current task properties
+        self.global_curriculum_strategy.update_task_properties(*self.actors[0].get_task_properties)
 
-        AgentInterface.reset(self.env)
-        # 1. Obtain first environment observation
-        decision_steps, terminal_steps = AgentInterface.get_steps(self.env, self.behavior_name)
         while True:
-            decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
-                                                                                                  terminal_steps)
-            # 2. Choose an action either by exploration algorithm or agent
-            actions = self.exploration_algorithm.act(decision_steps)
-            if actions is None:
-                actions = self.agent.act(decision_steps.obs, mode="training")
+            for actor in self.actors:
+                # Play the next step in each episode
+                next(actor.playing_generator)
+                # If the task level changed try to get new task information from the environment
+                if not self.global_curriculum_strategy.unity_responded:
+                    unity_responded, task_properties = actor.get_task_properties()
+                    # If the retrieved information match the target level information update the global curriculum
+                    if task_properties[1] == actor.target_task_level:
+                        self.global_curriculum_strategy.update_task_properties(unity_responded, task_properties)
 
-            # 3. Add new Observations to Replay Buffer
-            self.replay_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
-                                             terminal_steps.agent_id, add_to_done=self.test_flag,
-                                             step_type="terminal")
-            self.replay_buffer.add_new_steps(decision_steps.obs, decision_steps.reward,
-                                             decision_steps.agent_id, add_to_done=self.test_flag,
-                                             actions=actions, step_type="decision")
+            for actor in self.actors:
+                if actor.network_update_requested:
+                    actor.update_actor_network(self.learner.get_actor_network())
 
-            # 4. Track Rewards
-            self.logger.track_episode(terminal_steps.reward, terminal_steps.agent_id, add_to_done=self.test_flag,
-                                      step_type="terminal")
-            self.logger.track_episode(decision_steps.reward, decision_steps.agent_id, add_to_done=self.test_flag,
-                                      step_type="decision")
+                if actor.minimum_capacity_reached:
+                    self.global_buffer.append_list(actor.get_new_samples()[0])
+                    self.global_logger.append(actor.get_new_stats())
 
-            # Train the agent if enough samples have been collected
-            if self.replay_buffer.check_training_condition(self.trainer_configuration):
-                # Gives the ability to work with a prioritized replay buffer
-                self.replay_buffer.update_parameters(training_step)
-                # Obtain replay buffer or trajectory samples
-                samples, indices = self.replay_buffer.sample(self.trainer_configuration.get("BatchSize"))
-                # Alter the sample rewards by intrinsic motivation
-                samples = self.exploration_algorithm.get_intrinsic_reward(samples)
-                # Train the agent
-                training_metrics, sample_errors, training_step = self.agent.learn(samples)
-                # Update Replay Buffer
-                self.replay_buffer.update_priorities(indices, sample_errors)
-                # Update Exploration Algorithm
-                self.exploration_algorithm.learning_step(samples)
+            # Check if enough new samples have been collected and the minimum capacity is reached
+            if self.global_buffer.check_training_condition(self.trainer_configuration):
+                # Sample a new batch of transitions from the global replay buffer
+                samples, indices = self.global_buffer.sample(self.trainer_configuration.get("BatchSize"))
+                # Train the learner with the batch
+                training_metrics, sample_errors, training_step = self.learner.learn(samples)
+                # Train the actors exploration algorithm with the same batch
+                for actor in self.actors:
+                    actor.exploration_learning_step(samples)
+                # Get the mean episode length + reward from the best performing actor
+                mean_episode_length, mean_episode_reward, episodes = self.global_logger.get_episode_stats()
+                # Check if either the reward threshold for a level change has been reached or if the curriculum
+                # strategy transitions between different levels
+                if self.global_curriculum_strategy.check_task_level_change_condition(
+                        self.global_logger.get_current_max_stats(self.global_curriculum_strategy.average_episodes)) or \
+                        self.global_curriculum_strategy.level_transition:
+                    target_task_level = self.global_curriculum_strategy.get_new_task_level()
+                    for actor in self.actors:
+                        actor.set_new_target_task_level(target_task_level)
+                # Check if a new best reward has been achieved and save the models
+                if self.global_logger.check_checkpoint_condition():
+                    self.save_agent_models(training_step)
+                    if self.remove_old_checkpoints:
+                        self.global_logger.remove_old_checkpoints()
 
                 # Log training results to Tensorboard and console
                 if training_step % self.logging_frequency == 0:
-                    self.logger.log_dict(training_metrics, training_step)
-                    self.logger.log_dict(self.exploration_algorithm.get_logs(), training_step)
-
-                if self.test_frequency and training_step % self.test_frequency == 0:
-                    self.test_flag = True
-
-            mean_episode_length, mean_episode_reward, episodes, new_episodes = \
-                self.logger.get_episode_stats(track_stats=True)
-
-            if mean_episode_length or mean_episode_reward:
-                if self.curriculum_strategy.check_task_level_change_condition(self.logger.episode_reward_memory,
-                                                                              self.logger.episodes_played_memory):
-                    self.save_agent_models(training_step)
-                    self.logger.best_running_average_reward = -10000
-                    self.agent.boost_exploration()
-                    print("Reset Average Reward")
-                task_level, average_episodes, average_reward = self.curriculum_strategy.get_logs()
-                # Log episode results to Tensorboard
-                self.logger.log_scalar("Performance/TrainingEpisodeLength", mean_episode_length, episodes)
-                self.logger.log_scalar("Performance/TrainingReward", mean_episode_reward, episodes)
-                self.logger.log_scalar("Performance/Tasklevel", task_level, episodes)
+                    self.global_logger.log_dict(training_metrics, training_step)
+                    self.global_logger.log_dict(self.exploration_algorithm.get_logs(), training_step)
 
                 yield mean_episode_length, mean_episode_reward, episodes, training_step, \
-                    training_metrics.get("Losses/Loss"), average_episodes, task_level, average_reward
-
-                if not self.exploration_algorithm.prevent_checkpoint():
-                    if self.logger.check_early_stopping_condition():
-                        self.save_agent_models(training_step)
-                        if self.remove_old_checkpoints:
-                            self.logger.remove_old_checkpoints()
-                        print("Early stopping!")
-                        break
-
-                    if self.logger.check_checkpoint_condition():
-                        self.save_agent_models(training_step)
-                        if self.remove_old_checkpoints:
-                            self.logger.remove_old_checkpoints()
-                        print("New checkpoint saved!")
-
-                if episodes >= self.trainer_configuration.get("Episodes"):
-                    if self.remove_old_checkpoints:
-                        self.logger.remove_old_checkpoints()
-                    break
-
-            # Check for environment reset condition
-            if self.replay_buffer.check_reset_condition():
-                if self.test_flag:
-                    self.test_flag = False
-                    self.play_test_episodes()
-
-                # 6a. Reset the environment
-                AgentInterface.reset(self.env)
-                self.logger.done_indices.clear()
-                self.replay_buffer.done_indices.clear()
-
-            else:
-                # 6b. Take a step in the environment
-                AgentInterface.step_action(self.env, self.behavior_name, actions)
-            # 7. Obtain observation from the environment
-            decision_steps, terminal_steps = AgentInterface.get_steps(self.env, self.behavior_name)
-
-    def play_test_episodes(self):
-        AgentInterface.reset(self.env)
-        self.logger.clear_buffer()
-        self.replay_buffer.done_indices.clear()
-        decision_steps, terminal_steps = AgentInterface.get_steps(self.env, self.behavior_name)
-        test_episodes = 0
-
-        while True:
-            # 2. Choose an action either by exploration algorithm or agent
-            actions = self.agent.act(decision_steps.obs, mode="testing")
-
-            # 3. Track Rewards
-            self.logger.track_episode(terminal_steps.reward, terminal_steps.agent_id,
-                                      step_type="terminal")
-            self.logger.track_episode(decision_steps.reward, decision_steps.agent_id,
-                                      step_type="decision")
-
-            mean_episode_length, mean_episode_reward, episodes, new_episodes = \
-                self.logger.get_episode_stats(track_stats=False)
-            if mean_episode_length:
-                self.played_test_episodes += new_episodes
-                self.logger.log_scalar("Performance/TestEpisodeLength", mean_episode_length, self.played_test_episodes)
-                self.logger.log_scalar("Performance/TestReward", mean_episode_reward, self.played_test_episodes)
-                test_episodes += new_episodes
-            if test_episodes >= self.test_episodes:
-                self.logger.clear_buffer()
-                return
-
-            if self.replay_buffer.check_reset_condition():
-                # 6a. Reset the environment
-                AgentInterface.reset(self.env)
-            else:
-                AgentInterface.step_action(self.env, self.behavior_name, actions)
-            # 7. Obtain observation from the environment
-            decision_steps, terminal_steps = AgentInterface.get_steps(self.env, self.behavior_name)
+                    training_metrics.get("Losses/Loss"), self.global_curriculum_strategy.return_task_properties()
 
     def testing_loop_generator(self):
-        AgentInterface.reset(self.env)
-        # 1. Obtain first environment observation
-        decision_steps, terminal_steps = AgentInterface.get_steps(self.env, self.behavior_name)
+        """
 
+        :return:
+        """
         while True:
-            decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
-                                                                                                  terminal_steps)
-            if self.environment_selection:
-                self.env.render()
-            # 2. Choose an action either by exploration algorithm or agent
-            actions = self.agent.act(decision_steps.obs, mode="testing")
+            for actor in self.actors:
+                # Play the next step in each episode
+                next(actor.playing_generator)
+                # If the task level changed try to get new task information from the environment
 
-            # 4. Add new Observations to Replay Buffer
-            self.replay_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
-                                             terminal_steps.agent_id,
-                                             step_type="terminal")
-            self.replay_buffer.add_new_steps(decision_steps.obs, decision_steps.reward,
-                                             decision_steps.agent_id,
-                                             actions=actions, step_type="decision")
+            for actor in self.actors:
+                if actor.network_update_requested:
+                    actor.update_actor_network(self.learner.get_actor_network())
 
-            # 5. Track Rewards
-            self.logger.track_episode(terminal_steps.reward, terminal_steps.agent_id,
-                                      step_type="terminal")
-            self.logger.track_episode(decision_steps.reward, decision_steps.agent_id,
-                                      step_type="decision")
+                if actor.minimum_capacity_reached:
+                    self.global_buffer.append_list(actor.get_new_samples()[0])
+                    self.global_logger.append(*actor.get_new_stats())
 
-            mean_episode_length, mean_episode_reward, episodes, new_episodes = \
-                self.logger.get_episode_stats(track_stats=True)
-            if mean_episode_length:
-                yield mean_episode_length, mean_episode_reward, episodes, 0, 0, 0, 0, 0
-                if episodes >= self.trainer_configuration.get("Episodes"):
-                    break
+            # Get the mean episode length + reward from the best performing actor
+            mean_episode_length, mean_episode_reward, episodes = self.global_logger.get_episode_stats()
 
-            # Check for environment reset condition
-            if self.replay_buffer.check_reset_condition():
-                # 6. Reset the environment
-                AgentInterface.reset(self.env)
-                self.logger.done_indices.clear()
-                self.replay_buffer.done_indices.clear()
-            else:
-                # 6. Take a step in the environment
-                AgentInterface.step_action(self.env, self.behavior_name, actions)
-            # 7. Obtain observation from the environment
-            decision_steps, terminal_steps = AgentInterface.get_steps(self.env, self.behavior_name)
+            yield mean_episode_length, mean_episode_reward, episodes, 0, 0, \
+                  self.global_curriculum_strategy.return_task_properties()
     # endregion
 
 
-def main():
-    pass
+def print_parameter_mismatches(mis_par, obs_par, mis_net_par, obs_net_par, mis_expl_par, obs_expl_par,
+                               wro_type, wro_type_net, wro_type_expl):
+    """Prints the missing and obsolete parameters from the trainer configuration file for the agent, exploration
+    algorithm and network construction.
 
+    :param mis_par: Parameters that are requested by the agent but missing in the trainer configuration file.
+    :param obs_par: Parameters that in the trainer configuration file.
+    :param mis_net_par: Parameters that are requested for the network construction
+    but missing in the trainer configuration file .
+    :param obs_net_par: Parameters that in the trainer configuration file.
+    :param mis_expl_par: Parameters that are requested by the agent but missing in the trainer configuration file.
+    :param obs_expl_par: Parameters that in the trainer configuration file.
+    :param wro_type: Parameters that are of the wrong data type in the trainer configuration file.
+    :param wro_type_net: Parameters that are of the wrong data type in the trainer configuration file.
+    :param wro_type_expl: Parameters that are of the wrong data type in the trainer configuration file.
+    :return:
+    """
+    successful = True
+    if len(mis_par):
+        successful = False
+        print("ERROR: The following parameters which are requested by the agent "
+              "are not defined in the trainer configuration: {}".format(", ".join(mis_par)))
+    if len(obs_par):
+        print("WARNING: The following parameters are not requested by the agent "
+              "but are defined in the trainer configuration: {}".format(", ".join(obs_par)))
 
-if __name__ == '__main__':
-    main()
+    if len(mis_net_par):
+        successful = False
+        print("ERROR: The following network parameters which are requested by the agent "
+              "are not defined in the trainer configuration: {}".format(", ".join(mis_net_par)))
+    if len(obs_net_par):
+        print("WARNING: The following network parameters are not requested by the agent "
+              "but are defined in the trainer configuration: {}".format(", ".join(obs_net_par)))
+
+    if len(mis_expl_par):
+        successful = False
+        print("ERROR: The following exploration parameters which are requested by the algorithm "
+              "are not defined in the trainer configuration: {}".format(", ".join(mis_expl_par)))
+    if len(obs_expl_par):
+        print("WARNING: The following exploration parameters are not requested by the algorithm "
+              "but are defined in the trainer configuration: {}".format(", ".join(obs_expl_par)))
+
+    if len(wro_type):
+        successful = False
+        print("ERROR: The following training parameters do not match the "
+              "data types requested by the agent: {}".format(", ".join(wro_type)))
+
+    if len(wro_type_net):
+        successful = False
+        print("ERROR: The following network parameters do not match the data types requested by "
+              "the agent network: {}".format(", ".join(wro_type_net)))
+
+    if len(wro_type_net):
+        successful = False
+        print("ERROR: The following exploration parameters do not match the data types requested by "
+              "the algorithm: {}".format(", ".join(wro_type_expl)))
+    return successful

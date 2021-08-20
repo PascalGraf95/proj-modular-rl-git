@@ -1,5 +1,6 @@
 import numpy as np
-from ..misc.replay_buffer import ReplayBuffer
+from ..misc.replay_buffer import FIFOBuffer
+
 
 class ExplorationAlgorithm:
     Name = "None"
@@ -42,5 +43,5 @@ class ExplorationAlgorithm:
         return False
 
     @staticmethod
-    def calculate_intrinsic_reward(replay_buffer: ReplayBuffer):
+    def calculate_intrinsic_reward(replay_buffer: FIFOBuffer):
         return True

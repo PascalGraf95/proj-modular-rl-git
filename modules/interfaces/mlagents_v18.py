@@ -7,6 +7,12 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 
 class MlAgentsV18Interface:
     @staticmethod
+    def connect(environment_path: str, side_channels: list):
+        env = UnityEnvironment(file_name=environment_path, side_channels=side_channels)
+        env.reset()
+        return env
+
+    @staticmethod
     def get_behavior_name(env: UnityEnvironment):
         spec = env.behavior_specs
         assert len(spec.keys()) == 1, "This trainer currently only supports environments with one behavior."

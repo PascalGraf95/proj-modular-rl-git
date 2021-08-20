@@ -1,5 +1,5 @@
 import numpy as np
-from ..misc.replay_buffer import ReplayBuffer
+from ..misc.replay_buffer import FIFOBuffer
 from .exploration_algorithm_blueprint import ExplorationAlgorithm
 from tensorflow.keras.losses import MeanSquaredError
 from tensorflow.keras.optimizers import Adam, SGD
@@ -29,7 +29,7 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
         self.observation_shapes = observation_shapes
 
         self.feature_space_size = parameters["FeatureSpaceSize"]
-        self.reward_scaling_factor = parameters["CuriosityScalingFactor"]
+        self.reward_scaling_factor = parameters["CuriosityScalingFactor"]*parameters["ExplorationDegree"]
         self.forward_loss_weight = parameters["ForwardLossWeight"]
         self.mse = MeanSquaredError()
         self.optimizer = Adam(parameters["LearningRate"])

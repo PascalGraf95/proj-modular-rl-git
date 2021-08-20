@@ -28,6 +28,10 @@ class OpenAIGymInterface:
     action_space = ""
 
     @staticmethod
+    def connect(environment_path):
+        return gym.make(environment_path)
+
+    @staticmethod
     def get_behavior_name(env: gym.Env):
         return None
 

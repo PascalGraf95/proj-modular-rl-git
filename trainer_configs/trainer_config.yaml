@@ -191,10 +191,8 @@ ppo:
     TrainingInterval: 1
     TrajectoryNum: 20
 sac:
-    ActorTrainingFreq: 1
     BatchSize: 128
     ClipGrad: 10.0
-    Episodes: 1000000
     ExplorationParameters:
         FeatureSpaceSize: 25
         LearningRate: 1.0e-3
@@ -204,7 +202,9 @@ sac:
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
     LogAlpha: 0.0
-    NSteps: 5
+    NSteps: 4
+    AdaptiveExploration: true
+    NetworkUpdateFrequency: 5000
     NetworkParameters:
     -   Filters: 128
         Units: 128
@@ -224,7 +224,6 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingDescription: SAC
     TrainingID: SAC_RobotGrabbing_CrossFadeCurriculum_SemanticSegmentation_ICM
     TrainingInterval: 1
 td3:
