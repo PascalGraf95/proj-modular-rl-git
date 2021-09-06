@@ -18,6 +18,7 @@ class EpsilonGreedy(ExplorationAlgorithm):
         self.action_shape = action_shape
         self.action_space = action_space
         self.epsilon = parameters["Epsilon"]*parameters["ExplorationDegree"]
+        print("Epsilon:", self.epsilon)
         self.epsilon_decay = parameters["EpsilonDecay"]
         self.epsilon_min = parameters["EpsilonMin"]
         self.step_down = parameters["StepDown"]

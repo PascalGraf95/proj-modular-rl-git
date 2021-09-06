@@ -83,6 +83,7 @@ class GlobalLogger:
         self.total_episodes_played = 0
         self.best_actor = 0
         self.average_rewards = [-10000 for i in range(self.actor_num)]
+        self.new_episodes = 0
 
         # The best running average over 30 episodes
         self.best_running_average_reward = -10000
@@ -101,14 +102,15 @@ class GlobalLogger:
         minutes, seconds = divmod(remainder, 60)
         return days, hours, minutes, seconds
 
-    def append(self, episode_rewards, episode_lengths, total_number_of_episodes, actor_idx=0):
+    def append(self, episode_lengths, episode_rewards, total_number_of_episodes, actor_idx=0):
+        self.new_episodes += len(episode_rewards)
         self.episode_reward_deque[actor_idx].extend(episode_rewards)
         self.episode_length_deque[actor_idx].extend(episode_lengths)
         self.episodes_played_per_actor[actor_idx] = total_number_of_episodes
         if self.tensorboard:
-            self.log_dict({"Performance/Rewards/Agent{:03d}Reward".format(actor_idx):
+            self.log_dict({"Reward/Agent{:03d}Reward".format(actor_idx):
                                self.episode_reward_deque[actor_idx][-1],
-                           "Performance/EpisodeLengths/Agent{:03d}Length".format(actor_idx):
+                           "EpisodeLength/Agent{:03d}EpisodeLength".format(actor_idx):
                                self.episode_length_deque[actor_idx][-1]}, total_number_of_episodes)
 
     def get_episode_stats(self):
@@ -116,6 +118,7 @@ class GlobalLogger:
         mean_reward = np.mean(self.average_rewards)
         mean_length = np.mean([np.mean(list(lengths)[-self.running_average_episodes:]) for lengths in self.episode_length_deque])
         self.total_episodes_played = np.sum(self.episodes_played_per_actor)
+        self.new_episodes = 0
 
         return mean_length, mean_reward, self.total_episodes_played
 

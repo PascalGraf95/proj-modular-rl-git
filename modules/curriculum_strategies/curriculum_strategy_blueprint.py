@@ -28,7 +28,7 @@ class CurriculumStrategy:
             self.task_level = task_properties[1]
             self.average_episodes = task_properties[2]
             self.transition_value = task_properties[3]
-            self.unity_responded = self.unity_responded
+            self.unity_responded = unity_responded
 
     def return_task_properties(self):
         return self.number_of_tasks, self.task_level, self.average_episodes, self.transition_value

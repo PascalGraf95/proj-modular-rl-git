@@ -32,16 +32,16 @@ def main():
 
     # Choose between "training", "testing" or "fastTesting
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
-    mode = "testing"
-    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\pretrained_weights\VectorGrabbingICM1.26"
+    mode = "training"
+    model_path = r""
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
     interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
-    environment_path = None  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
+    environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 
     # Choose from "None", "EpsilonGreedy" and "ICM"
-    exploration_algorithm = 'None'
+    exploration_algorithm = 'EpsilonGreedy'
 
     # Choose from "DQN", "DDPG", "TD3", "SAC"
     trainer.select_training_algorithm('SAC')
@@ -85,10 +85,10 @@ def main():
         # Print the latest training or testing stats to the console.
         if episodes - trainer.last_debug_message >= 10:
             trainer.last_debug_message = episodes
-            print("Played Episodes: {}, Training Steps: {}, Task Level: {:d}\n"
-                  "Average Episode Reward: {:.2f} (for the last {:d} Episodes)\n"
-                  "Elapsed Training Time: {:02d}:{:02d}:{:02d}:{:02d}".format(episodes,
-                                                                              training_step, 0, mean_episode_reward, 0,
+            print("Played Episodes: {}, Training Steps: {}, Task Level: {:d}/{:d}\n"
+                  "Average Episode Reward: {:.2f}/{:.2f} (for the last {:d} Episodes)\n"
+                  "Elapsed Training Time: {:02d}:{:02d}:{:02d}:{:02d}".format(episodes, training_step, task_properties[1], task_properties[0],
+                                                                              mean_episode_reward, task_properties[3], task_properties[2],
                                                                               *training_duration))
             print("--------------------------------------------------------------")
 

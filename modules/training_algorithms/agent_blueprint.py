@@ -5,7 +5,8 @@ from ..misc.replay_buffer import FIFOBuffer
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
 from ..sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
 from ..curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
-
+from mlagents_envs.environment import UnityEnvironment, ActionTuple
+import ray
 
 class Agent:
     # Static, algorithm specific Parameters
@@ -126,7 +127,7 @@ class Agent:
 
 
 class Actor:
-    def __init__(self, mode: str,
+    def __init__(self, port: int, mode: str,
                  interface: str,
                  preprocessing_algorithm: str,
                  preprocessing_path: str,
@@ -142,7 +143,6 @@ class Actor:
         self.environment = None
         self.environment_configuration = None
         self.environment_path = environment_path
-        self.connect = None
 
         # Local Buffer
         self.local_buffer = None
@@ -182,6 +182,10 @@ class Actor:
         # Mode
         self.mode = mode
         self.playing_generator = self.playing_loop()
+        self.port = port
+
+    def connect(self):
+        return
 
     def select_agent_interface(self, interface):
         global AgentInterface
@@ -229,7 +233,6 @@ class Actor:
         # First environment reset and step acquisition (steps contain states and rewards)
         AgentInterface.reset(self.environment)
         decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
-
         # Loop episodes until terminated
         while True:
             # Preprocess steps if an respective algorithm has been activated
@@ -322,8 +325,11 @@ class Actor:
     def connect_to_unity_environment(self):
         self.engine_configuration_channel = EngineConfigurationChannel()
         self.curriculum_side_channel = CurriculumSideChannelTaskInfo()
-        self.environment = AgentInterface.connect(self.environment_path, [self.engine_configuration_channel,
-                                                                          self.curriculum_side_channel])
+        self.environment = UnityEnvironment(file_name=self.environment_path,
+                                            side_channels=[self.engine_configuration_channel,
+                                                           self.curriculum_side_channel], base_port=self.port)
+        self.environment.reset()
+        return True
 
     def connect_to_gym_environment(self):
         self.environment = AgentInterface.connect(self.environment_path)
@@ -361,6 +367,7 @@ class Actor:
 
 class Learner:
     TrainingParameterSpace = {
+        'ActorNum': int,
         'NetworkUpdateFrequency': int,
         'TrainingID': str,
         'BatchSize': int,

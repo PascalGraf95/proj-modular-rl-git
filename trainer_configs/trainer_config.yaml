@@ -191,20 +191,21 @@ ppo:
     TrainingInterval: 1
     TrajectoryNum: 20
 sac:
-    BatchSize: 128
+    ActorNum: 1
+    BatchSize: 1024
     ClipGrad: 10.0
     ExplorationParameters:
-        FeatureSpaceSize: 25
-        LearningRate: 1.0e-3
-        CuriosityScalingFactor: 0.1
-        ForwardLossWeight: 0.2
+        Epsilon: 0.8
+        EpsilonDecay: 0.99
+        EpsilonMin: 0.01
+        StepDown: false
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
     LogAlpha: 0.0
     NSteps: 4
-    AdaptiveExploration: true
-    NetworkUpdateFrequency: 5000
+    AdaptiveExploration: false
+    NetworkUpdateFrequency: 1000
     NetworkParameters:
     -   Filters: 128
         Units: 128
@@ -219,12 +220,12 @@ sac:
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: false
-    ReplayCapacity: 100000
-    ReplayMinSize: 2000
+    ReplayCapacity: 1000000
+    ReplayMinSize: 1000
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingID: SAC_RobotGrabbing_CrossFadeCurriculum_SemanticSegmentation_ICM
+    TrainingID: SAC_RobotGrabbing
     TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3

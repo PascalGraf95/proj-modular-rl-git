@@ -109,9 +109,9 @@ class FIFOBuffer:
                         # Calculate the discounted reward for each value in the reward deque
                         discounted_reward = [r * g for r, g in zip(self.reward_deque[agent_id], self.gamma_list)]
                         # Add the experience to the temporal agent buffer
-                        self.temp_agent_buffer.append([self.state_deque[agent_id][0], self.action_deque[agent_id][0],
-                                                       np.sum(discounted_reward), self.state_deque[agent_id][-1],
-                                                       True])
+                        self.temp_agent_buffer[agent_id].append([self.state_deque[agent_id][0], self.action_deque[agent_id][0],
+                                                                 np.sum(discounted_reward), self.state_deque[agent_id][-1],
+                                                                 True])
                         # Append placeholder values to each deque
                         self.state_deque[agent_id].append(self.state_deque[agent_id][-1])
                         self.action_deque[agent_id].append(None)
@@ -125,7 +125,7 @@ class FIFOBuffer:
                 # Write the collected data to the actual replay buffer.
                 for experience in self.temp_agent_buffer[agent_id]:
                     self.append(*experience)
-                    self.temp_agent_buffer[idx].clear()
+                self.temp_agent_buffer[agent_id].clear()
                 self.collected_trajectories += 1
 
                 if self.store_trajectories or self.agent_num == 1:
@@ -135,9 +135,9 @@ class FIFOBuffer:
             if len(self.state_deque[agent_id]) == self.n_steps+1:
                 # Calculate the discounted reward for each value in the reward deque
                 discounted_reward = [r * g for r, g in zip(self.reward_deque[agent_id], self.gamma_list)]
-                self.temp_agent_buffer.append([self.state_deque[agent_id][0], self.action_deque[agent_id][0],
-                                               np.sum(discounted_reward), self.state_deque[agent_id][-1],
-                                               True])
+                self.temp_agent_buffer[agent_id].append([self.state_deque[agent_id][0], self.action_deque[agent_id][0],
+                                                         np.sum(discounted_reward), self.state_deque[agent_id][-1],
+                                                         True])
 
             # Write the collected data to the actual replay buffer if not storing whole trajectories.
             if not self.store_trajectories:
@@ -186,6 +186,7 @@ class FIFOBuffer:
 
     def append_list(self, samples):
         self.buffer.extend(samples)
+        self.new_training_samples += len(samples)
 
     def sample(self,
                batch_size: int,
@@ -213,9 +214,9 @@ class FIFOBuffer:
                 replay_batch = [self.buffer[-self.new_training_samples+idx] for idx in range(self.new_training_samples)]
         if reset_buffer:
             self.buffer.clear()
-            self.state_deque = [[] for x in range(self.agent_num)]
-            self.action_deque = [[] for x in range(self.agent_num)]
-            self.reward_deque = [[] for x in range(self.agent_num)]
+            self.state_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
+            self.action_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
+            self.reward_deque = [deque(maxlen=self.n_steps) for x in range(self.agent_num)]
 
         self.collected_trajectories = 0
         self.new_training_samples = 0

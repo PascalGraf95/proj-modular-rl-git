@@ -18,16 +18,18 @@ import os
 import math
 tfd = tfp.distributions
 global AgentInterface
+import ray
 
 
+@ray.remote
 class SACActor(Actor):
-    def __init__(self, mode: str,
+    def __init__(self, port: int, mode: str,
                  interface: str,
                  preprocessing_algorithm: str,
                  preprocessing_path: str,
                  exploration_algorithm: str,
                  environment_path: str = ""):
-        super().__init__(mode, interface, preprocessing_algorithm, preprocessing_path,
+        super().__init__(port, mode, interface, preprocessing_algorithm, preprocessing_path,
                          exploration_algorithm, environment_path)
 
     def act(self, states, mode="training"):
@@ -50,6 +52,7 @@ class SACActor(Actor):
         self.new_steps_taken = 0
 
 
+@ray.remote
 class SACLearner(Learner):
     # Static, algorithm specific Parameters
     TrainingParameterSpace = Learner.TrainingParameterSpace.copy()
@@ -137,7 +140,9 @@ class SACLearner(Learner):
         self.alpha = tf.exp(self.log_alpha).numpy()
 
     def get_actor_network(self):
-        return clone_model(self.actor_network)
+        actor_clone = clone_model(self.actor_network)
+        actor_clone.set_weights(self.actor_network.get_weights())
+        return actor_clone
 
     def build_network(self, network_parameters, environment_parameters):
         # Actor
@@ -252,9 +257,11 @@ class SACLearner(Learner):
                 if "Critic1" in file_name:
                     self.critic1 = load_model(os.path.join(path, file_name))
                     self.critic_target1 = clone_model(self.critic1)
+                    self.critic_target1.set_weights(self.critic1.get_weights())
                 elif "Critic2" in file_name:
                     self.critic2 = load_model(os.path.join(path, file_name))
                     self.critic_target2 = clone_model(self.critic2)
+                    self.critic_target2.set_weights(self.critic2.get_weights())
                 elif "Actor" in file_name:
                     self.actor_network = load_model(os.path.join(path, file_name))
             if not self.actor_network or not self.critic1 or not self.critic2:
