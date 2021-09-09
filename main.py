@@ -37,7 +37,7 @@ def main():
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
     interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
-    environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
+    environment_path = None #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 
     # Choose from "None", "EpsilonGreedy" and "ICM"
     exploration_algorithm = 'None'

@@ -47,10 +47,27 @@ class SACActor(Actor):
                 actions = tf.tanh(mean)
         return actions.numpy()
 
+    def get_sample_errors(self, samples):
+        state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+            = Learner.get_training_batch_from_replay_batch(samples, self.observation_shapes, self.action_shape)
+
+        # CRITIC TRAINING
+        next_actions = self.act(next_state_batch)
+        # Critic Target Predictions
+        critic_prediction = self.critic_network([*next_state_batch, next_actions])
+        critic_target = critic_prediction*(1-done_batch)
+
+        # Train Both Critic Networks
+        y = reward_batch + (self.gamma**self.n_steps) * critic_target
+        sample_errors = np.abs(y - self.critic_network([*state_batch, action_batch]))
+        return sample_errors
+
     def update_actor_network(self, network_weights):
-        self.actor_network.set_weights(network_weights)
+        self.actor_network.set_weights(network_weights[0])
+        self.critic_network.set_weights(network_weights[1])
         self.network_update_requested = False
         self.new_steps_taken = 0
+        print("NETWORK UPDATED")
 
     def get_exploration_logs(self, idx):
         return self.exploration_algorithm.get_logs(idx)
@@ -61,12 +78,23 @@ class SACActor(Actor):
         network_parameters[0]['Output'] = [environment_parameters.get('ActionShape'),
                                            environment_parameters.get('ActionShape')]
         network_parameters[0]['OutputActivation'] = [None, None]
-        network_parameters[0]['NetworkType'] = 'ActorCopy{}.'.format(idx)
+        network_parameters[0]['NetworkType'] = 'ActorCopy{}'.format(idx)
         network_parameters[0]['KernelInitializer'] = "RandomUniform"
+
+        # Critic1
+        network_parameters[1]['Input'] = [*environment_parameters.get('ObservationShapes'),
+                                          environment_parameters.get('ActionShape')]
+        network_parameters[1]['Output'] = [1]
+        network_parameters[1]['OutputActivation'] = [None]
+        network_parameters[1]['NetworkType'] = 'CriticCopy{}'.format(idx)
+        network_parameters[1]['TargetNetwork'] = False
+        network_parameters[1]['Vec2Img'] = False
+        network_parameters[1]['KernelInitializer'] = "RandomUniform"
 
         # Build
         with tf.device(self.device):
             self.actor_network = construct_network(network_parameters[0])
+            self.critic_network = construct_network(network_parameters[1])
         return True
 
 
@@ -167,7 +195,7 @@ class SACLearner(Learner):
                 # , [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)]
 
     def get_actor_network_weights(self):
-        return self.actor_network.get_weights()
+        return [self.actor_network.get_weights(), self.critic1.get_weights()]
 
     def build_network(self, network_parameters, environment_parameters):
         # Actor

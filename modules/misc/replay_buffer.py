@@ -152,7 +152,11 @@ class PrioritizedBuffer:
         # is_weight = np.power(self.tree.n_entries * sampling_probabilities, -self.beta)
         # is_weight /= is_weight.max()
 
-        return batch, batch_indices  # , is_weight
+        self.collected_trajectories = 0
+        self.new_training_samples = 0
+
+        copy_by_val_replay_batch = deepcopy(batch)
+        return copy_by_val_replay_batch, batch_indices  # , is_weight
 
     def update(self, indices, errors):
         for idx, error in zip(indices, errors):
@@ -303,6 +307,7 @@ class FIFOBuffer:
     def append_list(self, samples):
         self.buffer.extend(samples)
         self.new_training_samples += len(samples)
+        print("CURRENT BUFFER LEN:", len(self.buffer))
 
     def sample(self,
                batch_size: int,

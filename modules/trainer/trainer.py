@@ -225,6 +225,7 @@ class Trainer:
                          for idx, actor in enumerate(self.actors)]
         ray.get(network_ready)
         # TODO: Find out why we need this to avoid memory error!
+        """        
         for i in range(1):
             x = [actor.act.remote(np.random.random((1, 17))) for actor in self.actors]
             print("ACTORS: ", ray.get(x))
@@ -232,14 +233,11 @@ class Trainer:
             x = self.learner.forward.remote(np.random.random((1, 17)))
             print("LEARNER: ", ray.get(x))
             time.sleep(2)
+        """
 
         # Initialize the global buffer
         if self.trainer_configuration["PrioritizedReplay"]:
-            self.global_buffer = PrioritizedBuffer(capacity=self.trainer_configuration["ReplayCapacity"],
-                                                   agent_num=self.environment_configuration["AgentNumber"],
-                                                   n_steps=self.trainer_configuration.get("NSteps"),
-                                                   gamma=self.trainer_configuration["Gamma"],
-                                                   store_trajectories=False)
+            self.global_buffer = PrioritizedBuffer(capacity=self.trainer_configuration["ReplayCapacity"])
         else:
             self.global_buffer = FIFOBuffer(capacity=self.trainer_configuration["ReplayCapacity"],
                                             agent_num=self.environment_configuration["AgentNumber"],
@@ -321,6 +319,10 @@ class Trainer:
         # Start an endless loop of episodes playing for each actor
         # [actor.playing_loop.remote() for actor in self.actors]
 
+        # First network updates for all actors
+        [actor.update_actor_network.remote(ray.get(self.learner.get_actor_network_weights.remote()))
+         for actor in self.actors]
+
         while True:
             # Each actor plays one step in the environment
             [actor.play_one_step.remote() for actor in self.actors]
@@ -335,12 +337,17 @@ class Trainer:
 
             for idx, actor in enumerate(self.actors):
                 # Update the actor networks if requested by the respective actor
-                if ray.get(actor.is_minimum_capacity_reached.remote()):
+                if ray.get(actor.is_network_update_requested.remote()):
                     actor.update_actor_network.remote(ray.get(self.learner.get_actor_network_weights.remote()))
 
                 # Write samples from
                 if ray.get(actor.is_minimum_capacity_reached.remote()):
-                    self.global_buffer.append_list(ray.get(actor.get_new_samples.remote())[0])
+                    samples = ray.get(actor.get_new_samples.remote())[0]
+                    if self.trainer_configuration["PrioritizedReplay"]:
+                        sample_errors = ray.get(actor.get_sample_errors.remote(samples))
+                        self.global_buffer.append_list(samples, sample_errors)
+                    else:
+                        self.global_buffer.append_list(samples)
                     self.global_logger.append(*ray.get(actor.get_new_stats.remote()), actor_idx=idx)
 
             # Check if enough new samples have been collected and the minimum capacity is reached

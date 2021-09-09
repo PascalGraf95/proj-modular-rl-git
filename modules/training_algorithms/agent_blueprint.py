@@ -136,6 +136,7 @@ class Actor:
                  device: str = '/cpu:0'):
         # Network
         self.actor_network = None
+        self.critic_network = None
         self.network_update_requested = False
         self.new_steps_taken = 0
         self.network_update_frequency = 1000
@@ -183,6 +184,10 @@ class Actor:
         self.select_exploration_algorithm(exploration_algorithm)
         self.select_preprocessing_algorithm(preprocessing_algorithm)
 
+        # Prediction Parameters
+        self.gamma = None
+        self.n_steps = None
+
         # Mode
         self.mode = mode
         # self.playing_generator = self.playing_loop()
@@ -220,8 +225,6 @@ class Actor:
             from ..exploration_algorithms.epsilon_greedy import EpsilonGreedy as ExplorationAlgorithm
         elif exploration_algorithm == "None":
             from ..exploration_algorithms.exploration_algorithm_blueprint import ExplorationAlgorithm
-        elif exploration_algorithm == "PseudoCount":
-            from ..exploration_algorithms.pseudo_counts import PseudoCount as ExplorationAlgorithm
         elif exploration_algorithm == "ICM":
             from ..exploration_algorithms.intrinsic_curiosity_module import IntrinsicCuriosityModule as ExplorationAlgorithm
         else:
@@ -398,6 +401,8 @@ class Actor:
         self.network_update_frequency = trainer_configuration.get("NetworkUpdateFrequency")
 
     def instantiate_modules(self, trainer_configuration, exploration_degree):
+        self.gamma = trainer_configuration["Gamma"]
+        self.n_steps = trainer_configuration["NSteps"]
         self.get_environment_configuration()
         self.adaptive_exploration = trainer_configuration.get("AdaptiveExploration")
         trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
@@ -559,6 +564,8 @@ class Learner:
         done_batch = np.zeros((len(replay_batch), 1))
 
         for idx, transition in enumerate(replay_batch):
+            if type(transition['state']) == int:
+                print("SOP")
             for idx2, (state, next_state) in enumerate(zip(transition['state'], transition['next_state'])):
                 state_batch[idx2][idx] = state
                 next_state_batch[idx2][idx] = next_state
