@@ -13,8 +13,8 @@ np.set_printoptions(precision=2)
 def main():
     # region  --- Parameter Choice ---
     # 1. Choose between Training and Testing
-    mode = "testing"
-    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\pretrained_weights\VectorGrabbingICM1.26"
+    mode = "training"
+    model_path = r""
     time_scale = 1000
     # 2. Instantiate Trainer
     trainer = instantiate_trainer()
@@ -25,7 +25,7 @@ def main():
     trainer.change_interface('MLAgentsV18')
     trainer.change_exploration_algorithm('None')
     trainer.change_training_algorithm('SAC')
-    trainer.change_curriculum_strategy('CrossFadeCurriculum')
+    trainer.change_curriculum_strategy('None')
     trainer.change_preprocessing_algorithm('None')
 
     # 4. Get and Validate Configurations
