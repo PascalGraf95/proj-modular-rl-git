@@ -7,6 +7,159 @@ from copy import deepcopy
 prioritized_experience = namedtuple("PrioritizedExperience", field_names=["priority", "probability"])
 
 
+# Modified from: https://pylessons.com/CartPole-PER/
+class SumTree:
+    data_pointer = 0
+
+    # Here we initialize the tree with all nodes = 0, and initialize the data with all values = 0
+    def __init__(self, capacity):
+        # Number of leaf nodes (final nodes) that contains experiences
+        self.capacity = capacity
+        # Generate the tree with all nodes values = 0
+        # Remember we are in a binary node (each node has max 2 children) so 2x size of leaf (capacity) - 1 (root node)
+        # Parent nodes = capacity - 1
+        # Leaf nodes = capacity
+        self.tree = np.zeros(2 * capacity - 1)
+        # Contains the experiences (so the size of data is capacity)
+        self.data = np.zeros(capacity, dtype=object)
+        self.n_entries = 0
+
+    def add(self, priority, data):
+        # Which index to we want to put the experience, leaves will be filled from left to right
+        idx = self.data_pointer + self.capacity - 1
+        # Update data
+        self.data[self.data_pointer] = data
+        # Update the leaf
+        self.update(idx, priority)
+        # Add 1 to the data pointer
+        self.data_pointer += 1
+        # If maximum capacity is reached, go back to the first index
+        if self.data_pointer >= self.capacity:
+            self.data_pointer = 0
+        # Keep track of the number of entries in the buffer
+        if self.n_entries < self.capacity:
+            self.n_entries += 1
+
+    def update(self, idx, priority):
+        # Change = new priority score - former priority score
+        change = priority - self.tree[idx]
+        self.tree[idx] = priority
+        # Then propagate the change through the tree
+        # self._propagate(idx, change)
+        # TODO: Test while loop vs. recursive function time
+        while idx != 0:
+            idx = (idx - 1) // 2
+            self.tree[idx] += change
+
+    def get(self, v):
+        parent_index = 0
+        while True:
+            left_child_index = 2 * parent_index + 1
+            right_child_index = left_child_index + 1
+
+            # If the bottom level has been reached, end the search
+            if left_child_index >= len(self.tree):
+                leaf_index = parent_index
+                break
+            # Else reach downward one level
+            else:
+                if v <= self.tree[left_child_index]:
+                    parent_index = left_child_index
+                else:
+                    v -= self.tree[left_child_index]
+                    parent_index = right_child_index
+
+        # Convert from leaf index to data index (which has half the capacity)
+        data_index = leaf_index - self.capacity + 1
+        # Return leaf index, sample priority and the actual data
+        return leaf_index, self.tree[leaf_index], self.data[data_index]
+
+    def _propagate(self, idx, change):
+        parent = (idx - 1) // 2
+        self.tree[parent] += change
+        if parent != 0:
+            self._propagate(parent, change)
+
+    def total_priority(self):
+        return self.tree[0]
+
+
+class PrioritizedBuffer:
+    per_e = 0.001  # Avoid samples to have 0 probability of being taken
+    per_a = 0.6  # tradeoff between taking only experiences with high priority vs. uniform sampling
+    per_beta = 0.4  # importance-sampling, from initial value increasing to 1
+    per_beta_increment_per_sampling = 0.001
+
+    def __init__(self, capacity: int):
+
+        # Initialize sum tree
+        self.tree = SumTree(capacity)
+        self.capacity = capacity
+
+        # Flag to indicate if training threshold has been reached
+        self.min_size_reached = False
+
+        # New sample and trajectory counters
+        self.new_training_samples = 0
+        self.collected_trajectories = 0
+
+    def __len__(self):
+        return self.tree.n_entries
+
+    def reset(self):
+        self.tree = SumTree(self.capacity)
+
+    def check_training_condition(self, trainer_configuration):
+        if self.tree.n_entries > trainer_configuration['ReplayMinSize']:
+            self.min_size_reached = True
+        if self.new_training_samples >= trainer_configuration['TrainingInterval'] and self.min_size_reached:
+            return True
+        return False
+
+    def _getPriority(self, error):
+        return (error + self.per_e) ** self.per_a
+
+    def append(self, s, a, r, next_s, done, error):
+        priority = self._getPriority(error)
+        self.tree.add(priority, {"state": s, "action": a, "reward": r, "next_state": next_s, "done": done})
+        self.new_training_samples += 1
+
+    def append_list(self, samples, errors):
+        for sample, error in zip(samples, errors):
+            priority = self._getPriority(error)
+            self.tree.add(priority, sample)
+        self.new_training_samples += len(samples)
+
+    def sample(self, batch_size: int):
+        batch = []
+        batch_indices = np.empty((batch_size,), dtype=np.int32)
+
+        # Priority segment = total priority / number of samples
+        priority_segment = self.tree.total_priority() / batch_size
+        # priorities = []
+        self.per_beta = np.min([1., self.per_beta + self.per_beta_increment_per_sampling])
+
+        for i in range(batch_size):
+            # A value is uniformly sampled from each range
+            a, b = priority_segment * i, priority_segment * (i+1)
+            value = np.random.uniform(a, b)
+            index, priority, data = self.tree.get(value)
+            # priorities.append(priority)
+            batch.append(data)
+            batch_indices[i] = index
+
+        # sampling_probabilities = priorities / self.tree.total_priority()
+        # is_weight = np.power(self.tree.n_entries * sampling_probabilities, -self.beta)
+        # is_weight /= is_weight.max()
+
+        return batch, batch_indices  # , is_weight
+
+    def update(self, indices, errors):
+        for idx, error in zip(indices, errors):
+            priority = self._getPriority(error)
+            self.tree.update(idx, priority)
+
+
 class FIFOBuffer:
     """
 
@@ -16,10 +169,7 @@ class FIFOBuffer:
                  agent_num: int = 1,
                  n_steps: int = 1,
                  gamma: float = 1,
-                 store_trajectories: bool = False,
-                 prioritized: bool = False,
-                 prioritized_update_frequency: int = 5,
-                 parameter_update_frequency: int = 500):
+                 store_trajectories: bool = False):
 
         # Initialize actual buffer with defined capacity
         self.buffer = deque(maxlen=capacity)
@@ -38,23 +188,7 @@ class FIFOBuffer:
         self.new_training_samples = 0
         self.collected_trajectories = 0
 
-        # Prioritized Experience Replay
-        self.prioritized = prioritized
-        self.prioritized_update_frequency = prioritized_update_frequency
-        self.parameter_update_frequency = parameter_update_frequency
-        self.prio_update = 0
-
         self.sampled_indices = None
-
-        self.alpha = 0.5
-        self.alpha_decay_rate = 0.99
-
-        self.priority_sum_alpha = 0
-        self.max_priority = 1
-        self.max_weight = 1
-
-        if prioritized:
-            self.prioritized_deque = deque(maxlen=capacity)
 
         # Deque to enable n-step reward calculation
         self.state_deque = [deque(maxlen=n_steps+1) for x in range(self.agent_num)]
@@ -146,27 +280,6 @@ class FIFOBuffer:
                 self.temp_agent_buffer[idx].clear()
 
     def append(self, s, a, r, next_s, done):
-        if self.prioritized:
-            if np.any(self.sampled_indices):
-                self.sampled_indices -= 1
-                for idx, s_idx in enumerate(self.sampled_indices):
-                    if s_idx < 0:
-                        self.sampled_indices[idx] = np.random.randint(0, len(self.buffer))
-            # If the maximum buffer capacity is reached
-            if len(self.buffer) == self.buffer.maxlen:
-                # Update the sum of priorities
-                overwritten_experience = self.prioritized_deque[0]
-                self.priority_sum_alpha -= overwritten_experience.probability ** self.alpha
-                # If the overwritten experience has the maximum priority perform a search for the new max
-                if overwritten_experience.priority == self.max_priority:
-                    self.prioritized_deque[0].priority = 0
-                    self.max_priority = max([p.priority for p in self.prioritized_deque])
-            # Set the new priority to the max priority and add to the priority sum
-            priority = self.max_priority
-            self.priority_sum_alpha += priority ** self.alpha
-            probability = priority ** self.alpha / self.priority_sum_alpha
-            # Append the new priority and probability
-            self.prioritized_deque.append(prioritized_experience(priority, probability))
         self.buffer.append({"state": s, "action": a, "reward": r, "next_state": next_s, "done": done})
         self.new_training_samples += 1
 
@@ -184,6 +297,9 @@ class FIFOBuffer:
     def check_reset_condition(self):
         return len(self.done_agents) >= self.agent_num
 
+    def update(self, indices, errors):
+        pass
+
     def append_list(self, samples):
         self.buffer.extend(samples)
         self.new_training_samples += len(samples)
@@ -194,18 +310,7 @@ class FIFOBuffer:
                random_samples: bool = True):
         indices = []
         if random_samples:
-            if self.prioritized:
-                if self.prio_update >= self.prioritized_update_frequency:
-                    self.prio_update = 0
-                if self.prio_update == 0:
-                    self.sampled_indices = np.random.choice(len(self.buffer),
-                                                            batch_size*self.prioritized_update_frequency,
-                                                            p=[p.probability for p in self.prioritized_deque],
-                                                            replace=True)
-                indices = self.sampled_indices[self.prio_update*batch_size: (self.prio_update+1)*batch_size]
-                self.prio_update += 1
-            else:
-                indices = np.random.choice(len(self.buffer), batch_size, replace=False)
+            indices = np.random.choice(len(self.buffer), batch_size, replace=True)
             replay_batch = [self.buffer[idx] for idx in indices]
         else:
             if batch_size == -1:
@@ -223,34 +328,3 @@ class FIFOBuffer:
 
         copy_by_val_replay_batch = deepcopy(replay_batch)
         return copy_by_val_replay_batch, indices
-
-    def update_parameters(self, training_step):
-        if self.prioritized:
-            if training_step % self.parameter_update_frequency == 0:
-                self.alpha *= self.alpha_decay_rate
-
-            self.priority_sum_alpha = 0
-            sum_prob_before = 0
-            for element in self.prioritized_deque:
-                sum_prob_before += element.probability
-                self.priority_sum_alpha += element.priority**self.alpha
-            sum_prob_after = 0
-            for index, element in enumerate(self.prioritized_deque):
-                probability = element.priority ** self.alpha / self.priority_sum_alpha
-                sum_prob_after += probability
-                self.prioritized_deque[index] = prioritized_experience(element.priority, probability)
-
-    def update_priorities(self, losses, indices):
-        if self.prioritized:
-            for loss, index in zip(losses, indices):
-                index = int(index[0])
-                updated_priority = loss
-                if updated_priority > self.max_priority:
-                    self.max_priority = updated_priority
-
-                old_priority = self.prioritized_deque[index].priority
-                self.priority_sum_alpha += updated_priority ** self.alpha - old_priority**self.alpha
-                updated_probability = loss**self.alpha / self.priority_sum_alpha
-                self.prioritized_deque[index] = prioritized_experience(updated_priority, updated_probability)
-
-

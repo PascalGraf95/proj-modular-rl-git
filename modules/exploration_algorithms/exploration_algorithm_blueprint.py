@@ -30,7 +30,7 @@ class ExplorationAlgorithm:
     def boost_exploration(self):
         return
 
-    def get_logs(self):
+    def get_logs(self, idx):
         return {}
 
     def get_intrinsic_reward(self, replay_batch):

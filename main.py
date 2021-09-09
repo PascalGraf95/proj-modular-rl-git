@@ -13,7 +13,6 @@ import os
 from modules.trainer.trainer import Trainer
 
 np.set_printoptions(precision=2)
-
 # endregion
 
 
@@ -41,7 +40,7 @@ def main():
     environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 
     # Choose from "None", "EpsilonGreedy" and "ICM"
-    exploration_algorithm = 'EpsilonGreedy'
+    exploration_algorithm = 'None'
 
     # Choose from "DQN", "DDPG", "TD3", "SAC"
     trainer.select_training_algorithm('SAC')

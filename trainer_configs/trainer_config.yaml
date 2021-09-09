@@ -192,10 +192,10 @@ ppo:
     TrajectoryNum: 20
 sac:
     ActorNum: 1
-    BatchSize: 1024
+    BatchSize: 64
     ClipGrad: 10.0
     ExplorationParameters:
-        Epsilon: 0.8
+        Epsilon: 0.3
         EpsilonDecay: 0.99
         EpsilonMin: 0.01
         StepDown: false
@@ -219,9 +219,9 @@ sac:
         Units: 128
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    PrioritizedReplay: false
-    ReplayCapacity: 1000000
-    ReplayMinSize: 1000
+    PrioritizedReplay: true
+    ReplayCapacity: 100000
+    ReplayMinSize: 100
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
@@ -241,7 +241,7 @@ td3:
     Gamma: 0.99
     LearningRateActor: 0.001
     LearningRateCritic: 0.001
-    NSteps: 5
+    NSteps: 4
     NetworkParameters:
     -   Filters: 64
         Units: 64

@@ -28,31 +28,49 @@ class SACActor(Actor):
                  preprocessing_algorithm: str,
                  preprocessing_path: str,
                  exploration_algorithm: str,
-                 environment_path: str = ""):
+                 environment_path: str = "",
+                 device: str = '/cpu:0'):
         super().__init__(port, mode, interface, preprocessing_algorithm, preprocessing_path,
-                         exploration_algorithm, environment_path)
+                         exploration_algorithm, environment_path, device)
 
     def act(self, states, mode="training"):
         # Check if any agent in the environment is not in a terminal state
         active_agent_number = np.shape(states[0])[0]
         if not active_agent_number:
             return Agent.get_dummy_action(active_agent_number, self.action_shape, self.action_type)
-
-        mean, log_std = self.actor_network.predict(states)
-        if mode == "training":
-            normal = tfd.Normal(mean, tf.exp(log_std))
-            actions = tf.tanh(normal.sample())
-        else:
-            actions = tf.tanh(mean)
+        with tf.device(self.device):
+            mean, log_std = self.actor_network(states)
+            if mode == "training":
+                normal = tfd.Normal(mean, tf.exp(log_std))
+                actions = tf.tanh(normal.sample())
+            else:
+                actions = tf.tanh(mean)
         return actions.numpy()
 
-    def update_actor_network(self, actor_network):
-        self.actor_network = actor_network
+    def update_actor_network(self, network_weights):
+        self.actor_network.set_weights(network_weights)
         self.network_update_requested = False
         self.new_steps_taken = 0
 
+    def get_exploration_logs(self, idx):
+        return self.exploration_algorithm.get_logs(idx)
 
-@ray.remote
+    def build_network(self, network_parameters, environment_parameters, idx):
+        # Actor
+        network_parameters[0]['Input'] = environment_parameters.get('ObservationShapes')
+        network_parameters[0]['Output'] = [environment_parameters.get('ActionShape'),
+                                           environment_parameters.get('ActionShape')]
+        network_parameters[0]['OutputActivation'] = [None, None]
+        network_parameters[0]['NetworkType'] = 'ActorCopy{}.'.format(idx)
+        network_parameters[0]['KernelInitializer'] = "RandomUniform"
+
+        # Build
+        with tf.device(self.device):
+            self.actor_network = construct_network(network_parameters[0])
+        return True
+
+
+@ray.remote(num_gpus=1)
 class SACLearner(Learner):
     # Static, algorithm specific Parameters
     TrainingParameterSpace = Learner.TrainingParameterSpace.copy()
@@ -108,13 +126,14 @@ class SACLearner(Learner):
 
         self.training_step = 0
 
+        self.critic1, self.critic_target1, self.critic2, \
+            self.critic_target2, self.actor_network = None, None, None, None, None
+
+        self.set_gpu_growth()
         # Construct or load the required neural networks based on the trainer configuration and environment information
         if mode == 'training':
             # Network Construction
-            self.actor_network,\
-                self.critic1, self.critic_target1,\
-                self.critic2, self.critic_target2 = self.build_network(network_parameters,
-                                                                       environment_configuration)
+            self.build_network(network_parameters, environment_configuration)
             # Load Pretrained Models
             if model_path:
                 self.load_checkpoint(model_path)
@@ -139,10 +158,16 @@ class SACLearner(Learner):
                                                         clipvalue=self.clip_grad)
         self.alpha = tf.exp(self.log_alpha).numpy()
 
-    def get_actor_network(self):
-        actor_clone = clone_model(self.actor_network)
-        actor_clone.set_weights(self.actor_network.get_weights())
-        return actor_clone
+    def set_gpu_growth(self):
+        gpus = tf.config.experimental.list_physical_devices('GPU')
+        if gpus:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+                # tf.config.experimental.set_virtual_device_configuration(gpu)
+                # , [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)]
+
+    def get_actor_network_weights(self):
+        return self.actor_network.get_weights()
 
     def build_network(self, network_parameters, environment_parameters):
         # Actor
@@ -168,11 +193,9 @@ class SACLearner(Learner):
         network_parameters[2]['NetworkType'] = self.NetworkTypes[2]
 
         # Build
-        actor = construct_network(network_parameters[0])
-        critic1, critic_target1 = construct_network(network_parameters[1])
-        critic2, critic_target2 = construct_network(network_parameters[2])
-
-        return actor, critic1, critic_target1, critic2, critic_target2
+        self.actor_network = construct_network(network_parameters[0])
+        self.critic1, self.critic_target1 = construct_network(network_parameters[1])
+        self.critic2, self.critic_target2 = construct_network(network_parameters[2])
 
     def forward(self, states):
         mean, log_std = self.actor_network(states)

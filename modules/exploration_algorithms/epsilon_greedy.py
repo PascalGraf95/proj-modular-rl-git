@@ -41,8 +41,8 @@ class EpsilonGreedy(ExplorationAlgorithm):
     def boost_exploration(self):
         self.epsilon += 0.2
 
-    def get_logs(self):
-        return {"Exploration/Epsilon": self.epsilon}
+    def get_logs(self, idx):
+        return {"Exploration/Agent{:03d}Epsilon".format(idx): self.epsilon}
 
     def get_intrinsic_reward(self, replay_batch):
         return replay_batch

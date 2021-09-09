@@ -132,7 +132,8 @@ class Actor:
                  preprocessing_algorithm: str,
                  preprocessing_path: str,
                  exploration_algorithm: str,
-                 environment_path: str = ""):
+                 environment_path: str = "",
+                 device: str = '/cpu:0'):
         # Network
         self.actor_network = None
         self.network_update_requested = False
@@ -150,6 +151,9 @@ class Actor:
 
         # Local Logger
         self.local_logger = None
+
+        # Tensorflow Device
+        self.device: str = device
 
         # Behavior Parameters
         self.behavior_name = None
@@ -181,11 +185,17 @@ class Actor:
 
         # Mode
         self.mode = mode
-        self.playing_generator = self.playing_loop()
+        # self.playing_generator = self.playing_loop()
         self.port = port
 
     def connect(self):
         return
+
+    def is_network_update_requested(self):
+        return self.network_update_requested
+
+    def is_minimum_capacity_reached(self):
+        return self.minimum_capacity_reached
 
     def select_agent_interface(self, interface):
         global AgentInterface
@@ -276,7 +286,49 @@ class Actor:
                 AgentInterface.step_action(self.environment, self.behavior_name, actions)
             # Gather new steps
             decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
-            yield
+
+    def play_one_step(self):
+        # Step acquisition (steps contain states and rewards)
+        decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
+        # Preprocess steps if an respective algorithm has been activated
+        decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
+                                                                                              terminal_steps)
+        # Choose the next action either by exploring or exploiting
+        actions = self.exploration_algorithm.act(decision_steps)
+        if actions is None:
+            actions = self.act(decision_steps.obs, mode=self.mode)
+
+        # Append steps and actions to the local replay buffer
+        self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
+                                        terminal_steps.agent_id,
+                                        step_type="terminal")
+        self.local_buffer.add_new_steps(decision_steps.obs, decision_steps.reward,
+                                        decision_steps.agent_id,
+                                        actions=actions, step_type="decision")
+
+        # Track the rewards in a local logger
+        self.local_logger.track_episode(terminal_steps.reward, terminal_steps.agent_id,
+                                        step_type="terminal")
+        self.local_logger.track_episode(decision_steps.reward, decision_steps.agent_id,
+                                        step_type="decision")
+
+        # If enough samples have been collected, mark local buffer ready for readout
+        if self.local_buffer.collected_trajectories:
+            self.minimum_capacity_reached = True
+
+        # If enough steps have been taken, mark agent ready for updated network
+        self.new_steps_taken += 1
+        if self.new_steps_taken >= self.network_update_frequency:
+            self.network_update_requested = True
+
+        # If all agents are in a terminal state reset the environment
+        if self.local_buffer.check_reset_condition():
+            AgentInterface.reset(self.environment)
+            self.local_buffer.done_agents.clear()
+            self.curriculum_communicator.set_task_number(self.target_task_level)
+        # Otherwise take a step in the environment according to the chosen action
+        else:
+            AgentInterface.step_action(self.environment, self.behavior_name, actions)
 
     def act(self, states, mode="training"):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
@@ -342,8 +394,7 @@ class Actor:
                                        agent_num=self.agent_number,
                                        n_steps=trainer_configuration.get("NSteps"),
                                        gamma=trainer_configuration.get("Gamma"),
-                                       store_trajectories=False,
-                                       prioritized=False)
+                                       store_trajectories=False)
         self.network_update_frequency = trainer_configuration.get("NetworkUpdateFrequency")
 
     def instantiate_modules(self, trainer_configuration, exploration_degree):
@@ -361,7 +412,10 @@ class Actor:
         self.local_logger = LocalLogger(agent_num=self.agent_number)
         self.instantiate_local_buffer(trainer_configuration)
 
-    def update_actor_network(self, network):
+    def update_actor_network(self, network_weights):
+        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    def build_network(self, network_parameters, environment_parameters, idx):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
 
@@ -389,7 +443,7 @@ class Learner:
     NetworkTypes = []
     Metrics = []
 
-    def get_actor_network(self):
+    def get_actor_network_weights(self):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
     def build_network(self, network_parameters, environment_parameters):
