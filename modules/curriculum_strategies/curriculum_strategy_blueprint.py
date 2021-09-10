@@ -19,7 +19,7 @@ class CurriculumStrategy:
     def check_task_level_change_condition(self, average_reward, total_episodes_played, force=False):
         return False
 
-    def get_new_task_level(self, total_episodes_played):
+    def get_new_task_level(self):
         return self.task_level
 
     def update_task_properties(self, unity_responded, task_properties):

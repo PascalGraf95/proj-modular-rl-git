@@ -202,6 +202,9 @@ class Actor:
     def is_minimum_capacity_reached(self):
         return self.minimum_capacity_reached
 
+    def get_target_task_level(self):
+        return self.target_task_level
+
     def select_agent_interface(self, interface):
         global AgentInterface
 
@@ -564,8 +567,9 @@ class Learner:
         done_batch = np.zeros((len(replay_batch), 1))
 
         for idx, transition in enumerate(replay_batch):
-            if type(transition['state']) == int:
+            if type(transition) == int:
                 print("SOP")
+                continue
             for idx2, (state, next_state) in enumerate(zip(transition['state'], transition['next_state'])):
                 state_batch[idx2][idx] = state
                 next_state_batch[idx2][idx] = next_state

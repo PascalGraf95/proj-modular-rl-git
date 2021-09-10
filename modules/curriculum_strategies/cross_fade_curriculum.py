@@ -15,7 +15,7 @@ class CrossFadeCurriculum(CurriculumStrategy):
         if self.remembering_probability < 0.01 or force:
             if total_episodes_played - self.last_level_transition > self.average_episodes*2 or force:
                 if self.task_level < self.number_of_tasks-1:
-                    if self.average_reward >= self.transition_value or force:
+                    if average_reward >= self.transition_value or force:
                         self.level_transition = True
                         self.last_level_transition = total_episodes_played
                         self.unity_responded = False
@@ -23,7 +23,7 @@ class CrossFadeCurriculum(CurriculumStrategy):
                         return True
         return False
 
-    def get_new_task_level(self, total_episodes_played):
+    def get_new_task_level(self):
         temporary_task_level = self.task_level
         if self.task_level > 0 and self.unity_responded:
             if np.random.rand() <= self.remembering_probability:

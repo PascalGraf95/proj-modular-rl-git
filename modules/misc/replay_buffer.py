@@ -151,6 +151,7 @@ class PrioritizedBuffer:
         # sampling_probabilities = priorities / self.tree.total_priority()
         # is_weight = np.power(self.tree.n_entries * sampling_probabilities, -self.beta)
         # is_weight /= is_weight.max()
+        # TODO: Implement Importance Sampling
 
         self.collected_trajectories = 0
         self.new_training_samples = 0
@@ -275,7 +276,7 @@ class FIFOBuffer:
                 discounted_reward = [r * g for r, g in zip(self.reward_deque[agent_id], self.gamma_list)]
                 self.temp_agent_buffer[agent_id].append([self.state_deque[agent_id][0], self.action_deque[agent_id][0],
                                                          np.sum(discounted_reward), self.state_deque[agent_id][-1],
-                                                         True])
+                                                         False])
 
             # Write the collected data to the actual replay buffer if not storing whole trajectories.
             if not self.store_trajectories:
@@ -307,7 +308,6 @@ class FIFOBuffer:
     def append_list(self, samples):
         self.buffer.extend(samples)
         self.new_training_samples += len(samples)
-        print("CURRENT BUFFER LEN:", len(self.buffer))
 
     def sample(self,
                batch_size: int,

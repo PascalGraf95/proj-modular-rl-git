@@ -191,42 +191,42 @@ ppo:
     TrainingInterval: 1
     TrajectoryNum: 20
 sac:
-    ActorNum: 1
+    ActorNum: 10
     BatchSize: 64
     ClipGrad: 10.0
     ExplorationParameters:
-        Epsilon: 0.3
+        Epsilon: 0.4
         EpsilonDecay: 0.99
         EpsilonMin: 0.01
         StepDown: false
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -2.0
+    LogAlpha: -1.0
     NSteps: 4
     AdaptiveExploration: false
-    NetworkUpdateFrequency: 500
+    NetworkUpdateFrequency: 300
     NetworkParameters:
-    -   Filters: 32
-        Units: 32
+    -   Filters: 64
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 32
-        Units: 32
+    -   Filters: 64
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 32
-        Units: 32
+    -   Filters: 64
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    PrioritizedReplay: false
-    ReplayCapacity: 100000
-    ReplayMinSize: 5000
+    PrioritizedReplay: true
+    ReplayCapacity: 1000000
+    ReplayMinSize: 10000
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingID: SAC_3DBall
-    TrainingInterval: 1
+    TrainingID: SAC_Robot_PER_EpislonGreedy_10ActorsAsync
+    TrainingInterval: 0
 td3:
     ActorTrainingFreq: 3
     BatchSize: 64

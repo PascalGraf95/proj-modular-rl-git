@@ -103,10 +103,18 @@ class GlobalLogger:
         return days, hours, minutes, seconds
 
     def append(self, episode_lengths, episode_rewards, total_number_of_episodes, actor_idx=0):
+        # Append new episode rewards and lengths
         self.new_episodes += len(episode_rewards)
         self.episode_reward_deque[actor_idx].extend(episode_rewards)
         self.episode_length_deque[actor_idx].extend(episode_lengths)
+        # Total episodes per agent and overall
         self.episodes_played_per_actor[actor_idx] = total_number_of_episodes
+        self.total_episodes_played = np.sum(self.episodes_played_per_actor)
+        # Average rewards per agent
+        self.average_rewards[actor_idx] = \
+            np.mean(list(self.episode_reward_deque[actor_idx])[-self.running_average_episodes:])
+        self.best_actor = np.argmax(self.average_rewards)
+
         if self.tensorboard:
             self.log_dict({"Reward/Agent{:03d}Reward".format(actor_idx):
                                self.episode_reward_deque[actor_idx][-1],
@@ -123,8 +131,13 @@ class GlobalLogger:
         return mean_length, mean_reward, self.total_episodes_played
 
     def get_current_max_stats(self, average_num):
-        max_agent_average = np.mean(list(self.episode_reward_deque[self.best_actor])[-average_num:])
-        return max_agent_average, self.total_episodes_played
+        max_agent_average_reward = np.max(self.average_rewards)
+        length_list = list(self.episode_length_deque[self.best_actor])
+        if len(length_list) < average_num:
+            max_agent_average_length = 0
+        else:
+            max_agent_average_length = np.mean(list(self.episode_length_deque[self.best_actor])[-average_num:])
+        return max_agent_average_length, max_agent_average_reward, self.total_episodes_played
 
     def check_checkpoint_condition(self):
         if self.checkpoint_saving:

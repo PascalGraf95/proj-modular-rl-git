@@ -50,16 +50,16 @@ class SACActor(Actor):
     def get_sample_errors(self, samples):
         state_batch, action_batch, reward_batch, next_state_batch, done_batch \
             = Learner.get_training_batch_from_replay_batch(samples, self.observation_shapes, self.action_shape)
+        with tf.device(self.device):
+            # CRITIC TRAINING
+            next_actions = self.act(next_state_batch)
+            # Critic Target Predictions
+            critic_prediction = self.critic_network([*next_state_batch, next_actions])
+            critic_target = critic_prediction*(1-done_batch)
 
-        # CRITIC TRAINING
-        next_actions = self.act(next_state_batch)
-        # Critic Target Predictions
-        critic_prediction = self.critic_network([*next_state_batch, next_actions])
-        critic_target = critic_prediction*(1-done_batch)
-
-        # Train Both Critic Networks
-        y = reward_batch + (self.gamma**self.n_steps) * critic_target
-        sample_errors = np.abs(y - self.critic_network([*state_batch, action_batch]))
+            # Train Both Critic Networks
+            y = reward_batch + (self.gamma**self.n_steps) * critic_target
+            sample_errors = np.abs(y - self.critic_network([*state_batch, action_batch]))
         return sample_errors
 
     def update_actor_network(self, network_weights):
@@ -67,7 +67,6 @@ class SACActor(Actor):
         self.critic_network.set_weights(network_weights[1])
         self.network_update_requested = False
         self.new_steps_taken = 0
-        print("NETWORK UPDATED")
 
     def get_exploration_logs(self, idx):
         return self.exploration_algorithm.get_logs(idx)
@@ -243,6 +242,7 @@ class SACLearner(Learner):
 
         # CRITIC TRAINING
         next_actions, next_log_prob = self.forward(next_state_batch)
+
         # Critic Target Predictions
         critic_target_prediction1 = self.critic_target1([*next_state_batch, next_actions])
         critic_target_prediction2 = self.critic_target2([*next_state_batch, next_actions])

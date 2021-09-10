@@ -37,16 +37,16 @@ def main():
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
     interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
-    environment_path = None #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
+    environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 
     # Choose from "None", "EpsilonGreedy" and "ICM"
-    exploration_algorithm = 'None'
+    exploration_algorithm = 'EpsilonGreedy'
 
     # Choose from "DQN", "DDPG", "TD3", "SAC"
     trainer.select_training_algorithm('SAC')
 
     # Choose from "None", "LinearCurriculum", "RememberingCurriculum" and "CrossFadeCurriculum"
-    trainer.select_curriculum_strategy('None')
+    trainer.select_curriculum_strategy('LinearCurriculum')
 
     # Choose from "None" and "SemanticSegmentation"
     preprocessing_algorithm = 'None'
@@ -62,7 +62,7 @@ def main():
     # Parse the trainer configuration
     trainer.parse_training_parameters("trainer_configs/trainer_config.yaml", "sac")
     # Instantiate the agent
-    trainer.instantiate_agent(mode, interface, preprocessing_algorithm, exploration_algorithm,
+    trainer.async_instantiate_agent(mode, interface, preprocessing_algorithm, exploration_algorithm,
                               environment_path, model_path, preprocessing_path)
 
     # endregion
