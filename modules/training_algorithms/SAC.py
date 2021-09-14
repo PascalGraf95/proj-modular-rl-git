@@ -3,7 +3,7 @@
 import numpy as np
 from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 import tensorflow.keras.backend as K
-from .agent_blueprint import Agent, Actor, Learner
+from .agent_blueprint import Actor, Learner
 from tensorflow.keras.models import load_model
 from ..misc.network_constructor import construct_network
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
@@ -37,7 +37,7 @@ class SACActor(Actor):
         # Check if any agent in the environment is not in a terminal state
         active_agent_number = np.shape(states[0])[0]
         if not active_agent_number:
-            return Agent.get_dummy_action(active_agent_number, self.action_shape, self.action_type)
+            return Learner.get_dummy_action(active_agent_number, self.action_shape, self.action_type)
         with tf.device(self.device):
             mean, log_std = self.actor_network(states)
             if mode == "training":
@@ -68,9 +68,6 @@ class SACActor(Actor):
         self.network_update_requested = False
         self.new_steps_taken = 0
 
-    def get_exploration_logs(self, idx):
-        return self.exploration_algorithm.get_logs(idx)
-
     def build_network(self, network_parameters, environment_parameters, idx):
         # Actor
         network_parameters[0]['Input'] = environment_parameters.get('ObservationShapes')
@@ -99,7 +96,7 @@ class SACActor(Actor):
 
 @ray.remote(num_gpus=1)
 class SACLearner(Learner):
-    # Static, algorithm specific Parameters
+    # region ParameterSpace
     TrainingParameterSpace = Learner.TrainingParameterSpace.copy()
     SACParameterSpace = {
         'LearningRateActor': float,
@@ -128,22 +125,28 @@ class SACLearner(Learner):
     ActionType = ['CONTINUOUS']
     NetworkTypes = ['Actor', 'Critic1', 'Critic2']
     Metrics = ['PolicyLoss', 'ValueLoss', 'AlphaLoss']
+    # endregion
 
     def __init__(self, mode, trainer_configuration, environment_configuration, network_parameters, model_path=None):
+        # Networks
         self.actor_network = None
         self.critic1, self.critic_target1 = None, None
         self.critic2, self.critic_target2 = None, None
         self.epsilon = 1.0e-6
 
+        # Optimizer
         self.actor_optimizer = None
         self.alpha_optimizer = None
 
+        # Temperature Parameter
         self.log_alpha = None
         self.target_entropy = None
 
+        # Environment Configuration
         self.action_shape = environment_configuration.get('ActionShape')
         self.observation_shapes = environment_configuration.get('ObservationShapes')
 
+        # Learning Parameters
         self.n_steps = trainer_configuration.get('NSteps')
         self.gamma = trainer_configuration.get('Gamma')
         self.sync_mode = trainer_configuration.get('SyncMode')
@@ -151,12 +154,10 @@ class SACLearner(Learner):
         self.tau = trainer_configuration.get('Tau')
         self.clip_grad = trainer_configuration.get('ClipGrad')
 
+        # Misc
         self.training_step = 0
+        self.set_gpu_growth()  # Important step to avoid tensorflow OOM errors when running multiprocessing!
 
-        self.critic1, self.critic_target1, self.critic2, \
-            self.critic_target2, self.actor_network = None, None, None, None, None
-
-        self.set_gpu_growth()
         # Construct or load the required neural networks based on the trainer configuration and environment information
         if mode == 'training':
             # Network Construction
@@ -173,6 +174,7 @@ class SACLearner(Learner):
             self.actor_optimizer = Adam(learning_rate=trainer_configuration.get('LearningRateActor'),
                                         clipvalue=self.clip_grad)
 
+        # Load trained Models
         elif mode == 'testing':
             assert model_path, "No model path entered."
             self.load_checkpoint(model_path)
@@ -190,8 +192,6 @@ class SACLearner(Learner):
         if gpus:
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
-                # tf.config.experimental.set_virtual_device_configuration(gpu)
-                # , [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)]
 
     def get_actor_network_weights(self):
         return [self.actor_network.get_weights(), self.critic1.get_weights()]

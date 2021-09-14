@@ -18,35 +18,38 @@ np.set_printoptions(precision=2)
 
 def main():
     """ Modular Reinforcement Learning© main-function
-    This function instantiates a new trainer object with the given parameters, connects it to the Unity or OpenAI Gym
-    environment and starts the training or testing process.
+    This function defines the parameters to instantiate a new trainer object which then creates one or multiple actors
+    and learners to connect to an Unity or OpenAI Gym environment. After that the main-function starts the training
+    or testing procedure.
 
     Before running this function, please adjust the parameters in the Parameter Choice region as well as the trainer
-    configuration file.
+    configuration under the respective key (./trainer_configs/trainer_config.yaml).
 
     :return: None
     """
 
     # region  --- Parameter Choice ---
 
-    # Choose between "training", "testing" or "fastTesting
+    # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
     mode = "training"
-    model_path = r""
+    model_path = ""  # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210911_193402_SAC_Robot_PER_EpislonGreedy_10ActorsAsync"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
     interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
+    # If you want to run multiple Unity actors in parallel you need specify the path to the '.exe' file here.
     environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 
     # Choose from "None", "EpsilonGreedy" and "ICM"
-    exploration_algorithm = 'EpsilonGreedy'
+    exploration_algorithm = 'None'
 
     # Choose from "DQN", "DDPG", "TD3", "SAC"
     trainer.select_training_algorithm('SAC')
 
-    # Choose from "None", "LinearCurriculum", "RememberingCurriculum" and "CrossFadeCurriculum"
-    trainer.select_curriculum_strategy('LinearCurriculum')
+    # Choose from None, "LinearCurriculum", "RememberingCurriculum" and "CrossFadeCurriculum"
+    curriculum_strategy = None
+    trainer.select_curriculum_strategy(curriculum_strategy)
 
     # Choose from "None" and "SemanticSegmentation"
     preprocessing_algorithm = 'None'
@@ -59,17 +62,17 @@ def main():
 
     # region --- Initialization ---
 
-    # Parse the trainer configuration
+    # Parse the trainer configuration (make sure to select the right key)
     trainer.parse_training_parameters("trainer_configs/trainer_config.yaml", "sac")
-    # Instantiate the agent
+    # Instantiate the agent which consists of a learner and one or multiple actors
     trainer.async_instantiate_agent(mode, interface, preprocessing_algorithm, exploration_algorithm,
-                              environment_path, model_path, preprocessing_path)
+                                    environment_path, model_path, preprocessing_path)
 
     # endregion
 
     # region --- Training / Testing ---
 
-    # Play new episodes until the training/testing is manually interrupted and receive the latest process information.
+    # Play new episodes until the training/testing is manually interrupted and receive the latest process information
     while True:
         if mode == "training":
             mean_episode_length, mean_episode_reward, \
@@ -86,34 +89,12 @@ def main():
             trainer.last_debug_message = episodes
             print("Played Episodes: {}, Training Steps: {}, Task Level: {:d}/{:d}\n"
                   "Average Episode Reward: {:.2f}/{:.2f} (for the last {:d} Episodes)\n"
-                  "Elapsed Training Time: {:02d}:{:02d}:{:02d}:{:02d}".format(episodes, training_step, task_properties[1], task_properties[0],
+                  "Elapsed Training Time: {:02d}:{:02d}:{:02d}:{:02d}".format(episodes, training_step, task_properties[1]+1, task_properties[0],
                                                                               mean_episode_reward, task_properties[3], task_properties[2],
                                                                               *training_duration))
             print("--------------------------------------------------------------")
 
     # endregion
-
-
-def read_input(caption, default, timeout=5):
-    start_time = time.time()
-    sys.stdout.write('{}{}:'.format(caption, default))
-    sys.stdout.flush()
-    input_text = ''
-    while True:
-        if msvcrt.kbhit():
-            byte_arr = msvcrt.getche()
-            if ord(byte_arr) == 13:  # enter_key
-                break
-            elif ord(byte_arr) >= 32:  # space_char
-                input_text += "".join(map(chr, byte_arr))
-        if len(input_text) == 0 and (time.time() - start_time) > timeout:
-            break
-
-    print('')  # needed to move to next line
-    if len(input_text) > 0:
-        return input_text
-    else:
-        return default
 
 
 if __name__ == '__main__':

@@ -1,26 +1,13 @@
 #!/usr/bin/env python
 
-from mlagents_envs.environment import UnityEnvironment
-from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
-from ..sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
 from ..misc.replay_buffer import FIFOBuffer, PrioritizedBuffer
 from ..misc.logger import GlobalLogger
-import gym
-import tensorflow as tf
-
-import time
-
 
 import os
 import numpy as np
 from datetime import datetime
 
-import matplotlib.pyplot as plt
-
 import yaml
-from typing import Any, Dict, TextIO
-
-import collections
 import ray
 
 
@@ -35,26 +22,19 @@ class Trainer:
         # Trainer Configuration
         self.config_key = ""
         self.trainer_configuration = None
+        self.last_debug_message = 0
 
-        # Logger
+        # Global Tensorboard Logger
         self.global_logger = None
         self.logging_name = None
 
         # Environment
-        self.env = None
-        self.engine_configuration_channel = None
         self.environment_configuration = None
-        self.environment_selection = None
-
-        # Interface
-        self.connect = None
 
         # Agent
         self.actors = []
         self.learner = None
         self.agent_configuration = None
-        self.behavior_name = None
-        self.model_path = None
         self.save_all_models = False
         self.remove_old_checkpoints = False
 
@@ -64,7 +44,6 @@ class Trainer:
 
         # Curriculum Learning Strategy
         self.global_curriculum_strategy = None
-        self.curriculum_channel_task_info = None
 
         # Preprocessing Algorithm
         self.preprocessing_algorithm = None
@@ -75,17 +54,7 @@ class Trainer:
         # Training Loop
         self.logging_frequency = 100
         self.training_loop = self.async_training_loop_generator()
-        self.testing_loop = self.testing_loop_generator()
-        self.actor_playing_generator = None
-
-        # Testing
-        self.test_frequency = 0
-        self.test_episodes = 10
-        self.played_test_episodes = 0
-        self.test_flag = False
-
-        # Misc
-        self.last_debug_message = 0
+        self.testing_loop = self.async_testing_loop_generator()
 
     # region Configuration Acquirement
     def get_agent_configuration(self):
@@ -98,7 +67,7 @@ class Trainer:
 
     # region Algorithm Choice
     def select_training_algorithm(self, training_algorithm):
-        """ Imports the agent according to the algorithm choice.
+        """ Imports the agent (actor, learner) according to the algorithm choice.
 
         :param training_algorithm: str
             Training algorithm name either "DQN", "DDPG", "TD3", "SAC"
@@ -118,9 +87,15 @@ class Trainer:
             raise ValueError("There is no {} training algorithm.".format(training_algorithm))
 
     def select_curriculum_strategy(self, curriculum_strategy):
+        """
+        Imports the curriculum strategy according to the algorithm choice.
+        :param curriculum_strategy: str
+            Choose from None, "LinearCurriculum", "RememberingCurriculum" and "CrossFadeCurriculum"
+        :return:
+        """
         global CurriculumStrategy
 
-        if curriculum_strategy == "None":
+        if curriculum_strategy == "None" or not curriculum_strategy:
             from ..curriculum_strategies.curriculum_strategy_blueprint import CurriculumStrategy
         elif curriculum_strategy == "LinearCurriculum":
             from ..curriculum_strategies.linear_curriculum import LinearCurriculum as CurriculumStrategy
@@ -153,42 +128,53 @@ class Trainer:
     # endregion
 
     # region Instantiation
-    def async_instantiate_agent(self, mode, interface, preprocessing_algorithm, exploration_algorithm,
-                                environment_path=None, model_path=None, preprocessing_path=None):
-        """
+    def async_instantiate_agent(self, mode, interface: str, preprocessing_algorithm: str, exploration_algorithm: str,
+                                environment_path: str = None, model_path: str = None,
+                                preprocessing_path: str = None):
+        """ Instantiate the agent consisting of learner and actor(s) and their respective submodules in an asynchronous
+        fashion utilizing the ray library.
 
-        :param exploration_algorithm:
-        :param interface:
-        :param preprocessing_algorithm:
-        :param preprocessing_path:
-        :param environment_path:
+        :param exploration_algorithm: str
+        :param interface: str
+        :param preprocessing_algorithm: str
+        :param preprocessing_path: str
+        :param environment_path: str
         :param mode: str
         :param model_path: str
         :return:
         """
-        # Initialize ray for parallel multiprocessing
+        # Initialize ray for parallel multiprocessing.
         ray.init()
         # If the connection is established directly with the Unity Editor or if we are in testing mode, override
         # the number of actors with 1.
         if not environment_path or mode == "testing":
             actor_num = 1
-            exploration_degree = [1.0]
         else:
             actor_num = self.trainer_configuration.get("ActorNum")
+
+        # If there is only one actor in training mode the degree of exploration should start at maximum. This only has
+        # an effect if the exploration algorithm is not None. Otherwise each actor will be instantiated with a different
+        # degree of exploration.
+        if actor_num == 1 and mode == "training":
+            exploration_degree = [1.0]
+        else:
             exploration_degree = np.linspace(0, 1, actor_num)
 
-        # Create actors and connect them to one environment each, also instantiate all the modules
-        self.actors = [Actor.remote(5004 + i, mode,
+        # Create actors and connect them to one environment each.
+        self.actors = [Actor.remote(5004 + idx, mode,
                                     interface,
                                     preprocessing_algorithm,
                                     preprocessing_path,
                                     exploration_algorithm,
                                     environment_path,
-                                    '/cpu:0') for i in range(actor_num)]
-        # The connect function is currently hard-coded to connect to unity because of assignment errors with ray!
-        connected = [actor.connect_to_unity_environment.remote() for actor in self.actors]
+                                    '/cpu:0') for idx in range(actor_num)]
+        # Connect to either the Unity or Gym environment
+        if interface == "MLAgentsV18":
+            [actor.connect_to_unity_environment.remote() for actor in self.actors]
+        else:
+            [actor.connect_to_gym_environment.remote() for actor in self.actors]
 
-        # For each environment instantiate necessary modules
+        # For each actor instantiate the necessary modules
         for i, actor in enumerate(self.actors):
             actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree[i])
             if mode == "training":
@@ -205,9 +191,8 @@ class Trainer:
         # self.agent_configuration = ray.get(agent_configuration)
 
         # WARNING: Parameter mismatches will currently not be noticed due to a ray error with static methods
+        # TODO: Fix this!
         '''
-
-
         # Check if parameters in trainer configuration match the requested algorithm parameters
         assert print_parameter_mismatches(*self.validate_trainer_configuration()), \
             "ERROR: Execution failed due to parameter mismatch."
@@ -227,16 +212,16 @@ class Trainer:
 
         # Initialize the global buffer
         if self.trainer_configuration["PrioritizedReplay"]:
-            self.global_buffer = PrioritizedBuffer(capacity=self.trainer_configuration["ReplayCapacity"])
+            self.global_buffer = PrioritizedBuffer.remote(capacity=self.trainer_configuration["ReplayCapacity"])
         else:
-            self.global_buffer = FIFOBuffer(capacity=self.trainer_configuration["ReplayCapacity"],
-                                            agent_num=self.environment_configuration["AgentNumber"],
-                                            n_steps=self.trainer_configuration.get("NSteps"),
-                                            gamma=self.trainer_configuration["Gamma"],
-                                            store_trajectories=False)
-
-        # Initialize the global curriculum strategy
-        self.global_curriculum_strategy = CurriculumStrategy()
+            self.global_buffer = FIFOBuffer.remote(capacity=self.trainer_configuration["ReplayCapacity"],
+                                                   agent_num=self.environment_configuration["AgentNumber"],
+                                                   n_steps=self.trainer_configuration.get("NSteps"),
+                                                   gamma=self.trainer_configuration["Gamma"],
+                                                   store_trajectories=False)
+        if mode == "training":
+            # Initialize the global curriculum strategy
+            self.global_curriculum_strategy = CurriculumStrategy()
 
         # Initialize the global logger
         self.logging_name = \
@@ -267,7 +252,7 @@ class Trainer:
         # the number of actors with 1.
         if not environment_path or mode == "testing":
             actor_num = 1
-            exploration_degree = [1.0]
+            exploration_degree = [0.0]
         else:
             actor_num = self.trainer_configuration.get("ActorNum")
             exploration_degree = np.linspace(0, 1, actor_num)
@@ -298,6 +283,7 @@ class Trainer:
         # self.agent_configuration = ray.get(agent_configuration)
 
         # WARNING: Parameter mismatches will currently not be noticed due to a ray error with static methods
+        # TODO: Fix this problem
         '''
 
 
@@ -318,6 +304,7 @@ class Trainer:
                          for idx, actor in enumerate(self.actors)]
 
         # Initialize the global buffer
+        # TODO: Make this async as well
         if self.trainer_configuration["PrioritizedReplay"]:
             self.global_buffer = PrioritizedBuffer(capacity=self.trainer_configuration["ReplayCapacity"])
         else:
@@ -326,9 +313,9 @@ class Trainer:
                                             n_steps=self.trainer_configuration.get("NSteps"),
                                             gamma=self.trainer_configuration["Gamma"],
                                             store_trajectories=False)
-
-        # Initialize the global curriculum strategy
-        self.global_curriculum_strategy = CurriculumStrategy()
+        if mode == "training":
+            # Initialize the global curriculum strategy
+            self.global_curriculum_strategy = CurriculumStrategy()
 
         # Initialize the global logger
         self.logging_name = \
@@ -401,73 +388,82 @@ class Trainer:
 
         :return:
         """
+        # region Initialization
         training_step = 0
         training_metrics = {}
-        # Update to the current task properties
+
+        # Get the task properties from one of the environments
         self.global_curriculum_strategy.update_task_properties(*ray.get(self.actors[0].get_task_properties.remote()))
 
-        # Start an endless loop of episodes playing for each actor
-        # [actor.playing_loop.remote() for actor in self.actors]
-
-        # First network updates for all actors
+        # Synchronise all actor networks with the learner networks
         [actor.update_actor_network.remote(ray.get(self.learner.get_actor_network_weights.remote()))
          for actor in self.actors]
+        # endregion
 
         while True:
             # Each actor plays one step in the environment
             [actor.play_one_step.remote() for actor in self.actors]
 
+            # region Curriculum Info Acquisition
+            # If the task level changed try to get new task information from the environment
             for actor in self.actors:
-                # If the task level changed try to get new task information from the environment
                 if not self.global_curriculum_strategy.unity_responded:
                     unity_responded, task_properties = ray.get(actor.get_task_properties.remote())
                     # If the retrieved information match the target level information update the global curriculum
                     if task_properties[1] == ray.get(actor.get_target_task_level.remote()):
                         self.global_curriculum_strategy.update_task_properties(unity_responded, task_properties)
+            # endregion
 
             for idx, actor in enumerate(self.actors):
                 # Update the actor networks if requested by the respective actor
                 if ray.get(actor.is_network_update_requested.remote()):
                     actor.update_actor_network.remote(ray.get(self.learner.get_actor_network_weights.remote()))
 
-                # Write samples from
+                # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
+                # In case of an Prioritized Experience Replay let the actor calculate an initial priority.
+                # Also make sure the environment runs the desired curriculum level
                 if ray.get(actor.is_minimum_capacity_reached.remote()):
-                    samples = ray.get(actor.get_new_samples.remote())[0]
+                    actor.send_target_task_level.remote()
+                    samples, indices = ray.get(actor.get_new_samples.remote())
                     if self.trainer_configuration["PrioritizedReplay"]:
-                        sample_errors = ray.get(actor.get_sample_errors.remote(samples))
-                        self.global_buffer.append_list(samples, sample_errors)
+                        sample_errors = actor.get_sample_errors.remote(samples)
+                        self.global_buffer.append_list.remote(samples, sample_errors)
                     else:
-                        self.global_buffer.append_list(samples)
+                        self.global_buffer.append_list.remote(samples)
                     self.global_logger.append(*ray.get(actor.get_new_stats.remote()), actor_idx=idx)
 
-            # Check if enough new samples have been collected and the minimum capacity is reached
-            if self.global_buffer.check_training_condition(self.trainer_configuration):
+            # Check if enough new samples have been collected and the minimum capacity is reached in order to
+            # start a training cycle.
+            if ray.get(self.global_buffer.check_training_condition.remote(self.trainer_configuration)):
                 # Sample a new batch of transitions from the global replay buffer
-                samples, indices = self.global_buffer.sample(self.trainer_configuration.get("BatchSize"))
-                # Train the learner with the batch
+                samples, indices = ray.get(self.global_buffer.sample.remote(
+                    self.trainer_configuration.get("BatchSize")))
+                # Train the learner with the batch and observer the resulting metrics
                 training_object = self.learner.learn.remote(samples)
                 training_metrics, sample_errors, training_step = ray.get(training_object)
-                # Update the prioritized experience replay buffer
-                self.global_buffer.update(indices, sample_errors)
+                # Update the prioritized experience replay buffer with the td-errors
+                self.global_buffer.update.remote(indices, sample_errors)
                 # Train the actors exploration algorithm with the same batch
                 for actor in self.actors:
                     actor.exploration_learning_step.remote(samples)
                 # Check if either the reward threshold for a level change has been reached or if the curriculum
-                # strategy transitions between different levels
+                # strategy transitions between different levels by default
                 _, max_reward, total_episodes = self.global_logger.get_current_max_stats(
                     self.global_curriculum_strategy.average_episodes)
                 if self.global_curriculum_strategy.check_task_level_change_condition(max_reward, total_episodes) or \
                         self.global_curriculum_strategy.level_transition:
+                    # Note: Currently this only works for the Linear Curriculum
+                    self.global_logger.register_level_change()
                     target_task_level = self.global_curriculum_strategy.get_new_task_level()
                     for actor in self.actors:
                         actor.set_new_target_task_level.remote(target_task_level)
-                # Check if a new best reward has been achieved and save the models
+                # Check if a new best reward has been achieved, if so save the models
                 if self.global_logger.check_checkpoint_condition():
                     self.async_save_agent_models(training_step)
                     if self.remove_old_checkpoints:
                         self.global_logger.remove_old_checkpoints()
 
-                # Log training results to Tensorboard and console
+                # Log training results to Tensorboard
                 if training_step % self.logging_frequency == 0:
                     self.global_logger.log_dict(training_metrics, training_step)
                     for idx, actor in enumerate(self.actors):
@@ -480,6 +476,37 @@ class Trainer:
 
             yield mean_episode_length, mean_episode_reward, episodes, training_step, \
                 training_metrics.get("Losses/Loss"), self.global_curriculum_strategy.return_task_properties()
+
+    def async_testing_loop_generator(self):
+        """
+
+        :return:
+        """
+        # Synchronise all actor networks with the learner networks
+        [actor.update_actor_network.remote(ray.get(self.learner.get_actor_network_weights.remote()))
+         for actor in self.actors]
+
+        while True:
+            # Each actor plays one step in the environment
+            [actor.play_one_step.remote() for actor in self.actors]
+
+            # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
+            # In case of an Prioritized Experience Replay let the actor calculate an initial priority.
+            for idx, actor in enumerate(self.actors):
+                if ray.get(actor.is_minimum_capacity_reached.remote()):
+                    samples = ray.get(actor.get_new_samples.remote())[0]
+                    if self.trainer_configuration["PrioritizedReplay"]:
+                        sample_errors = ray.get(actor.get_sample_errors.remote(samples))
+                        self.global_buffer.append_list(samples, sample_errors)
+                    else:
+                        self.global_buffer.append_list(samples)
+                    self.global_logger.append(*ray.get(actor.get_new_stats.remote()), actor_idx=idx)
+
+            # Get the mean episode length + reward from the best performing actor
+            mean_episode_length, mean_episode_reward, episodes = self.global_logger.get_current_max_stats(10)
+
+            yield mean_episode_length, mean_episode_reward, episodes, 0, \
+                0, [0]*4
 
     def sync_training_loop_generator(self):
         """
@@ -558,32 +585,6 @@ class Trainer:
 
             yield mean_episode_length, mean_episode_reward, episodes, training_step, \
                 training_metrics.get("Losses/Loss"), self.global_curriculum_strategy.return_task_properties()
-
-    def testing_loop_generator(self):
-        """
-
-        :return:
-        """
-        while True:
-            for actor in self.actors:
-                # Play the next step in each episode
-                next(actor.playing_generator)
-                # If the task level changed try to get new task information from the environment
-
-            for actor in self.actors:
-                if actor.network_update_requested:
-                    actor.update_actor_network(self.learner.get_actor_network())
-
-                if actor.minimum_capacity_reached:
-                    self.global_buffer.append_list(actor.get_new_samples()[0])
-                    self.global_logger.append(*actor.get_new_stats())
-
-            if self.global_logger.new_episodes:
-                # Get the mean episode length + reward from the best performing actor
-                mean_episode_length, mean_episode_reward, episodes = self.global_logger.get_episode_stats()
-
-                yield mean_episode_length, mean_episode_reward, episodes, 0, 0, \
-                      self.global_curriculum_strategy.return_task_properties()
     # endregion
 
 

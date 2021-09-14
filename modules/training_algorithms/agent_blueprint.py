@@ -1,129 +1,12 @@
 #!/usr/bin/env python
 import numpy as np
 from ..misc.logger import LocalLogger
-from ..misc.replay_buffer import FIFOBuffer
+from ..misc.replay_buffer import LocalFIFOBuffer
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
 from ..sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
 from ..curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
 import ray
-
-class Agent:
-    # Static, algorithm specific Parameters
-    TrainingParameterSpace = {
-        'TrainingID': str,
-        'Episodes': int,
-        'BatchSize': int,
-        'Gamma': float,
-        'TrainingInterval': int,
-        'NetworkParameters': list,
-        'ExplorationParameters': dict,
-        'TrainingDescription': str
-    }
-    NetworkParameterSpace = []
-    ActionType = []
-    ReplayBuffer = False
-    LearningBehavior = ''
-    NetworkTypes = []
-    Metrics = []
-
-    @staticmethod
-    def check_mismatching_parameters(test_configs, blueprint_configs):
-        if type(test_configs) == list:
-            missing_parameters = []
-            obsolete_parameters = []
-            for idx, (test_config, blueprint_config) in enumerate(zip(test_configs, blueprint_configs)):
-                missing_parameters += [key + "({})".format(idx) for key, val
-                                       in blueprint_config.items() if key not in test_config]
-                obsolete_parameters += [key + "({})".format(idx) for key, val
-                                        in test_config.items() if key not in blueprint_config]
-        else:
-            missing_parameters = [key for key, val in blueprint_configs.items() if key not in test_configs]
-            obsolete_parameters = [key for key, val in test_configs.items() if key not in blueprint_configs]
-        return missing_parameters, obsolete_parameters
-
-    @staticmethod
-    def validate_config(trainer_configuration,
-                        agent_configuration,
-                        exploration_configuration):
-        missing_parameters, obsolete_parameters = \
-            Agent.check_mismatching_parameters(trainer_configuration,
-                                               agent_configuration.get('TrainingParameterSpace'))
-
-        missing_net_parameters, obsolete_net_parameters = \
-            Agent.check_mismatching_parameters(trainer_configuration.get('NetworkParameters'),
-                                               agent_configuration.get('NetworkParameterSpace'))
-        missing_expl_parameters, obsolete_expl_parameters = \
-            Agent.check_mismatching_parameters(trainer_configuration.get('ExplorationParameters'),
-                                               exploration_configuration.get('ParameterSpace'))
-
-        wrong_type_parameters = \
-            Agent.check_wrong_parameter_types(trainer_configuration,
-                                              agent_configuration.get('TrainingParameterSpace'),
-                                              obsolete_parameters)
-
-        wrong_type_net_parameters = \
-            Agent.check_wrong_parameter_types(trainer_configuration.get('NetworkParameters')[0],
-                                              agent_configuration.get('NetworkParameterSpace')[0],
-                                              obsolete_net_parameters)
-        wrong_type_expl_parameters = \
-            Agent.check_wrong_parameter_types(trainer_configuration.get('ExplorationParameters'),
-                                              exploration_configuration.get('ParameterSpace'),
-                                              obsolete_expl_parameters)
-
-        return missing_parameters, obsolete_parameters, missing_net_parameters, obsolete_net_parameters, \
-            missing_expl_parameters, obsolete_expl_parameters, wrong_type_parameters, wrong_type_net_parameters, \
-            wrong_type_expl_parameters
-
-    @staticmethod
-    def validate_action_space(agent_configuration, environment_configuration):
-        # Check for compatibility of environment and agent action space
-        if environment_configuration.get("ActionType") not in agent_configuration.get("ActionType"):
-            print("The action spaces of the environment and the agent are not compatible.")
-            return False
-        return True
-
-    @staticmethod
-    def check_wrong_parameter_types(test_config, blueprint_config, obsolete=[]):
-        wrong_type_parameters = [" >> ".join([": ".join([key, str(val)]), str(blueprint_config.get(key))])
-                                 for key, val in test_config.items()
-                                 if type(val) != blueprint_config.get(key)
-                                 and key not in obsolete]
-        return wrong_type_parameters
-
-    @staticmethod
-    def get_config(config_dict):
-        config_dict = {key: val for (key, val) in config_dict.items()
-                       if not key.startswith('__')
-                       and not callable(val)
-                       and not type(val) is staticmethod
-                       }
-        return config_dict
-
-    @staticmethod
-    def get_dummy_action(agent_num, action_shape, action_type):
-        if action_type == "CONTINUOUS":
-            return np.random.random((agent_num, action_shape))
-        else:
-            return np.random.randint(0, action_shape, (agent_num, 1))
-
-    def act(self, states, mode="training"):
-        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
-    def learn(self, replay_batch):
-        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
-    def build_network(self, network_parameters, environment_parameters):
-        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
-    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False):
-        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
-    def load_checkpoint(self, path):
-        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
-    def boost_exploration(self):
-        return False
 
 
 class Actor:
@@ -154,7 +37,7 @@ class Actor:
         self.local_logger = None
 
         # Tensorflow Device
-        self.device: str = device
+        self.device = device
 
         # Behavior Parameters
         self.behavior_name = None
@@ -164,7 +47,6 @@ class Actor:
         self.agent_number = None
 
         # Exploration Algorithm
-        self.log_alpha = None
         self.exploration_configuration = None
         self.exploration_algorithm = None
         self.adaptive_exploration = False
@@ -190,12 +72,29 @@ class Actor:
 
         # Mode
         self.mode = mode
-        # self.playing_generator = self.playing_loop()
         self.port = port
 
+    # region Environment Connection
     def connect(self):
         return
 
+    def connect_to_unity_environment(self):
+        self.engine_configuration_channel = EngineConfigurationChannel()
+        self.curriculum_side_channel = CurriculumSideChannelTaskInfo()
+        self.environment = UnityEnvironment(file_name=self.environment_path,
+                                            side_channels=[self.engine_configuration_channel,
+                                                           self.curriculum_side_channel], base_port=self.port)
+        self.environment.reset()
+        return True
+
+    def connect_to_gym_environment(self):
+        self.environment = AgentInterface.connect(self.environment_path)
+
+    def set_unity_parameters(self, **kwargs):
+        self.engine_configuration_channel.set_configuration_parameters(**kwargs)
+    # endregion
+
+    # region Property Query
     def is_network_update_requested(self):
         return self.network_update_requested
 
@@ -205,6 +104,36 @@ class Actor:
     def get_target_task_level(self):
         return self.target_task_level
 
+    def get_task_properties(self):
+        unity_responded, task_properties = self.curriculum_communicator.get_task_properties()
+        return unity_responded, task_properties
+
+    def get_exploration_logs(self, idx):
+        return self.exploration_algorithm.get_logs(idx)
+
+    def get_environment_configuration(self):
+        self.behavior_name = AgentInterface.get_behavior_name(self.environment)
+        self.action_shape = AgentInterface.get_action_shape(self.environment)
+        self.action_type = AgentInterface.get_action_type(self.environment)
+        self.observation_shapes = AgentInterface.get_observation_shapes(self.environment)
+        self.agent_number = AgentInterface.get_agent_number(self.environment, self.behavior_name)
+
+        self.environment_configuration = {"BehaviorName": self.behavior_name,
+                                          "ActionShape": self.action_shape,
+                                          "ActionType": self.action_type,
+                                          "ObservationShapes": self.observation_shapes,
+                                          "AgentNumber": self.agent_number}
+        return self.environment_configuration
+
+    def get_exploration_configuration(self):
+        """Gather the parameters requested by selected the exploration algorithm.
+        :return: None
+        """
+        self.exploration_configuration = ExplorationAlgorithm.get_config()
+        return self.exploration_configuration
+    # endregion
+
+    # region Algorithm Selection
     def select_agent_interface(self, interface):
         global AgentInterface
 
@@ -244,7 +173,44 @@ class Actor:
             from ..preprocessing.aruco_marker_detection import ArUcoMarkerDetection as PreprocessingAlgorithm
         else:
             raise ValueError("There is no {} preprocessing algorithm.".format(preprocessing_algorithm))
+    # endregion
 
+    # region Module Instantiation
+    def instantiate_local_buffer(self, trainer_configuration):
+        self.local_buffer = LocalFIFOBuffer(capacity=5000,
+                                            agent_num=self.agent_number,
+                                            n_steps=trainer_configuration.get("NSteps"),
+                                            gamma=trainer_configuration.get("Gamma"),
+                                            store_trajectories=False)
+        self.network_update_frequency = trainer_configuration.get("NetworkUpdateFrequency")
+
+    def instantiate_modules(self, trainer_configuration, exploration_degree):
+        self.gamma = trainer_configuration["Gamma"]
+        self.n_steps = trainer_configuration["NSteps"]
+        self.get_environment_configuration()
+        self.adaptive_exploration = trainer_configuration.get("AdaptiveExploration")
+        trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
+        self.exploration_algorithm = ExplorationAlgorithm(self.environment_configuration["ActionShape"],
+                                                          self.environment_configuration["ObservationShapes"],
+                                                          self.environment_configuration["ActionType"],
+                                                          trainer_configuration["ExplorationParameters"])
+        self.curriculum_communicator = CurriculumCommunicator(self.curriculum_side_channel)
+        self.preprocessing_algorithm = PreprocessingAlgorithm(self.preprocessing_path)
+        self.environment_configuration["ObservationShapes"] = \
+            self.preprocessing_algorithm.get_output_shapes(self.environment_configuration)
+        self.local_logger = LocalLogger(agent_num=self.agent_number)
+        self.instantiate_local_buffer(trainer_configuration)
+    # endregion
+
+    # region Network Construction and Updates
+    def build_network(self, network_parameters, environment_parameters, idx):
+        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    def update_actor_network(self, network_weights):
+        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+    # endregion
+
+    # region Environment Interaction
     def playing_loop(self):
         # First environment reset and step acquisition (steps contain states and rewards)
         AgentInterface.reset(self.environment)
@@ -294,7 +260,7 @@ class Actor:
             decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
 
     def play_one_step(self):
-        # Step acquisition (steps contain states and rewards)
+        # Step acquisition (steps contain states, done_flags and rewards)
         decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
         # Preprocess steps if an respective algorithm has been activated
         decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
@@ -331,14 +297,15 @@ class Actor:
         if self.local_buffer.check_reset_condition():
             AgentInterface.reset(self.environment)
             self.local_buffer.done_agents.clear()
-            self.curriculum_communicator.set_task_number(self.target_task_level)
         # Otherwise take a step in the environment according to the chosen action
         else:
             AgentInterface.step_action(self.environment, self.behavior_name, actions)
 
     def act(self, states, mode="training"):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+    # endregion
 
+    # region Misc
     def exploration_learning_step(self, replay_batch):
         if self.adaptive_exploration:
             self.exploration_algorithm.learning_step(replay_batch)
@@ -350,84 +317,20 @@ class Actor:
     def get_new_stats(self):
         return self.local_logger.get_episode_stats()
 
-    def get_environment_configuration(self):
-        self.behavior_name = AgentInterface.get_behavior_name(self.environment)
-        self.action_shape = AgentInterface.get_action_shape(self.environment)
-        self.action_type = AgentInterface.get_action_type(self.environment)
-        self.observation_shapes = AgentInterface.get_observation_shapes(self.environment)
-        self.agent_number = AgentInterface.get_agent_number(self.environment, self.behavior_name)
-
-        self.environment_configuration = {"BehaviorName": self.behavior_name,
-                                          "ActionShape": self.action_shape,
-                                          "ActionType": self.action_type,
-                                          "ObservationShapes": self.observation_shapes,
-                                          "AgentNumber": self.agent_number}
-        return self.environment_configuration
-
-    def get_exploration_configuration(self):
-        """Gather the parameters requested by selected the exploration algorithm.
-
-        :return: None
-        """
-        self.exploration_configuration = ExplorationAlgorithm.get_config()
-        return self.exploration_configuration
-
-    def get_task_properties(self):
-        unity_responded, task_properties = self.curriculum_communicator.get_task_properties()
-        return unity_responded, task_properties
-
     def set_new_target_task_level(self, target_task_level):
         self.target_task_level = target_task_level
         self.curriculum_side_channel.unity_responded = False
 
-    def connect_to_unity_environment(self):
-        self.engine_configuration_channel = EngineConfigurationChannel()
-        self.curriculum_side_channel = CurriculumSideChannelTaskInfo()
-        self.environment = UnityEnvironment(file_name=self.environment_path,
-                                            side_channels=[self.engine_configuration_channel,
-                                                           self.curriculum_side_channel], base_port=self.port)
-        self.environment.reset()
-        return True
+    def send_target_task_level(self):
+        self.curriculum_communicator.set_task_number(self.target_task_level)
 
-    def connect_to_gym_environment(self):
-        self.environment = AgentInterface.connect(self.environment_path)
-
-    def set_unity_parameters(self, **kwargs):
-        self.engine_configuration_channel.set_configuration_parameters(**kwargs)
-
-    def instantiate_local_buffer(self, trainer_configuration):
-        self.local_buffer = FIFOBuffer(capacity=5000,
-                                       agent_num=self.agent_number,
-                                       n_steps=trainer_configuration.get("NSteps"),
-                                       gamma=trainer_configuration.get("Gamma"),
-                                       store_trajectories=False)
-        self.network_update_frequency = trainer_configuration.get("NetworkUpdateFrequency")
-
-    def instantiate_modules(self, trainer_configuration, exploration_degree):
-        self.gamma = trainer_configuration["Gamma"]
-        self.n_steps = trainer_configuration["NSteps"]
-        self.get_environment_configuration()
-        self.adaptive_exploration = trainer_configuration.get("AdaptiveExploration")
-        trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
-        self.exploration_algorithm = ExplorationAlgorithm(self.environment_configuration["ActionShape"],
-                                                          self.environment_configuration["ObservationShapes"],
-                                                          self.environment_configuration["ActionType"],
-                                                          trainer_configuration["ExplorationParameters"])
-        self.curriculum_communicator = CurriculumCommunicator(self.curriculum_side_channel)
-        self.preprocessing_algorithm = PreprocessingAlgorithm(self.preprocessing_path)
-        self.environment_configuration["ObservationShapes"] = \
-            self.preprocessing_algorithm.get_output_shapes(self.environment_configuration)
-        self.local_logger = LocalLogger(agent_num=self.agent_number)
-        self.instantiate_local_buffer(trainer_configuration)
-
-    def update_actor_network(self, network_weights):
+    def get_sample_errors(self, samples):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
-    def build_network(self, network_parameters, environment_parameters, idx):
-        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+    # endregion
 
 
 class Learner:
+    # region ParameterSpace
     TrainingParameterSpace = {
         'ActorNum': int,
         'NetworkUpdateFrequency': int,
@@ -450,91 +353,35 @@ class Learner:
     ActionType = []
     NetworkTypes = []
     Metrics = []
+    # endregion
 
+    # region Network Construction and Transfer
     def get_actor_network_weights(self):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
     def build_network(self, network_parameters, environment_parameters):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
-    def learn(self, replay_batch):
-        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
     def sync_models(self):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+    # endregion
 
+    # region Checkpoints
     def load_checkpoint(self, path):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+    # endregion
 
+    # region Learning
+    def learn(self, replay_batch):
+        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+    # endregion
+
+    # region Misc
     def boost_exploration(self):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
-    @staticmethod
-    def check_mismatching_parameters(test_configs, blueprint_configs):
-        if type(test_configs) == list:
-            missing_parameters = []
-            obsolete_parameters = []
-            for idx, (test_config, blueprint_config) in enumerate(zip(test_configs, blueprint_configs)):
-                missing_parameters += [key + "({})".format(idx) for key, val
-                                       in blueprint_config.items() if key not in test_config]
-                obsolete_parameters += [key + "({})".format(idx) for key, val
-                                        in test_config.items() if key not in blueprint_config]
-        else:
-            missing_parameters = [key for key, val in blueprint_configs.items() if key not in test_configs]
-            obsolete_parameters = [key for key, val in test_configs.items() if key not in blueprint_configs]
-        return missing_parameters, obsolete_parameters
-
-    @staticmethod
-    def validate_config(trainer_configuration,
-                        agent_configuration,
-                        exploration_configuration):
-        missing_parameters, obsolete_parameters = \
-            Agent.check_mismatching_parameters(trainer_configuration,
-                                               agent_configuration.get('TrainingParameterSpace'))
-
-        missing_net_parameters, obsolete_net_parameters = \
-            Agent.check_mismatching_parameters(trainer_configuration.get('NetworkParameters'),
-                                               agent_configuration.get('NetworkParameterSpace'))
-        missing_expl_parameters, obsolete_expl_parameters = \
-            Agent.check_mismatching_parameters(trainer_configuration.get('ExplorationParameters'),
-                                               exploration_configuration.get('ParameterSpace'))
-
-        wrong_type_parameters = \
-            Agent.check_wrong_parameter_types(trainer_configuration,
-                                              agent_configuration.get('TrainingParameterSpace'),
-                                              obsolete_parameters)
-
-        wrong_type_net_parameters = \
-            Agent.check_wrong_parameter_types(trainer_configuration.get('NetworkParameters')[0],
-                                              agent_configuration.get('NetworkParameterSpace')[0],
-                                              obsolete_net_parameters)
-        wrong_type_expl_parameters = \
-            Agent.check_wrong_parameter_types(trainer_configuration.get('ExplorationParameters'),
-                                              exploration_configuration.get('ParameterSpace'),
-                                              obsolete_expl_parameters)
-
-        return missing_parameters, obsolete_parameters, missing_net_parameters, obsolete_net_parameters, \
-            missing_expl_parameters, obsolete_expl_parameters, wrong_type_parameters, wrong_type_net_parameters, \
-            wrong_type_expl_parameters
-
-    @staticmethod
-    def validate_action_space(agent_configuration, environment_configuration):
-        # Check for compatibility of environment and agent action space
-        if environment_configuration.get("ActionType") not in agent_configuration.get("ActionType"):
-            print("The action spaces of the environment and the agent are not compatible.")
-            return False
-        return True
-
-    @staticmethod
-    def check_wrong_parameter_types(test_config, blueprint_config, obsolete=[]):
-        wrong_type_parameters = [" >> ".join([": ".join([key, str(val)]), str(blueprint_config.get(key))])
-                                 for key, val in test_config.items()
-                                 if type(val) != blueprint_config.get(key)
-                                 and key not in obsolete]
-        return wrong_type_parameters
 
     @staticmethod
     def get_config(config_dict):
@@ -568,7 +415,8 @@ class Learner:
 
         for idx, transition in enumerate(replay_batch):
             if type(transition) == int:
-                print("SOP")
+                print(transition)
+                print(replay_batch)
                 continue
             for idx2, (state, next_state) in enumerate(zip(transition['state'], transition['next_state'])):
                 state_batch[idx2][idx] = state
@@ -577,4 +425,81 @@ class Learner:
             reward_batch[idx] = transition['reward']
             done_batch[idx] = transition['done']
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch
+    # endregion
+
+    # region Parameter Validation
+    @staticmethod
+    def check_mismatching_parameters(test_configs, blueprint_configs):
+        if type(test_configs) == list:
+            missing_parameters = []
+            obsolete_parameters = []
+            for idx, (test_config, blueprint_config) in enumerate(zip(test_configs, blueprint_configs)):
+                missing_parameters += [key + "({})".format(idx) for key, val
+                                       in blueprint_config.items() if key not in test_config]
+                obsolete_parameters += [key + "({})".format(idx) for key, val
+                                        in test_config.items() if key not in blueprint_config]
+        else:
+            missing_parameters = [key for key, val in blueprint_configs.items() if key not in test_configs]
+            obsolete_parameters = [key for key, val in test_configs.items() if key not in blueprint_configs]
+        return missing_parameters, obsolete_parameters
+
+    @staticmethod
+    def validate_config(trainer_configuration,
+                        agent_configuration,
+                        exploration_configuration):
+        missing_parameters, obsolete_parameters = \
+            Learner.check_mismatching_parameters(trainer_configuration,
+                                                 agent_configuration.get('TrainingParameterSpace'))
+
+        missing_net_parameters, obsolete_net_parameters = \
+            Learner.check_mismatching_parameters(trainer_configuration.get('NetworkParameters'),
+                                                 agent_configuration.get('NetworkParameterSpace'))
+        missing_expl_parameters, obsolete_expl_parameters = \
+            Learner.check_mismatching_parameters(trainer_configuration.get('ExplorationParameters'),
+                                                 exploration_configuration.get('ParameterSpace'))
+
+        wrong_type_parameters = \
+            Learner.check_wrong_parameter_types(trainer_configuration,
+                                                agent_configuration.get('TrainingParameterSpace'),
+                                                obsolete_parameters)
+
+        wrong_type_net_parameters = \
+            Learner.check_wrong_parameter_types(trainer_configuration.get('NetworkParameters')[0],
+                                                agent_configuration.get('NetworkParameterSpace')[0],
+                                                obsolete_net_parameters)
+        wrong_type_expl_parameters = \
+            Learner.check_wrong_parameter_types(trainer_configuration.get('ExplorationParameters'),
+                                                exploration_configuration.get('ParameterSpace'),
+                                                obsolete_expl_parameters)
+
+        return missing_parameters, obsolete_parameters, missing_net_parameters, obsolete_net_parameters, \
+            missing_expl_parameters, obsolete_expl_parameters, wrong_type_parameters, wrong_type_net_parameters, \
+            wrong_type_expl_parameters
+
+    @staticmethod
+    def validate_action_space(agent_configuration, environment_configuration):
+        # Check for compatibility of environment and agent action space
+        if environment_configuration.get("ActionType") not in agent_configuration.get("ActionType"):
+            print("The action spaces of the environment and the agent are not compatible.")
+            return False
+        return True
+
+    @staticmethod
+    def check_wrong_parameter_types(test_config, blueprint_config, obsolete=[]):
+        wrong_type_parameters = [" >> ".join([": ".join([key, str(val)]), str(blueprint_config.get(key))])
+                                 for key, val in test_config.items()
+                                 if type(val) != blueprint_config.get(key)
+                                 and key not in obsolete]
+        return wrong_type_parameters
+    # endregion
+
+
+
+
+
+
+
+
+
+
 

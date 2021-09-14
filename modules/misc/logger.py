@@ -64,7 +64,7 @@ class GlobalLogger:
                  tensorboard=True,
                  actor_num=1,
                  checkpoint_saving=True,
-                 running_average_episodes=30):
+                 running_average_episodes=100):
         # Summary file path and logger creation time
         self.log_dir = log_dir
         self.creation_time = datetime.now()
@@ -144,13 +144,17 @@ class GlobalLogger:
             if self.total_episodes_played - self.last_save_time_step > self.running_average_episodes:
                 max_average_reward = np.max(self.average_rewards)
                 if max_average_reward > self.best_running_average_reward:
-                    self.episode_reward_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
-                    self.episode_length_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
                     self.best_running_average_reward = max_average_reward
-                    self.best_actor = np.argmax(self.average_rewards)
                     self.last_save_time_step = self.total_episodes_played
                     return True
         return False
+
+    def register_level_change(self):
+        self.best_running_average_reward = -10000
+        self.last_save_time_step = self.total_episodes_played
+        self.average_rewards = [-10000 for i in range(self.actor_num)]
+        self.episode_reward_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
+        self.episode_length_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
 
     def remove_old_checkpoints(self):
         def get_step_from_file(file):
