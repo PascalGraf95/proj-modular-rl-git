@@ -225,8 +225,8 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingID: SAC_Robot_PER_EpislonGreedy_10ActorsAsync
-    TrainingInterval: 0
+    TrainingID: SAC_SpaceEvader_PER_EpsilonGreedy_10ActorsAsync
+    TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3
     BatchSize: 64

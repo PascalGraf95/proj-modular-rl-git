@@ -180,7 +180,7 @@ class Trainer:
             if mode == "training":
                 actor.set_unity_parameters.remote(time_scale=1000, width=10, height=10, quality_level=1)
             else:
-                actor.set_unity_parameters.remote(time_scale=1)
+                actor.set_unity_parameters.remote(time_scale=1, width=500, height=500)
 
         # Get the environment configuration from the first actor's env
         environment_configuration = self.actors[0].get_environment_configuration.remote()
@@ -497,9 +497,9 @@ class Trainer:
                     samples = ray.get(actor.get_new_samples.remote())[0]
                     if self.trainer_configuration["PrioritizedReplay"]:
                         sample_errors = ray.get(actor.get_sample_errors.remote(samples))
-                        self.global_buffer.append_list(samples, sample_errors)
+                        self.global_buffer.append_list.remote(samples, sample_errors)
                     else:
-                        self.global_buffer.append_list(samples)
+                        self.global_buffer.append_list.remote(samples)
                     self.global_logger.append(*ray.get(actor.get_new_stats.remote()), actor_idx=idx)
 
             # Get the mean episode length + reward from the best performing actor

@@ -104,6 +104,7 @@ class PrioritizedBuffer:
         # New sample and trajectory counters
         self.new_training_samples = 0
         self.collected_trajectories = 0
+        self.steps_without_training = 0
 
     def __len__(self):
         return self.tree.n_entries
@@ -114,7 +115,9 @@ class PrioritizedBuffer:
     def check_training_condition(self, trainer_configuration):
         if self.tree.n_entries > trainer_configuration['ReplayMinSize']:
             self.min_size_reached = True
-        if self.new_training_samples >= trainer_configuration['TrainingInterval'] and self.min_size_reached:
+        self.steps_without_training += 1
+        if self.steps_without_training >= trainer_configuration['TrainingInterval'] and self.min_size_reached:
+            self.steps_without_training = 0
             return True
         return False
 
@@ -336,6 +339,7 @@ class FIFOBuffer:
 
         copy_by_val_replay_batch = deepcopy(replay_batch)
         return copy_by_val_replay_batch, indices
+
 
 class LocalFIFOBuffer:
     """

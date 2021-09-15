@@ -416,7 +416,6 @@ class Learner:
         for idx, transition in enumerate(replay_batch):
             if type(transition) == int:
                 print(transition)
-                print(replay_batch)
                 continue
             for idx2, (state, next_state) in enumerate(zip(transition['state'], transition['next_state'])):
                 state_batch[idx2][idx] = state
