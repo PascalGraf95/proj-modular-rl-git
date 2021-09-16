@@ -5,13 +5,16 @@ from tensorflow.keras.losses import MeanSquaredError
 from tensorflow.keras.optimizers import Adam, SGD
 from ..misc.network_constructor import construct_network
 import tensorflow as tf
-from ..training_algorithms.agent_blueprint import Agent
+from ..training_algorithms.agent_blueprint import Learner
 import itertools
 from tensorflow.keras import Input, Model
 from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
 
 
 class IntrinsicCuriosityModule(ExplorationAlgorithm):
+    """
+    Basic implementation of the Intrinsic Curiosity Module (ICM)
+    """
     Name = "IntrinsicCuriosityModule"
     ActionAltering = False
     IntrinsicReward = True
@@ -83,9 +86,9 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
     def learning_step(self, replay_batch):
         state_batch, action_batch, \
          reward_batch, next_state_batch, \
-         done_batch = Agent.get_training_batch_from_replay_batch(replay_batch,
-                                                                 self.observation_shapes,
-                                                                 self.action_shape)
+         done_batch = Learner.get_training_batch_from_replay_batch(replay_batch,
+                                                                   self.observation_shapes,
+                                                                   self.action_shape)
 
         # Calculate Loss
         with tf.GradientTape() as tape:
@@ -117,9 +120,9 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
     def get_intrinsic_reward(self, replay_batch):
         state_batch, action_batch, \
             reward_batch, next_state_batch, \
-            done_batch = Agent.get_training_batch_from_replay_batch(replay_batch,
-                                                                    self.observation_shapes,
-                                                                    self.action_shape)
+            done_batch = Learner.get_training_batch_from_replay_batch(replay_batch,
+                                                                      self.observation_shapes,
+                                                                      self.action_shape)
 
         # Extract features from the current and next state
         state_features = self.feature_extractor(state_batch)

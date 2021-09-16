@@ -187,12 +187,6 @@ class SACLearner(Learner):
                                                         clipvalue=self.clip_grad)
         self.alpha = tf.exp(self.log_alpha).numpy()
 
-    def set_gpu_growth(self):
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        if gpus:
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-
     def get_actor_network_weights(self):
         return [self.actor_network.get_weights(), self.critic1.get_weights()]
 

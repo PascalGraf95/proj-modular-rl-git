@@ -6,22 +6,69 @@ from tensorflow.keras import Model
 from tensorflow.keras.optimizers import Adam
 from ..misc.network_constructor import construct_network
 from tensorflow.keras.models import clone_model
-from .agent_blueprint import Agent
+from .agent_blueprint import Actor, Learner
 from datetime import datetime
 import os
+import ray
+import tensorflow as tf
+
+@ray.remote
+class DQNActor(Actor):
+    def __init__(self, port: int, mode: str,
+                 interface: str,
+                 preprocessing_algorithm: str,
+                 preprocessing_path: str,
+                 exploration_algorithm: str,
+                 environment_path: str = "",
+                 device: str = '/cpu:0'):
+        super().__init__(port, mode, interface, preprocessing_algorithm, preprocessing_path,
+                         exploration_algorithm, environment_path, device)
+
+    def act(self, states, mode="training"):
+        # Check if any agent in the environment is not in a terminal state
+        active_agent_number = np.shape(states[0])[0]
+        if not active_agent_number:
+            return Learner.get_dummy_action(active_agent_number, self.action_shape, self.action_type)
+        with tf.device(self.device):
+            action_values = self.critic_network(states)
+            actions = tf.expand_dims(tf.argmax(action_values, axis=1), axis=1)
+        return actions.numpy()
+
+    def get_sample_errors(self, samples):
+        state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+            = Learner.get_training_batch_from_replay_batch(samples, self.observation_shapes, self.action_shape)
+
+        with tf.device(self.device):
+            critic_prediction = self.critic_network(next_state_batch)
+            critic_target = tf.maximum(critic_prediction, axis=1) * (~done_batch).astype(int)
+            y = reward_batch + (self.gamma**self.n_steps) * critic_target
+            sample_errors = np.abs(y - self.critic_network(state_batch))
+        return sample_errors
+
+    def update_actor_network(self, network_weights):
+        self.critic_network.set_weights(network_weights)
+        self.network_update_requested = False
+        self.new_steps_taken = 0
+
+    def build_network(self, network_parameters, environment_parameters, idx):
+        network_parameters[0]['Input'] = environment_parameters.get('ObservationShapes')
+        network_parameters[0]['Output'] = [environment_parameters.get('ActionShape')]
+        network_parameters[0]['OutputActivation'] = [None]
+        network_parameters[0]['TargetNetwork'] = False
+        network_parameters[0]['NetworkType'] = 'ModelCopy{}'.format(idx)
+
+        # Build
+        with tf.device(self.device):
+            self.critic_network = construct_network(network_parameters[0])
+        return True
 
 
-class DQNAgent(Agent):
-    # Static, algorithm specific Parameters
-    TrainingParameterSpace = Agent.TrainingParameterSpace.copy()
+@ray.remote(num_gpus=1)
+class DQNLearner(Learner):
+    # region ParameterSpace
+    TrainingParameterSpace = Learner.TrainingParameterSpace.copy()
     DQNParameterSpace = {
-        'ReplayMinSize': int,
-        'ReplayCapacity': int,
-        'NSteps': int,
         'LearningRate': float,
-        'SyncMode': str,
-        'SyncSteps': int,
-        'Tau': float,
         'DoubleLearning': bool
     }
     TrainingParameterSpace = {**TrainingParameterSpace, **DQNParameterSpace}
@@ -30,70 +77,55 @@ class DQNAgent(Agent):
         'VectorNetworkArchitecture': str,
         'Units': int,
         'Filters': int,
-        'DuelingNetworks': bool,
-        'NoisyNetworks': bool
     }]
     ActionType = ['DISCRETE']
-    ReplayBuffer = 'memory'
-    LearningBehavior = 'OffPolicy'
     NetworkTypes = ['QNetwork']
     Metrics = ['ValueLoss']
+    # endregion
 
-    def __init__(self, mode,
-                 learning_parameters=None,
-                 environment_configuration=None,
-                 network_parameters=None,
-                 model_path=None):
-        # Learning Parameters
-        self.sync_mode = learning_parameters.get('SyncMode')
-        self.sync_steps = learning_parameters.get('SyncSteps')
-        self.tau = learning_parameters.get('Tau')
-        self.double_learning = learning_parameters.get('DoubleLearning')
-        self.gamma = learning_parameters.get('Gamma')
-        self.n_steps = learning_parameters.get('NSteps')
-        self.training_step = 0
+    def __init__(self, mode, trainer_configuration, environment_configuration, network_parameters, model_path=None):
+        # Networks
+        self.model, self.model_target = None, None
+
+        # Double Learning
+        self.double_learning = trainer_configuration.get('DoubleLearning')
 
         # Environment Configuration
-        self.observation_shapes = environment_configuration.get('ObservationShapes')
         self.action_shape = environment_configuration.get('ActionShape')
+        self.observation_shapes = environment_configuration.get('ObservationShapes')
 
+        # Learning Parameters
+        self.n_steps = trainer_configuration.get('NSteps')
+        self.gamma = trainer_configuration.get('Gamma')
+        self.sync_mode = trainer_configuration.get('SyncMode')
+        self.sync_steps = trainer_configuration.get('SyncSteps')
+        self.tau = trainer_configuration.get('Tau')
+        self.clip_grad = trainer_configuration.get('ClipGrad')
+        self.learning_rate = trainer_configuration.get('LearningRate')
+
+        # Misc
+        self.training_step = 0
+        self.set_gpu_growth()  # Important step to avoid tensorflow OOM errors when running multiprocessing!
+
+        # Construct or load the required neural networks based on the trainer configuration and environment information
         if mode == 'training':
             # Network Construction
-            self.model, self.target_model = self.build_network(network_parameters, environment_configuration)
+            self.build_network(network_parameters, environment_configuration)
             # Load Pretrained Models
             if model_path:
                 self.load_checkpoint(model_path)
-            # Compile Networks
-            self.model.compile(loss='mse', optimizer=Adam(learning_parameters.get('LearningRate')))
 
+            # Compile Networks
+            self.model.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRate'),
+                                              clipvalue=self.clip_grad), loss="mse")
+
+        # Load trained Models
         elif mode == 'testing':
             assert model_path, "No model path entered."
             self.load_checkpoint(model_path)
 
-    def load_checkpoint(self, path):
-        if os.path.isfile(path):
-            self.model = load_model(path)
-            self.target_model = clone_model(self.model)
-        elif os.path.isdir(path):
-            file_names = [f for f in os.listdir(path) if f.endswith(".h5")]
-            for file_name in file_names:
-                if "DQN" in file_name:
-                    self.model = load_model(os.path.join(path, file_name))
-                    self.target_model = clone_model(self.model)
-            if not self.model:
-                raise FileNotFoundError("Could not find all necessary model files.")
-        else:
-            raise NotADirectoryError("Could not find directory or file for loading models.")
-
-    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False):
-        model_path = os.path.join(path, "DQN_Step{}_Reward{:.2f}.h5".format(training_step, running_average_reward))
-        print(model_path)
-        self.model.save(model_path)
-
-    @staticmethod
-    def get_config():
-        config_dict = DQNAgent.__dict__
-        return Agent.get_config(config_dict)
+    def get_actor_network_weights(self):
+        return [self.actor_network.get_weights(), self.critic1.get_weights()]
 
     def build_network(self, network_parameters, environment_parameters):
         network_parameters[0]['Input'] = environment_parameters.get('ObservationShapes')
@@ -101,15 +133,9 @@ class DQNAgent(Agent):
         network_parameters[0]['OutputActivation'] = [None]
         network_parameters[0]['TargetNetwork'] = True
         network_parameters[0]['NetworkType'] = self.NetworkTypes[0]
-        return construct_network(network_parameters[0])
 
-    def act(self, states):
-        agent_num = np.shape(states[0])[0]
-        if not agent_num:
-            return Agent.get_dummy_action(agent_num, self.action_shape, self.ActionType)
-        action_values = self.model.predict(states)
-        action = np.expand_dims(np.argmax(action_values, axis=1), axis=1)
-        return action
+        # Build
+        self.model, self.model_target = construct_network(network_parameters[0])
 
     def learn(self, replay_batch):
         state_batch, action_batch, reward_batch, next_state_batch, done_batch \
@@ -142,13 +168,34 @@ class DQNAgent(Agent):
     def sync_models(self):
         if self.sync_mode == "hard_sync":
             if not self.training_step % self.sync_steps and self.training_step > 0:
-                self.target_model.set_weights(self.model.get_weights())
+                self.model_target.set_weights(self.model.get_weights())
         elif self.sync_mode == "soft_sync":
-            self.target_model.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
+            self.model_target.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
                                            for weights, target_weights in zip(self.model.get_weights(),
-                                                                              self.target_model.get_weights())])
+                                                                              self.model_target.get_weights())])
+        else:
+            raise ValueError("Sync mode unknown.")
 
+    def load_checkpoint(self, path):
+        if os.path.isfile(path):
+            self.model = load_model(path)
+        elif os.path.isdir(path):
+            file_names = [f for f in os.listdir(path) if f.endswith(".h5")]
+            for file_name in file_names:
+                if "DQN_Model" in file_name:
+                    self.model = load_model(os.path.join(path, file_name))
+                    self.model_target = clone_model(self.model)
+                    self.critic_target1.set_weights(self.model.get_weights())
+            if not self.model:
+                raise FileNotFoundError("Could not find all necessary model files.")
+        else:
+            raise NotADirectoryError("Could not find directory or file for loading models.")
 
-if __name__ == '__main__':
-    # Test methods for debugging
-    print(DQNAgent.get_config())
+    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False):
+        self.model.save(
+            os.path.join(path, "DQN_Model_Step{}_Reward{:.2f}.h5".format(training_step, running_average_reward)))
+
+    @staticmethod
+    def get_config():
+        config_dict = DQNLearner.__dict__
+        return Learner.get_config(config_dict)

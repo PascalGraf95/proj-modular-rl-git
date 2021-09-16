@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import numpy as np
+import tensorflow as tf
 from ..misc.logger import LocalLogger
 from ..misc.replay_buffer import LocalFIFOBuffer
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
@@ -361,6 +362,12 @@ class Learner:
 
     def build_network(self, network_parameters, environment_parameters):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    def set_gpu_growth(self):
+        gpus = tf.config.experimental.list_physical_devices('GPU')
+        if gpus:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
 
     def sync_models(self):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")

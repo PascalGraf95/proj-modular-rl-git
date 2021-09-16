@@ -21,6 +21,10 @@ class Steps:
 
 
 class OpenAIGymInterface:
+    """
+    This interface translates the universal commands used in this repository for environment communication to
+    interact with OpenAI Gym environments.
+    """
     observation = 0
     reward = 0
     done = False

@@ -36,6 +36,12 @@ class NetworkArchitecture(Enum):
     RESNET12 = "ResNet12"
 
 
+"""
+This file contains methods to construct neural networks in Tensorflow given the type of network, the number of units
+or filters as well as the desired input and output shapes.
+"""
+
+
 def construct_network(network_parameters):
     # Distinguish Dense vs. NoisyDense Layer (Only for DQN)
     global Dense

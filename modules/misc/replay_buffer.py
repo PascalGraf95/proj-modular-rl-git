@@ -85,8 +85,15 @@ class SumTree:
         return self.tree[0]
 
 
-@ray.remote(num_cpus=1)
+@ray.remote
 class PrioritizedBuffer:
+    """
+    Prioritized Experience Replay implementation utilizing a sum tree.
+    This buffer collects the experiences from the local buffers of each actor.
+    It samples experiences based on their temporal difference error, meaning the more surprising
+    an experience was to the agent the more likely it will be sampled. After training the priorities for each training
+    sample is updated.
+    """
     per_e = 0.001  # Avoid samples to have 0 probability of being taken
     per_a = 0.6  # tradeoff between taking only experiences with high priority vs. uniform sampling
     per_beta = 0.4  # importance-sampling, from initial value increasing to 1
@@ -170,10 +177,11 @@ class PrioritizedBuffer:
             self.tree.update(idx, priority)
 
 
-@ray.remote(num_cpus=1)
+@ray.remote
 class FIFOBuffer:
     """
-
+    Global First-In-First-Out Buffer without priorities. This buffer collects the experiences from the local buffers of
+    each actor in a deque. The sampling is uniform.
     """
     def __init__(self,
                  capacity: int,
@@ -343,7 +351,8 @@ class FIFOBuffer:
 
 class LocalFIFOBuffer:
     """
-
+    This Local First-In-First-Out buffer is constructed once for each actor. It temporarily stores experiences until
+    they're copied to the global buffer. After that the buffer is cleared.
     """
     def __init__(self,
                  capacity: int,

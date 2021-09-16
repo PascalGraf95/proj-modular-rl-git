@@ -6,6 +6,10 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 
 
 class MlAgentsV18Interface:
+    """
+    This interface translates the universal commands used in this repository for environment communication to
+    interact with Unity environments which have installed Ml-AgentsV18.
+    """
     @staticmethod
     def get_behavior_name(env: UnityEnvironment):
         spec = env.behavior_specs

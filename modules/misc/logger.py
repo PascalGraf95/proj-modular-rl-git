@@ -7,18 +7,13 @@ from collections import deque
 from tensorflow.python.summary.summary_iterator import summary_iterator
 from datetime import datetime
 
-"""
-Logger
-
-Creates a Tensorboard Logger for scalar values or running average values.
-Methods to append new values are provided.
-
-Created by Pascal Graf
-Last edited 29.01.2021
-"""
-
 
 class LocalLogger:
+    """
+    Local Logger
+    This logger is created once for each actor and temporarily keeps track of the episode rewards and lengths.
+    The loggers are reset after the stats are read out. Only the total number of episodes persists.
+    """
     def __init__(self, agent_num=1):
         # Count of episodes played in total
         self.total_episodes_played = 0
@@ -60,6 +55,13 @@ class LocalLogger:
 
 
 class GlobalLogger:
+    """
+    Global Logger
+    Collects rewards and episode lengths from the actor's local loggers and sends them to Tensorboard.
+    Furthermore, it tests if the conditions for a new model checkpoint are given.
+    The Tensorboard files are stored in "./training/summaries" and can be viewed by opening a command line in this very
+    directory and typing "tensorboard --logdir ."
+    """
     def __init__(self, log_dir="./summaries",
                  tensorboard=True,
                  actor_num=1,
