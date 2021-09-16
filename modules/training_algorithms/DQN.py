@@ -36,13 +36,21 @@ class DQNActor(Actor):
 
     def get_sample_errors(self, samples):
         state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-            = Learner.get_training_batch_from_replay_batch(samples, self.observation_shapes, self.action_shape)
+            = self.get_training_batch_from_replay_batch(samples, self.observation_shapes, self.action_shape)
 
-        with tf.device(self.device):
-            critic_prediction = self.critic_network(next_state_batch)
-            critic_target = tf.maximum(critic_prediction, axis=1) * (~done_batch).astype(int)
-            y = reward_batch + (self.gamma**self.n_steps) * critic_target
-            sample_errors = np.abs(y - self.critic_network(state_batch))
+        row_array = np.arange(len(samples))
+        # If the state is not terminal:
+        # t = 𝑟 + 𝛾 * 𝑚𝑎𝑥_𝑎′ 𝑄̂(𝑠′,𝑎′) else t = r
+        target_prediction = self.model.predict(next_state_batch)
+        target_batch = reward_batch + \
+            (self.gamma**self.n_steps) * tf.maximum(target_prediction, axis=1) * (1-done_batch)
+
+        # Set the Q value of the chosen action to the target.
+        q_batch = self.model.predict(state_batch)
+        q_batch[row_array, action_batch.astype(int)] = target_batch
+
+        # Train the network on the training batch.
+        sample_errors = np.abs(q_batch - self.critic_network(state_batch))
         return sample_errors
 
     def update_actor_network(self, network_weights):
@@ -142,28 +150,29 @@ class DQNLearner(Learner):
             = self.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, self.action_shape)
 
         row_array = np.arange(len(replay_batch))
-        not_done_batch = ~done_batch.astype(bool)
         # If the state is not terminal:
         # t = 𝑟 + 𝛾 * 𝑚𝑎𝑥_𝑎′ 𝑄̂(𝑠′,𝑎′) else t = r
         target_prediction = self.target_model.predict(next_state_batch)
-        target_batch = reward_batch
         if self.double_learning:
-            model_prediction_argmax = np.argmax(self.model.predict(next_state_batch), axis=1)
-            target_batch += (self.gamma**self.n_steps) * target_prediction[row_array, model_prediction_argmax] * not_done_batch.astype(int)
+            model_prediction_argmax = tf.argmax(self.model(next_state_batch), axis=1)
+            target_batch = reward_batch + \
+                (self.gamma**self.n_steps) * target_prediction[row_array, model_prediction_argmax] * (1-done_batch)
         else:
-            target_batch += (self.gamma**self.n_steps) * np.amax(target_prediction, axis=1) * not_done_batch.astype(int)
+            target_batch = reward_batch + \
+                (self.gamma**self.n_steps) * tf.maximum(target_prediction, axis=1) * (1-done_batch)
 
         # Set the Q value of the chosen action to the target.
         q_batch = self.model.predict(state_batch)
         q_batch[row_array, action_batch.astype(int)] = target_batch
 
         # Train the network on the training batch.
+        sample_errors = np.abs(q_batch - self.critic_network(state_batch))
         value_loss = self.model.train_on_batch(state_batch, q_batch)
 
         # Update target network weights
         self.training_step += 1
         self.sync_models()
-        return {'Losses/Loss': value_loss}, 0, self.training_step
+        return {'Losses/Loss': value_loss}, sample_errors, self.training_step
 
     def sync_models(self):
         if self.sync_mode == "hard_sync":
