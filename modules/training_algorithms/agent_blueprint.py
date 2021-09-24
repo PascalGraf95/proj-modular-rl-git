@@ -212,54 +212,6 @@ class Actor:
     # endregion
 
     # region Environment Interaction
-    def playing_loop(self):
-        # First environment reset and step acquisition (steps contain states and rewards)
-        AgentInterface.reset(self.environment)
-        decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
-        # Loop episodes until terminated
-        while True:
-            # Preprocess steps if an respective algorithm has been activated
-            decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
-                                                                                                  terminal_steps)
-            # Choose the next action either by exploring or exploiting
-            actions = self.exploration_algorithm.act(decision_steps)
-            if actions is None:
-                actions = self.act(decision_steps.obs, mode=self.mode)
-
-            # Append steps and actions to the local replay buffer
-            self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
-                                            terminal_steps.agent_id,
-                                            step_type="terminal")
-            self.local_buffer.add_new_steps(decision_steps.obs, decision_steps.reward,
-                                            decision_steps.agent_id,
-                                            actions=actions, step_type="decision")
-
-            # Track the rewards in a local logger
-            self.local_logger.track_episode(terminal_steps.reward, terminal_steps.agent_id,
-                                            step_type="terminal")
-            self.local_logger.track_episode(decision_steps.reward, decision_steps.agent_id,
-                                            step_type="decision")
-
-            # If enough samples have been collected, mark local buffer ready for readout
-            if self.local_buffer.collected_trajectories:
-                self.minimum_capacity_reached = True
-
-            # If enough steps have been taken, mark agent ready for updated network
-            self.new_steps_taken += 1
-            if self.new_steps_taken >= self.network_update_frequency:
-                self.network_update_requested = True
-
-            # If all agents are in a terminal state reset the environment
-            if self.local_buffer.check_reset_condition():
-                AgentInterface.reset(self.environment)
-                self.local_buffer.done_agents.clear()
-                self.curriculum_communicator.set_task_number(self.target_task_level)
-            # Otherwise take a step in the environment according to the chosen action
-            else:
-                AgentInterface.step_action(self.environment, self.behavior_name, actions)
-            # Gather new steps
-            decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
-
     def play_one_step(self):
         # Step acquisition (steps contain states, done_flags and rewards)
         decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
@@ -290,7 +242,7 @@ class Actor:
             self.minimum_capacity_reached = True
 
         # If enough steps have been taken, mark agent ready for updated network
-        self.new_steps_taken += 1
+        self.new_steps_taken += len(decision_steps)
         if self.new_steps_taken >= self.network_update_frequency:
             self.network_update_requested = True
 
