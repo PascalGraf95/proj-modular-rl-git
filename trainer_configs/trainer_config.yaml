@@ -119,11 +119,11 @@ dqn:
     TrainingInterval: 8
 sac:
     ActorNum: 10
-    BatchSize: 64
+    BatchSize: 128
     ClipGrad: 10.0
     ExplorationParameters:
         Epsilon: 0.4
-        EpsilonDecay: 0.9999
+        EpsilonDecay: 0.99995
         EpsilonMin: 0.01
         StepDown: false
     Gamma: 0.99
@@ -131,19 +131,19 @@ sac:
     LearningRateCritic: 0.0005
     LogAlpha: -2.0
     NSteps: 4
-    AdaptiveExploration: true
+    AdaptiveExploration: false
     NetworkUpdateFrequency: 300
     NetworkParameters:
-    -   Filters: 128
-        Units: 128
+    -   Filters: 256
+        Units: 256
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 128
-        Units: 128
+    -   Filters: 256
+        Units: 256
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 128
-        Units: 128
+    -   Filters: 256
+        Units: 256
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: true
@@ -152,7 +152,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingID: SAC_Crawler_10Actors
+    TrainingID: SAC_VisionBasedRobot
     TrainingInterval: 0
 td3:
     ActorTrainingFreq: 3

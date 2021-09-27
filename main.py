@@ -32,14 +32,14 @@ def main():
 
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
-    mode = "testing"
-    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210918_174138_SAC_Crawler_10Actors"  # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210911_193402_SAC_Robot_PER_EpislonGreedy_10ActorsAsync"
+    mode = "training"
+    model_path = None # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210911_193402_SAC_Robot_PER_EpislonGreedy_10ActorsAsync"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
     interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
     # If you want to run multiple Unity actors in parallel you need specify the path to the '.exe' file here.
-    environment_path = None#r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\SingleCrawler\UnityEnvironment.exe" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\SpaceEvader\SpaceEvader.exe"  # r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
+    environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0_Camera\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 
     # Choose from "None", "EpsilonGreedy" and "ICM"
     exploration_algorithm = 'EpsilonGreedy'
@@ -48,12 +48,12 @@ def main():
     trainer.select_training_algorithm('SAC')
 
     # Choose from None, "LinearCurriculum", "RememberingCurriculum" and "CrossFadeCurriculum"
-    curriculum_strategy = None
+    curriculum_strategy = "LinearCurriculum"
     trainer.select_curriculum_strategy(curriculum_strategy)
 
     # Choose from "None" and "SemanticSegmentation"
-    preprocessing_algorithm = 'None'
-    preprocessing_path = r""  # Enter the path for the preprocessing model
+    preprocessing_algorithm = 'SemanticSegmentation'
+    preprocessing_path = r"C:\PGraf\Arbeit\RL\SemanticSegmentation\vae\models\210809_101443_VAE_encoder_235" # Enter the path for the preprocessing model
 
     trainer.save_all_models = True  # Determines if all models or only the actor will be saved during training
     trainer.remove_old_checkpoints = False  # Determines if old model checkpoints will be overwritten

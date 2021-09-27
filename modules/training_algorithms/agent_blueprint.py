@@ -113,6 +113,9 @@ class Actor:
         return self.exploration_algorithm.get_logs(idx)
 
     def get_environment_configuration(self):
+        return self.environment_configuration
+
+    def read_environment_configuration(self):
         self.behavior_name = AgentInterface.get_behavior_name(self.environment)
         self.action_shape = AgentInterface.get_action_shape(self.environment)
         self.action_type = AgentInterface.get_action_type(self.environment)
@@ -124,7 +127,6 @@ class Actor:
                                           "ActionType": self.action_type,
                                           "ObservationShapes": self.observation_shapes,
                                           "AgentNumber": self.agent_number}
-        return self.environment_configuration
 
     def get_exploration_configuration(self):
         """Gather the parameters requested by selected the exploration algorithm.
@@ -188,7 +190,7 @@ class Actor:
     def instantiate_modules(self, trainer_configuration, exploration_degree):
         self.gamma = trainer_configuration["Gamma"]
         self.n_steps = trainer_configuration["NSteps"]
-        self.get_environment_configuration()
+        self.read_environment_configuration()
         self.adaptive_exploration = trainer_configuration.get("AdaptiveExploration")
         trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
         self.exploration_algorithm = ExplorationAlgorithm(self.environment_configuration["ActionShape"],
@@ -196,9 +198,12 @@ class Actor:
                                                           self.environment_configuration["ActionType"],
                                                           trainer_configuration["ExplorationParameters"])
         self.curriculum_communicator = CurriculumCommunicator(self.curriculum_side_channel)
+
         self.preprocessing_algorithm = PreprocessingAlgorithm(self.preprocessing_path)
-        self.environment_configuration["ObservationShapes"] = \
-            self.preprocessing_algorithm.get_output_shapes(self.environment_configuration)
+        modified_output_shapes = self.preprocessing_algorithm.get_output_shapes(self.environment_configuration)
+        self.environment_configuration["ObservationShapes"] = modified_output_shapes
+        self.observation_shapes = modified_output_shapes
+
         self.local_logger = LocalLogger(agent_num=self.agent_number)
         self.instantiate_local_buffer(trainer_configuration)
     # endregion
