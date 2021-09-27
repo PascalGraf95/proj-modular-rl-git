@@ -1,75 +1,223 @@
 #!/usr/bin/env python
 
-"""
-Advanced Replay Buffer
-
-Stores a limited number of experience samples of form (s, a, r', s') from the environment.
-These replays can later be used as replay buffer to train a neural network with random samples to improve the
-performance. Is able to store n-step replays.
-
-Created by Pascal Graf
-Last edited 08.07.2020
-"""
-
 from collections import namedtuple, deque
 import numpy as np
 import matplotlib.pyplot as plt
 from copy import deepcopy
+import ray
 prioritized_experience = namedtuple("PrioritizedExperience", field_names=["priority", "probability"])
 
 
-class ReplayBuffer:
+# Modified from: https://pylessons.com/CartPole-PER/
+class SumTree:
+    data_pointer = 0
+
+    # Here we initialize the tree with all nodes = 0, and initialize the data with all values = 0
+    def __init__(self, capacity):
+        # Number of leaf nodes (final nodes) that contains experiences
+        self.capacity = capacity
+        # Generate the tree with all nodes values = 0
+        # Remember we are in a binary node (each node has max 2 children) so 2x size of leaf (capacity) - 1 (root node)
+        # Parent nodes = capacity - 1
+        # Leaf nodes = capacity
+        self.tree = np.zeros(2 * capacity - 1)
+        # Contains the experiences (so the size of data is capacity)
+        self.data = np.zeros(capacity, dtype=object)
+        self.n_entries = 0
+
+    def add(self, priority, data):
+        # Which index to we want to put the experience, leaves will be filled from left to right
+        idx = self.data_pointer + self.capacity - 1
+        # Update data
+        self.data[self.data_pointer] = data
+        # Update the leaf
+        self.update(idx, priority)
+        # Add 1 to the data pointer
+        self.data_pointer += 1
+        # If maximum capacity is reached, go back to the first index
+        if self.data_pointer >= self.capacity:
+            self.data_pointer = 0
+        # Keep track of the number of entries in the buffer
+        if self.n_entries < self.capacity:
+            self.n_entries += 1
+
+    def update(self, idx, priority):
+        # Change = new priority score - former priority score
+        change = priority - self.tree[idx]
+        self.tree[idx] = priority
+        # Then propagate the change through the tree
+        # self._propagate(idx, change)
+        # TODO: Test while loop vs. recursive function time
+        while idx != 0:
+            idx = (idx - 1) // 2
+            self.tree[idx] += change
+
+    def get(self, v):
+        parent_index = 0
+        while True:
+            left_child_index = 2 * parent_index + 1
+            right_child_index = left_child_index + 1
+
+            # If the bottom level has been reached, end the search
+            if left_child_index >= len(self.tree):
+                leaf_index = parent_index
+                break
+            # Else reach downward one level
+            else:
+                if v <= self.tree[left_child_index]:
+                    parent_index = left_child_index
+                else:
+                    v -= self.tree[left_child_index]
+                    parent_index = right_child_index
+
+        # Convert from leaf index to data index (which has half the capacity)
+        data_index = leaf_index - self.capacity + 1
+        # Return leaf index, sample priority and the actual data
+        return leaf_index, self.tree[leaf_index], self.data[data_index]
+
+    def _propagate(self, idx, change):
+        parent = (idx - 1) // 2
+        self.tree[parent] += change
+        if parent != 0:
+            self._propagate(parent, change)
+
+    def total_priority(self):
+        return self.tree[0]
+
+
+@ray.remote
+class PrioritizedBuffer:
+    """
+    Prioritized Experience Replay implementation utilizing a sum tree.
+    This buffer collects the experiences from the local buffers of each actor.
+    It samples experiences based on their temporal difference error, meaning the more surprising
+    an experience was to the agent the more likely it will be sampled. After training the priorities for each training
+    sample is updated.
+    """
+    per_e = 0.001  # Avoid samples to have 0 probability of being taken
+    per_a = 0.6  # tradeoff between taking only experiences with high priority vs. uniform sampling
+    per_beta = 0.4  # importance-sampling, from initial value increasing to 1
+    per_beta_increment_per_sampling = 0.001
+
+    def __init__(self, capacity: int):
+
+        # Initialize sum tree
+        self.tree = SumTree(capacity)
+        self.capacity = capacity
+
+        # Flag to indicate if training threshold has been reached
+        self.min_size_reached = False
+
+        # New sample and trajectory counters
+        self.new_training_samples = 0
+        self.collected_trajectories = 0
+        self.steps_without_training = 0
+
+    def __len__(self):
+        return self.tree.n_entries
+
+    def reset(self):
+        self.tree = SumTree(self.capacity)
+
+    def check_training_condition(self, trainer_configuration):
+        if self.tree.n_entries > trainer_configuration['ReplayMinSize']:
+            self.min_size_reached = True
+        self.steps_without_training += 1
+        if self.steps_without_training >= trainer_configuration['TrainingInterval'] and self.min_size_reached:
+            self.steps_without_training = 0
+            return True
+        return False
+
+    def _getPriority(self, error):
+        return (error + self.per_e) ** self.per_a
+
+    def append(self, s, a, r, next_s, done, error):
+        priority = self._getPriority(error)
+        self.tree.add(priority, {"state": s, "action": a, "reward": r, "next_state": next_s, "done": done})
+        self.new_training_samples += 1
+
+    def append_list(self, samples, errors):
+        for sample, error in zip(samples, errors):
+            priority = self._getPriority(error)
+            self.tree.add(priority, sample)
+        self.new_training_samples += len(samples)
+
+    def sample(self, batch_size: int):
+        batch = []
+        batch_indices = np.empty((batch_size,), dtype=np.int32)
+
+        # Priority segment = total priority / number of samples
+        priority_segment = self.tree.total_priority() / batch_size
+        # priorities = []
+        self.per_beta = np.min([1., self.per_beta + self.per_beta_increment_per_sampling])
+
+        for i in range(batch_size):
+            # A value is uniformly sampled from each range
+            a, b = priority_segment * i, priority_segment * (i+1)
+            value = np.random.uniform(a, b)
+            index, priority, data = self.tree.get(value)
+            # priorities.append(priority)
+            batch.append(data)
+            batch_indices[i] = index
+
+        # sampling_probabilities = priorities / self.tree.total_priority()
+        # is_weight = np.power(self.tree.n_entries * sampling_probabilities, -self.beta)
+        # is_weight /= is_weight.max()
+        # TODO: Implement Importance Sampling
+
+        self.collected_trajectories = 0
+        self.new_training_samples = 0
+
+        copy_by_val_replay_batch = deepcopy(batch)
+        return copy_by_val_replay_batch, batch_indices  # , is_weight
+
+    def update(self, indices, errors):
+        for idx, error in zip(indices, errors):
+            priority = self._getPriority(error)
+            self.tree.update(idx, priority)
+
+
+@ray.remote
+class FIFOBuffer:
+    """
+    Global First-In-First-Out Buffer without priorities. This buffer collects the experiences from the local buffers of
+    each actor in a deque. The sampling is uniform.
+    """
     def __init__(self,
                  capacity: int,
                  agent_num: int = 1,
                  n_steps: int = 1,
                  gamma: float = 1,
-                 mode: str = "memory",
-                 prioritized: bool = False,
-                 prioritized_update_frequency: int = 5,
-                 parameter_update_frequency: int = 500,
-                 prediction_error_based: bool = False):
-        self.buffer = deque(maxlen=capacity)
-        self.min_size_reached = False
-        self.n_steps = n_steps
-        self.done_indices = set()
-        self.agent_num = agent_num
-        self.mode = mode
+                 store_trajectories: bool = False):
 
-        # New Sample and Trajectory Counters
+        # Initialize actual buffer with defined capacity
+        self.buffer = deque(maxlen=capacity)
+        # Flag to indicate if training threshold has been reached
+        self.min_size_reached = False
+        # n-Step reward sum
+        self.n_steps = n_steps
+        # Keep track of which agent's episodes have ended in the simulation (relevant if multiple)
+        self.done_agents = set()
+        self.agent_num = agent_num
+        # If set to true, only whole trajectories are written into the buffer, otherwise they are written step-by-step
+        # which results in arbitrary order for multiple agents in one environment.
+        self.store_trajectories = store_trajectories
+
+        # New sample and trajectory counters
         self.new_training_samples = 0
         self.collected_trajectories = 0
 
-        # TEST: Prioritized Experience Replay
-        self.prioritized = prioritized
-        self.prioritized_update_frequency = prioritized_update_frequency
-        self.parameter_update_frequency = parameter_update_frequency
-        self.prio_update = 0
-
         self.sampled_indices = None
 
-        self.alpha = 0.5
-        self.alpha_decay_rate = 0.99
+        # Deque to enable n-step reward calculation
+        self.state_deque = [deque(maxlen=n_steps+1) for x in range(self.agent_num)]
+        self.action_deque = [deque(maxlen=n_steps+1) for x in range(self.agent_num)]
+        self.reward_deque = [deque(maxlen=n_steps) for x in range(self.agent_num)]
 
-        self.priority_sum_alpha = 0
-        self.max_priority = 1
-        self.max_weight = 1
+        # Temporal buffer for storing trajectories
+        self.temp_agent_buffer = [[] for x in range(self.agent_num)]
 
-        # TEST: Prediction error based buffer
-        self.prediction_error_deque = deque(maxlen=10000)
-        self.prediction_error_based = prediction_error_based
-
-        if self.mode == "memory":
-            self.state_deque = [deque(maxlen=n_steps+1) for x in range(self.agent_num)]
-            self.action_deque = [deque(maxlen=n_steps+1) for x in range(self.agent_num)]
-            self.reward_deque = [deque(maxlen=n_steps) for x in range(self.agent_num)]
-        else:
-            self.state_deque = [[] for x in range(self.agent_num)]
-            self.action_deque = [[] for x in range(self.agent_num)]
-            self.reward_deque = [[] for x in range(self.agent_num)]
-        if prioritized:
-            self.prioritized_deque = deque(maxlen=capacity)
-
+        # Discount factor
         self.gamma = gamma
         self.gamma_list = [gamma ** n for n in range(n_steps)]
 
@@ -86,13 +234,18 @@ class ReplayBuffer:
             disc_return.append(sum_reward)
         return list(reversed(disc_return))
 
-    def add_new_steps(self, states, rewards, ids, exclude_ids=[], actions=None, step_type='decision', add_to_done=False):
+    def add_new_steps(self, states, rewards, ids, exclude_ids=[], actions=None,
+                      step_type='decision'):
+        # Iterate through all available agents
         for idx, agent_id in enumerate(ids):
-            if agent_id in self.done_indices or agent_id in exclude_ids:
+            # Don't add experiences of agents whose episode already ended or which are manually excluded
+            if agent_id in self.done_agents or agent_id in exclude_ids:
                 continue
+            # Combine all observations of one agent in one list
             state_component_list = []
             for state_component in states:
                 state_component_list.append(state_component[idx])
+            # Add observed state, reward and action to the deque
             self.state_deque[agent_id].append(state_component_list)
             self.reward_deque[agent_id].append(rewards[idx])
             if np.all(actions) is not None:
@@ -103,70 +256,54 @@ class ReplayBuffer:
             # If "done" append the remaining deque steps to the replay buffer
             # and clear the deques afterwards
             if step_type == 'terminal':
+                # Only add the collected experiences to the replay buffer if the episode was at least 2 steps long.
                 if len(self.state_deque[agent_id]) > 1:
-                    if self.mode == "memory":
-                        for n in range(self.n_steps):
-                            # Calculate the discounted reward for each value in the reward deque
-                            discounted_reward = [r * g for r, g in zip(self.reward_deque[agent_id], self.gamma_list)]
-                            self.append(self.state_deque[agent_id][0], self.action_deque[agent_id][0],
-                                        np.sum(discounted_reward), self.state_deque[agent_id][-1],
-                                        True)
-                            # Append placeholder values to each deque
-                            self.state_deque[agent_id].append(self.state_deque[agent_id][-1])
-                            self.action_deque[agent_id].append(None)
-                            self.reward_deque[agent_id].append(0)
-                    else:
-                        # discounted_return = self.calculate_discounted_return(self.reward_deque[agent_id])
-                        for i, (state, action, reward) in enumerate(zip(self.state_deque[agent_id][:-1],
-                                                                        self.action_deque[agent_id][:-1],
-                                                                        self.reward_deque[agent_id][1:])):
-                            if i == len(self.state_deque[agent_id][:-1])-1:
-                                self.append(state, action, reward, state, True)
-                            else:
-                                self.append(state, action, reward, state, False)
-                        self.collected_trajectories += 1
-                if self.mode == "trajectory" or self.agent_num == 1 or add_to_done:
-                    self.done_indices.add(agent_id)
+                    for n in range(self.n_steps):
+                        # Calculate the discounted reward for each value in the reward deque
+                        discounted_reward = [r * g for r, g in zip(self.reward_deque[agent_id], self.gamma_list)]
+                        # Add the experience to the temporal agent buffer
+                        self.temp_agent_buffer[agent_id].append([self.state_deque[agent_id][0], self.action_deque[agent_id][0],
+                                                                 np.sum(discounted_reward), self.state_deque[agent_id][-1],
+                                                                 True])
+                        # Append placeholder values to each deque
+                        self.state_deque[agent_id].append(self.state_deque[agent_id][-1])
+                        self.action_deque[agent_id].append(None)
+                        self.reward_deque[agent_id].append(0)
 
                 # Clear the deques
                 self.state_deque[agent_id].clear()
                 self.action_deque[agent_id].clear()
                 self.reward_deque[agent_id].clear()
 
-            if len(self.state_deque[agent_id]) == self.n_steps+1 and self.mode == "memory":
+                # Write the collected data to the actual replay buffer.
+                for experience in self.temp_agent_buffer[agent_id]:
+                    self.append(*experience)
+                self.temp_agent_buffer[agent_id].clear()
+                self.collected_trajectories += 1
+
+                if self.store_trajectories or self.agent_num == 1:
+                    self.done_agents.add(agent_id)
+
+            # Write the deque data to the temporal buffer
+            if len(self.state_deque[agent_id]) == self.n_steps+1:
                 # Calculate the discounted reward for each value in the reward deque
                 discounted_reward = [r * g for r, g in zip(self.reward_deque[agent_id], self.gamma_list)]
-                self.append(self.state_deque[agent_id][0], self.action_deque[agent_id][0],
-                            np.sum(discounted_reward), self.state_deque[agent_id][-1],
-                            False)
+                self.temp_agent_buffer[agent_id].append([self.state_deque[agent_id][0], self.action_deque[agent_id][0],
+                                                         np.sum(discounted_reward), self.state_deque[agent_id][-1],
+                                                         False])
+
+            # Write the collected data to the actual replay buffer if not storing whole trajectories.
+            if not self.store_trajectories:
+                for experience in self.temp_agent_buffer[agent_id]:
+                    self.append(*experience)
+                self.temp_agent_buffer[idx].clear()
 
     def append(self, s, a, r, next_s, done):
-        if self.prioritized:
-            if np.any(self.sampled_indices):
-                self.sampled_indices -= 1
-                for idx, s_idx in enumerate(self.sampled_indices):
-                    if s_idx < 0:
-                        self.sampled_indices[idx] = np.random.randint(0, len(self.buffer))
-            # If the maximum buffer capacity is reached
-            if len(self.buffer) == self.buffer.maxlen:
-                # Update the sum of priorities
-                overwritten_experience = self.prioritized_deque[0]
-                self.priority_sum_alpha -= overwritten_experience.probability ** self.alpha
-                # If the overwritten experience has the maximum priority perform a search for the new max
-                if overwritten_experience.priority == self.max_priority:
-                    self.prioritized_deque[0].priority = 0
-                    self.max_priority = max([p.priority for p in self.prioritized_deque])
-            # Set the new priority to the max priority and add to the priority sum
-            priority = self.max_priority
-            self.priority_sum_alpha += priority ** self.alpha
-            probability = priority ** self.alpha / self.priority_sum_alpha
-            # Append the new priority and probability
-            self.prioritized_deque.append(prioritized_experience(priority, probability))
         self.buffer.append({"state": s, "action": a, "reward": r, "next_state": next_s, "done": done})
         self.new_training_samples += 1
 
     def check_training_condition(self, trainer_configuration):
-        if self.mode == "memory":
+        if not self.store_trajectories:
             if len(self.buffer) > trainer_configuration['ReplayMinSize']:
                 self.min_size_reached = True
             if self.new_training_samples >= trainer_configuration['TrainingInterval'] and self.min_size_reached:
@@ -177,115 +314,207 @@ class ReplayBuffer:
         return False
 
     def check_reset_condition(self):
-        return len(self.done_indices) >= self.agent_num
+        return len(self.done_agents) >= self.agent_num
 
-    def check_sample_error(self, prediction_errors):
-        for e in prediction_errors:
-            self.prediction_error_deque.append(e)
-        if len(self.prediction_error_deque) >= self.prediction_error_deque.maxlen:
-            prediction_error_list = list(self.prediction_error_deque)
-            prediction_error_list.sort()
-            threshold = prediction_error_list[int(0.5*self.prediction_error_deque.maxlen)]
+    def update(self, indices, errors):
+        pass
 
-            for idx, e in enumerate(prediction_errors):
-                if e < threshold:
-                    del self.buffer[-len(prediction_errors)+idx]
+    def append_list(self, samples):
+        self.buffer.extend(samples)
+        self.new_training_samples += len(samples)
 
     def sample(self,
                batch_size: int,
-               throwaway: bool = False,
+               reset_buffer: bool = False,
                random_samples: bool = True):
         indices = []
-        if self.mode == "memory":
-            if random_samples:
-                if self.prioritized:
-                    if self.prio_update >= self.prioritized_update_frequency:
-                        self.prio_update = 0
-                    if self.prio_update == 0:
-                        self.sampled_indices = np.random.choice(len(self.buffer),
-                                                                batch_size*self.prioritized_update_frequency,
-                                                                p=[p.probability for p in self.prioritized_deque],
-                                                                replace=True)
-                    indices = self.sampled_indices[self.prio_update*batch_size: (self.prio_update+1)*batch_size]
-                    self.prio_update += 1
-                else:
-                    indices = np.random.choice(len(self.buffer), batch_size, replace=False)
-                replay_batch = [self.buffer[idx] for idx in indices]
-                self.new_training_samples = 0
-            else:
-                return [self.buffer[-self.new_training_samples+idx] for idx in range(self.new_training_samples)]
+        if random_samples:
+            indices = np.random.choice(len(self.buffer), batch_size, replace=True)
+            replay_batch = [self.buffer[idx] for idx in indices]
         else:
-            replay_batch = [transition for transition in self.buffer]
+            if batch_size == -1:
+                replay_batch = [transition for transition in self.buffer]
+            else:
+                replay_batch = [self.buffer[-self.new_training_samples+idx] for idx in range(self.new_training_samples)]
+        if reset_buffer:
             self.buffer.clear()
-            self.collected_trajectories = 0
-            if throwaway:
-                self.state_deque = [[] for x in range(self.agent_num)]
-                self.action_deque = [[] for x in range(self.agent_num)]
-                self.reward_deque = [[] for x in range(self.agent_num)]
+            self.state_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
+            self.action_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
+            self.reward_deque = [deque(maxlen=self.n_steps) for x in range(self.agent_num)]
+
+        self.collected_trajectories = 0
+        self.new_training_samples = 0
+
         copy_by_val_replay_batch = deepcopy(replay_batch)
         return copy_by_val_replay_batch, indices
 
-    def update_parameters(self, training_step):
-        if self.prioritized:
-            if training_step % self.parameter_update_frequency == 0:
-                self.alpha *= self.alpha_decay_rate
 
-            self.priority_sum_alpha = 0
-            sum_prob_before = 0
-            for element in self.prioritized_deque:
-                sum_prob_before += element.probability
-                self.priority_sum_alpha += element.priority**self.alpha
-            sum_prob_after = 0
-            for index, element in enumerate(self.prioritized_deque):
-                probability = element.priority ** self.alpha / self.priority_sum_alpha
-                sum_prob_after += probability
-                self.prioritized_deque[index] = prioritized_experience(element.priority, probability)
+class LocalFIFOBuffer:
+    """
+    This Local First-In-First-Out buffer is constructed once for each actor. It temporarily stores experiences until
+    they're copied to the global buffer. After that the buffer is cleared.
+    """
+    def __init__(self,
+                 capacity: int,
+                 agent_num: int = 1,
+                 n_steps: int = 1,
+                 gamma: float = 1,
+                 store_trajectories: bool = False):
 
-    def update_priorities(self, losses, indices):
-        if self.prioritized:
-            for loss, index in zip(losses, indices):
-                index = int(index[0])
-                updated_priority = loss
-                if updated_priority > self.max_priority:
-                    self.max_priority = updated_priority
+        # Initialize actual buffer with defined capacity
+        self.buffer = deque(maxlen=capacity)
+        # Flag to indicate if training threshold has been reached
+        self.min_size_reached = False
+        # n-Step reward sum
+        self.n_steps = n_steps
+        # Keep track of which agent's episodes have ended in the simulation (relevant if multiple)
+        self.done_agents = set()
+        self.agent_num = agent_num
+        # If set to true, only whole trajectories are written into the buffer, otherwise they are written step-by-step
+        # which results in arbitrary order for multiple agents in one environment.
+        self.store_trajectories = store_trajectories
 
-                old_priority = self.prioritized_deque[index].priority
-                self.priority_sum_alpha += updated_priority ** self.alpha - old_priority**self.alpha
-                updated_probability = loss**self.alpha / self.priority_sum_alpha
-                self.prioritized_deque[index] = prioritized_experience(updated_priority, updated_probability)
+        # New sample and trajectory counters
+        self.new_training_samples = 0
+        self.collected_trajectories = 0
 
-    def print_plot_buffer_sample(self):
-        indices = np.random.choice(len(self.buffer), 10, replace=False)
-        replay_batch = [self.buffer[idx] for idx in indices]
-        for sample in replay_batch:
-            for observation, next_observation in zip(sample["state"], sample["next_state"]):
-                if len(observation.shape) == 1:
-                    print("Observation Vector:" + observation)
-                    print("Next Observation Vector:" + next_observation)
-                elif len(observation.shape) == 3:
-                    if observation.shape[2] == 4:
-                        fig, axs = plt.subplots(4)
-                        for idx, ax in enumerate(axs):
-                            ax.imshow(observation[:, :, idx])
-                        fig2, axs2 = plt.subplots(4)
-                        for idx2, ax2 in enumerate(axs2):
-                            ax2.imshow(next_observation[:, :, idx2])
-                        plt.show()
-                    elif observation.shape[2] == 12:
-                        fig, axs = plt.subplots(4)
-                        for idx, ax in enumerate(axs):
-                            ax.imshow(observation[:, :, idx*3:(idx+1)*3])
-                        plt.savefig("plots/observations/obs.png")
-                        plt.close(fig)
-                        fig2, axs2 = plt.subplots(4)
-                        for idx2, ax2 in enumerate(axs2):
-                            ax2.imshow(next_observation[:, :, idx2*3:(idx2+1)*3])
-                        plt.savefig("plots/observations/next_obs.png")
-                        plt.close(fig2)
-                    elif observation.shape[2] == 3:
-                        plt.imshow(observation)
-                        plt.imshow(next_observation)
-                        plt.show()
-                break
+        self.sampled_indices = None
 
+        # Deque to enable n-step reward calculation
+        self.state_deque = [deque(maxlen=n_steps+1) for x in range(self.agent_num)]
+        self.action_deque = [deque(maxlen=n_steps+1) for x in range(self.agent_num)]
+        self.reward_deque = [deque(maxlen=n_steps) for x in range(self.agent_num)]
 
+        # Temporal buffer for storing trajectories
+        self.temp_agent_buffer = [[] for x in range(self.agent_num)]
+
+        # Discount factor
+        self.gamma = gamma
+        self.gamma_list = [gamma ** n for n in range(n_steps)]
+
+    def __len__(self):
+        return len(self.buffer)
+
+    def calculate_discounted_return(self, rewards):
+        disc_return = []
+        sum_reward = 0.0
+
+        for r in reversed(rewards):
+            sum_reward *= self.gamma
+            sum_reward += r
+            disc_return.append(sum_reward)
+        return list(reversed(disc_return))
+
+    def add_new_steps(self, states, rewards, ids, exclude_ids=[], actions=None,
+                      step_type='decision'):
+        # Iterate through all available agents
+        for idx, agent_id in enumerate(ids):
+            # Don't add experiences of agents whose episode already ended or which are manually excluded
+            if agent_id in self.done_agents or agent_id in exclude_ids:
+                continue
+            # Combine all observations of one agent in one list
+            state_component_list = []
+            for state_component in states:
+                state_component_list.append(state_component[idx])
+            # Add observed state, reward and action to the deque
+            self.state_deque[agent_id].append(state_component_list)
+            self.reward_deque[agent_id].append(rewards[idx])
+            if np.all(actions) is not None:
+                self.action_deque[agent_id].append(actions[idx])
+            else:
+                self.action_deque[agent_id].append(None)
+
+            # If "done" append the remaining deque steps to the replay buffer
+            # and clear the deques afterwards
+            if step_type == 'terminal':
+                # Only add the collected experiences to the replay buffer if the episode was at least 2 steps long.
+                if len(self.state_deque[agent_id]) > 1:
+                    for n in range(self.n_steps):
+                        # Calculate the discounted reward for each value in the reward deque
+                        discounted_reward = [r * g for r, g in zip(self.reward_deque[agent_id], self.gamma_list)]
+                        # Add the experience to the temporal agent buffer
+                        self.temp_agent_buffer[agent_id].append([self.state_deque[agent_id][0], self.action_deque[agent_id][0],
+                                                                 np.sum(discounted_reward), self.state_deque[agent_id][-1],
+                                                                 True])
+                        # Append placeholder values to each deque
+                        self.state_deque[agent_id].append(self.state_deque[agent_id][-1])
+                        self.action_deque[agent_id].append(None)
+                        self.reward_deque[agent_id].append(0)
+
+                # Clear the deques
+                self.state_deque[agent_id].clear()
+                self.action_deque[agent_id].clear()
+                self.reward_deque[agent_id].clear()
+
+                # Write the collected data to the actual replay buffer.
+                for experience in self.temp_agent_buffer[agent_id]:
+                    self.append(*experience)
+                self.temp_agent_buffer[agent_id].clear()
+                self.collected_trajectories += 1
+
+                if self.store_trajectories or self.agent_num == 1:
+                    self.done_agents.add(agent_id)
+
+            # Write the deque data to the temporal buffer
+            if len(self.state_deque[agent_id]) == self.n_steps+1:
+                # Calculate the discounted reward for each value in the reward deque
+                discounted_reward = [r * g for r, g in zip(self.reward_deque[agent_id], self.gamma_list)]
+                self.temp_agent_buffer[agent_id].append([self.state_deque[agent_id][0], self.action_deque[agent_id][0],
+                                                         np.sum(discounted_reward), self.state_deque[agent_id][-1],
+                                                         False])
+
+            # Write the collected data to the actual replay buffer if not storing whole trajectories.
+            if not self.store_trajectories:
+                for experience in self.temp_agent_buffer[agent_id]:
+                    self.append(*experience)
+                self.temp_agent_buffer[idx].clear()
+
+    def append(self, s, a, r, next_s, done):
+        self.buffer.append({"state": s, "action": a, "reward": r, "next_state": next_s, "done": done})
+        self.new_training_samples += 1
+
+    def check_training_condition(self, trainer_configuration):
+        if not self.store_trajectories:
+            if len(self.buffer) > trainer_configuration['ReplayMinSize']:
+                self.min_size_reached = True
+            if self.new_training_samples >= trainer_configuration['TrainingInterval'] and self.min_size_reached:
+                return True
+        else:
+            if self.collected_trajectories >= trainer_configuration['TrajectoryNum']:
+                return True
+        return False
+
+    def check_reset_condition(self):
+        return len(self.done_agents) >= self.agent_num
+
+    def update(self, indices, errors):
+        pass
+
+    def append_list(self, samples):
+        self.buffer.extend(samples)
+        self.new_training_samples += len(samples)
+
+    def sample(self,
+               batch_size: int,
+               reset_buffer: bool = False,
+               random_samples: bool = True):
+        indices = []
+        if random_samples:
+            indices = np.random.choice(len(self.buffer), batch_size, replace=True)
+            replay_batch = [self.buffer[idx] for idx in indices]
+        else:
+            if batch_size == -1:
+                replay_batch = [transition for transition in self.buffer]
+            else:
+                replay_batch = [self.buffer[-self.new_training_samples+idx] for idx in range(self.new_training_samples)]
+        if reset_buffer:
+            self.buffer.clear()
+            self.state_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
+            self.action_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
+            self.reward_deque = [deque(maxlen=self.n_steps) for x in range(self.agent_num)]
+
+        self.collected_trajectories = 0
+        self.new_training_samples = 0
+
+        copy_by_val_replay_batch = deepcopy(replay_batch)
+        return copy_by_val_replay_batch, indices

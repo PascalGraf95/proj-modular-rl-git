@@ -68,33 +68,6 @@ ddpg:
     Tau: 0.2
     TrainingID: DDPG2D
     TrainingInterval: 64
-ddpg_robot:
-    BatchSize: 128
-    Episodes: 1000000
-    Epsilon: 0.2
-    ExplorationParameters:
-        Epsilon: 1
-        EpsilonDecay: 0.995
-        EpsilonMin: 0.01
-    Gamma: 0.99
-    LearningRateActor: 0.0001
-    LearningRateCritic: 0.0001
-    NSteps: 5
-    NetworkParameters:
-    -   Filters: 64
-        Units: 200
-        VectorNetworkArchitecture: SmallDense
-        VisualNetworkArchitecture: CNN
-    -   Filters: 64
-        Units: 200
-        VectorNetworkArchitecture: SmallDense
-        VisualNetworkArchitecture: CNN
-    ReplayCapacity: 100000
-    ReplayMinSize: 1000
-    SyncMode: soft_sync
-    SyncSteps: 50
-    Tau: 0.2
-    TrainingID: DDPG_RobotStaticGoalCartesianForce
 default:
     BatchSize: 64
     DoubleLearning: true
@@ -144,69 +117,43 @@ dqn:
     Tau: 0.12
     TrainingID: DQNScheduleFirstTest
     TrainingInterval: 8
-ppo:
-    BatchSize: 64
-    ClipGrad: 10.0
-    EntropyCoefficient: 5.0e-4
-    Episodes: 1000000
-    ExplorationParameters:
-        abc: 0
-    GAELambda: 0.95
-    Gamma: 0.99
-    LearningRateActor: 0.0005
-    LearningRateCritic: 0.0005
-    NEpochs: 10
-    NetworkParameters:
-    -   Filters: 64
-        Units: 64
-        VectorNetworkArchitecture: Dense
-        VisualNetworkArchitecture: CNN
-    -   Filters: 64
-        Units: 64
-        VectorNetworkArchitecture: Dense
-        VisualNetworkArchitecture: CNN
-    PPOClip: 0.2
-    TrainingDescription: PPO_AirHockeyDeflect
-    TrainingID: PPO_AirHockeyDeflect
-    TrainingInterval: 1
-    TrajectoryNum: 20
 sac:
-    ActorTrainingFreq: 1
-    BatchSize: 64
+    ActorNum: 10
+    BatchSize: 128
     ClipGrad: 10.0
-    Episodes: 1000000
     ExplorationParameters:
-        FeatureSpaceSize: 25
-        LearningRate: 1.0e-3
-        CuriosityScalingFactor: 0.1
-        ForwardLossWeight: 0.2
+        Epsilon: 0.4
+        EpsilonDecay: 0.99995
+        EpsilonMin: 0.01
+        StepDown: false
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -1.0
+    LogAlpha: -2.0
     NSteps: 4
+    AdaptiveExploration: false
+    NetworkUpdateFrequency: 300
     NetworkParameters:
-    -   Filters: 32
-        Units: 32
+    -   Filters: 256
+        Units: 256
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 32
-        Units: 32
+    -   Filters: 256
+        Units: 256
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 32
-        Units: 32
+    -   Filters: 256
+        Units: 256
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    PrioritizedReplay: false
-    ReplayCapacity: 100000
-    ReplayMinSize: 5000
+    PrioritizedReplay: true
+    ReplayCapacity: 1000000
+    ReplayMinSize: 10000
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingDescription: SAC
-    TrainingID: SAC_3DBall_OriginalImplementation
-    TrainingInterval: 1
+    TrainingID: SAC_VisionBasedRobot
+    TrainingInterval: 0
 td3:
     ActorTrainingFreq: 3
     BatchSize: 64
@@ -221,7 +168,7 @@ td3:
     Gamma: 0.99
     LearningRateActor: 0.001
     LearningRateCritic: 0.001
-    NSteps: 5
+    NSteps: 4
     NetworkParameters:
     -   Filters: 64
         Units: 64
@@ -245,38 +192,3 @@ td3:
     Tau: 0.04
     TrainingID: TD3_3DBall
     TrainingInterval: 64
-td3airhockey:
-    ActorTrainingFreq: 3
-    BatchSize: 64
-    ClipGrad: 0.5
-    Episodes: 1000000
-    Epsilon: 0.2
-    ExplorationParameters:
-        Epsilon: 1.0
-        EpsilonDecay: 0.99
-        EpsilonMin: 0.01
-    Gamma: 0.99
-    LearningRateActor: 0.0005
-    LearningRateCritic: 0.0005
-    NSteps: 5
-    NetworkParameters:
-    -   Filters: 64
-        Units: 25
-        VectorNetworkArchitecture: Dense
-        VisualNetworkArchitecture: CNN
-    -   Filters: 64
-        Units: 25
-        VectorNetworkArchitecture: Dense
-        VisualNetworkArchitecture: CNN
-    -   Filters: 64
-        Units: 25
-        VectorNetworkArchitecture: Dense
-        VisualNetworkArchitecture: CNN
-    PredictionNoise: 0.2
-    PredictionNoiseClip: 0.5
-    ReplayCapacity: 100000
-    ReplayMinSize: 5000
-    SyncMode: soft_sync
-    SyncSteps: 50
-    Tau: 0.12
-    TrainingID: TD3_AirHockey

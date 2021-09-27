@@ -3,6 +3,11 @@ from .exploration_algorithm_blueprint import ExplorationAlgorithm
 
 
 class EpsilonGreedy(ExplorationAlgorithm):
+    """
+    Epsilon-Greedy exploration algorithm acting randomly in epsilon percent of the cases.
+    Epsilon will either decay over time or step down after a given number of episodes to the
+    minimum value.
+    """
     Name = "EpsilonGreedy"
     ActionAltering = True
     IntrinsicReward = False
@@ -17,7 +22,7 @@ class EpsilonGreedy(ExplorationAlgorithm):
     def __init__(self, action_shape, state_shape, action_space, parameters):
         self.action_shape = action_shape
         self.action_space = action_space
-        self.epsilon = parameters["Epsilon"]
+        self.epsilon = parameters["Epsilon"]*parameters["ExplorationDegree"]
         self.epsilon_decay = parameters["EpsilonDecay"]
         self.epsilon_min = parameters["EpsilonMin"]
         self.step_down = parameters["StepDown"]
@@ -40,8 +45,8 @@ class EpsilonGreedy(ExplorationAlgorithm):
     def boost_exploration(self):
         self.epsilon += 0.2
 
-    def get_logs(self):
-        return {"Exploration/Epsilon": self.epsilon}
+    def get_logs(self, idx):
+        return {"Exploration/Agent{:03d}Epsilon".format(idx): self.epsilon}
 
     def get_intrinsic_reward(self, replay_batch):
         return replay_batch

@@ -7,50 +7,95 @@ from collections import deque
 from tensorflow.python.summary.summary_iterator import summary_iterator
 from datetime import datetime
 
-"""
-Logger
 
-Creates a Tensorboard Logger for scalar values or running average values.
-Methods to append new values are provided.
+class LocalLogger:
+    """
+    Local Logger
+    This logger is created once for each actor and temporarily keeps track of the episode rewards and lengths.
+    The loggers are reset after the stats are read out. Only the total number of episodes persists.
+    """
+    def __init__(self, agent_num=1):
+        # Count of episodes played in total
+        self.total_episodes_played = 0
 
-Created by Pascal Graf
-Last edited 29.01.2021
-"""
-
-
-class Logger:
-    def __init__(self, log_dir="./summaries",
-                 tensorboard=True,
-                 agent_num=1,
-                 early_stopping=False,
-                 checkpoint_saving=True,
-                 mode="memory"):
-        self.log_dir = log_dir
-
-        # Early Stopping / Checkpoints
-        self.early_stopping = early_stopping
-        self. checkpoint_saving = checkpoint_saving
-        self.episode_reward_memory = deque(maxlen=10000)
-        self.episodes_played_memory = 0
-
-        self.best_running_average_reward = -10000
-        self.time_steps_since_last_save = 0
-
-        # Done Indices
-        self.done_indices = set()
-        self.mode = mode
-
-        # Logger Creation Time
-        self.creation_time = datetime.now()
-        # Tensorboard Writer
-        if tensorboard:
-            self.tensorboard_writer = tf.summary.create_file_writer(log_dir)
-            self.logger_dict = {}
-        # Local Tracker
+        # Number of agents in the environment + list of rewards over the current episode
         self.agent_num = agent_num
         self.agent_reward_list = [[] for x in range(self.agent_num)]
-        self.episode_rewards = []
-        self.episode_lengths = []
+        # Lists for rewards and episode lengths since last readout
+        self.new_episode_rewards = []
+        self.new_episode_lengths = []
+
+    def track_episode(self, rewards, agent_ids, step_type='decision'):
+        # For each agent in the environment, track the rewards of the current episode
+        for idx, agent_id in enumerate(agent_ids):
+            self.agent_reward_list[agent_id].append(rewards[idx])
+            # If the current state is terminal add the summed rewards of the current agent to the buffer and reset
+            if step_type == 'terminal':
+                self.new_episode_rewards.append(np.sum(self.agent_reward_list[agent_id]))
+                self.new_episode_lengths.append(len(self.agent_reward_list[agent_id]))
+                self.agent_reward_list[agent_id].clear()
+
+    def clear_buffer(self):
+        self.agent_reward_list = [[] for x in range(self.agent_num)]
+        self.new_episode_lengths.clear()
+        self.new_episode_rewards.clear()
+
+    def get_episode_stats(self):
+        rewards, lengths = None, None
+        # If new episodes have been played return their lengths and rewards as well as the total number of episodes
+        # played and the number of new episode since last readout
+        if len(self.new_episode_rewards):
+            rewards = self.new_episode_rewards.copy()
+            lengths = self.new_episode_lengths.copy()
+            self.total_episodes_played += len(self.new_episode_rewards)
+            self.new_episode_lengths.clear()
+            self.new_episode_rewards.clear()
+
+        return lengths, rewards, self.total_episodes_played
+
+
+class GlobalLogger:
+    """
+    Global Logger
+    Collects rewards and episode lengths from the actor's local loggers and sends them to Tensorboard.
+    Furthermore, it tests if the conditions for a new model checkpoint are given.
+    The Tensorboard files are stored in "./training/summaries" and can be viewed by opening a command line in this very
+    directory and typing "tensorboard --logdir ."
+    """
+    def __init__(self, log_dir="./summaries",
+                 tensorboard=True,
+                 actor_num=1,
+                 checkpoint_saving=True,
+                 running_average_episodes=100):
+        # Summary file path and logger creation time
+        self.log_dir = log_dir
+        self.creation_time = datetime.now()
+
+        # Checkpoints
+        self.checkpoint_saving = checkpoint_saving
+
+        # Number of parallel actors
+        self.actor_num = actor_num
+        self.tensorboard = tensorboard
+
+        # Memory of past rewards and the count of episodes played
+        self.episode_reward_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
+        self.episode_length_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
+        self.episodes_played_per_actor = [0 for i in range(self.actor_num)]
+        self.total_episodes_played = 0
+        self.best_actor = 0
+        self.average_rewards = [-10000 for i in range(self.actor_num)]
+        self.new_episodes = 0
+
+        # The best running average over 30 episodes
+        self.best_running_average_reward = -10000
+        self.last_save_time_step = 0
+        self.running_average_episodes = running_average_episodes
+
+        # Tensorboard Writer
+        if self.tensorboard:
+            self.tensorboard_writer = tf.summary.create_file_writer(log_dir)
+            self.logger_dict = {}
 
     def get_elapsed_time(self):
         elapsed_time = datetime.now() - self.creation_time
@@ -59,68 +104,59 @@ class Logger:
         minutes, seconds = divmod(remainder, 60)
         return days, hours, minutes, seconds
 
-    def track_episode(self, rewards, agent_ids, exclude_ids=[], step_type='decision', add_to_done=False):
-        for idx, agent_id in enumerate(agent_ids):
-            if agent_id in self.done_indices or agent_id in exclude_ids:
-                continue
-            self.agent_reward_list[agent_id].append(rewards[idx])
-            if step_type == 'terminal':
-                self.episode_rewards.append(np.sum(self.agent_reward_list[agent_id]))
-                self.episode_lengths.append(len(self.agent_reward_list[agent_id]))
-                self.agent_reward_list[agent_id].clear()
-                if self.mode == "trajectory" or add_to_done:
-                    self.done_indices.add(agent_id)
+    def append(self, episode_lengths, episode_rewards, total_number_of_episodes, actor_idx=0):
+        # Append new episode rewards and lengths
+        self.new_episodes += len(episode_rewards)
+        self.episode_reward_deque[actor_idx].extend(episode_rewards)
+        self.episode_length_deque[actor_idx].extend(episode_lengths)
+        # Total episodes per agent and overall
+        self.episodes_played_per_actor[actor_idx] = total_number_of_episodes
+        self.total_episodes_played = np.sum(self.episodes_played_per_actor)
+        # Average rewards per agent
+        self.average_rewards[actor_idx] = \
+            np.mean(list(self.episode_reward_deque[actor_idx])[-self.running_average_episodes:])
+        self.best_actor = np.argmax(self.average_rewards)
 
-    def clear_buffer(self):
-        self.done_indices.clear()
-        self.agent_reward_list = [[] for x in range(self.agent_num)]
-        self.episode_lengths.clear()
-        self.episode_rewards.clear()
+        if self.tensorboard:
+            self.log_dict({"Reward/Agent{:03d}Reward".format(actor_idx):
+                               self.episode_reward_deque[actor_idx][-1],
+                           "EpisodeLength/Agent{:03d}EpisodeLength".format(actor_idx):
+                               self.episode_length_deque[actor_idx][-1]}, total_number_of_episodes)
 
-    def get_episode_stats(self, track_stats=False, throwaway=False):
-        if throwaway:
-            self.clear_buffer()
-        mean_reward, mean_length = None, None
-        new_episodes = len(self.episode_rewards)
-        if len(self.episode_rewards):
-            mean_reward = np.mean(self.episode_rewards)
-            mean_length = np.mean(self.episode_lengths)
+    def get_episode_stats(self):
+        self.average_rewards = [np.mean(list(rewards)[-self.running_average_episodes:]) for rewards in self.episode_reward_deque]
+        mean_reward = np.mean(self.average_rewards)
+        mean_length = np.mean([np.mean(list(lengths)[-self.running_average_episodes:]) for lengths in self.episode_length_deque])
+        self.total_episodes_played = np.sum(self.episodes_played_per_actor)
+        self.new_episodes = 0
 
-            if track_stats:
-                self.episodes_played_memory += len(self.episode_rewards)
-                self.episode_reward_memory += self.episode_rewards
-                self.time_steps_since_last_save += len(self.episode_lengths)
-            self.episode_lengths.clear()
-            self.episode_rewards.clear()
-        episodes = self.episodes_played_memory
+        return mean_length, mean_reward, self.total_episodes_played
 
-        return mean_length, mean_reward, episodes, new_episodes
-
-    def check_early_stopping_condition(self):
-        if self.early_stopping:
-            indices = 30
-            if len(self.episode_reward_memory) < indices:
-                return False
-            # If previous conditions are met, calculate the coefficient of variation (stddev / mean)
-            var_coeff = np.std(list(self.episode_reward_memory)[-indices:]) / \
-                        np.mean(list(self.episode_reward_memory)[-indices:])
-            if np.abs(var_coeff) < 0.01:
-                running_average_reward = np.mean(list(self.episode_reward_memory)[-indices:])
-                if running_average_reward >= self.best_running_average_reward:
-                    self.best_running_average_reward = running_average_reward
-                    return True
-        return False
+    def get_current_max_stats(self, average_num):
+        max_agent_average_reward = np.max(self.average_rewards)
+        length_list = list(self.episode_length_deque[self.best_actor])
+        if len(length_list) < average_num:
+            max_agent_average_length = 0
+        else:
+            max_agent_average_length = np.mean(list(self.episode_length_deque[self.best_actor])[-average_num:])
+        return max_agent_average_length, max_agent_average_reward, self.total_episodes_played
 
     def check_checkpoint_condition(self):
         if self.checkpoint_saving:
-            indices = 30
-            if self.time_steps_since_last_save > indices:
-                running_average_reward = np.mean(list(self.episode_reward_memory)[-indices:])
-                if running_average_reward > self.best_running_average_reward:
-                    self.best_running_average_reward = running_average_reward
-                    self.time_steps_since_last_save = 0
+            if self.total_episodes_played - self.last_save_time_step > self.running_average_episodes:
+                max_average_reward = np.max(self.average_rewards)
+                if max_average_reward > self.best_running_average_reward:
+                    self.best_running_average_reward = max_average_reward
+                    self.last_save_time_step = self.total_episodes_played
                     return True
         return False
+
+    def register_level_change(self):
+        self.best_running_average_reward = -10000
+        self.last_save_time_step = self.total_episodes_played
+        self.average_rewards = [-10000 for i in range(self.actor_num)]
+        self.episode_reward_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
+        self.episode_length_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
 
     def remove_old_checkpoints(self):
         def get_step_from_file(file):
@@ -145,19 +181,3 @@ class Logger:
     def log_scalar(self, tag, value, step):
         with self.tensorboard_writer.as_default():
             tf.summary.scalar(tag, value, step)
-
-    def log_running_average(self, tag, run_avg_len=20):
-        tag_len = len(self.logger_dict[tag][0])
-        tag_vals = self.logger_dict[tag][0][-int(min(tag_len, run_avg_len)):]
-        with self.tensorboard_writer.as_default():
-            tf.summary.scalar("Avg"+tag, np.mean(tag_vals), self.logger_dict[tag][1][-1])
-
-    def get_running_average(self, tag, run_avg_len=20):
-        tag_len = len(self.logger_dict[tag][0])
-        tag_vals = self.logger_dict[tag][0][-int(min(tag_len, run_avg_len)):]
-        return np.mean(tag_vals)
-
-
-if __name__ == '__main__':
-    logger = Logger(r"C:\PGraf\Arbeit\RL\ModularRL\training\summaries\200824_100706_DDPG_RobotTest", tensorboard=False)
-    logger.remove_old_checkpoints()

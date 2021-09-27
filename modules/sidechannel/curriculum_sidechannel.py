@@ -1,15 +1,14 @@
 from mlagents_envs.environment import UnityEnvironment
-from mlagents_envs.side_channel.side_channel import (
-    SideChannel,
-    IncomingMessage,
-    OutgoingMessage,
-)
+from mlagents_envs.side_channel.side_channel import SideChannel, IncomingMessage, OutgoingMessage
+
 import numpy as np
 import uuid
 
 
 class CurriculumSideChannelTaskInfo(SideChannel):
-
+    """
+    Side-Channel to communicate additional information with Unity environments.
+    """
     def __init__(self) -> None:
         super().__init__(uuid.UUID("621f0a70-4f87-11ea-a6bf-784f4387d1f4"))
         self.task_info = [1, 0, 30, 10000]

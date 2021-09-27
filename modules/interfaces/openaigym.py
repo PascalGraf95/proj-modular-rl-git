@@ -21,11 +21,19 @@ class Steps:
 
 
 class OpenAIGymInterface:
+    """
+    This interface translates the universal commands used in this repository for environment communication to
+    interact with OpenAI Gym environments.
+    """
     observation = 0
     reward = 0
     done = False
     info = 0
     action_space = ""
+
+    @staticmethod
+    def connect(environment_path):
+        return gym.make(environment_path)
 
     @staticmethod
     def get_behavior_name(env: gym.Env):
