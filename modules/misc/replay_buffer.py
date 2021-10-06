@@ -99,7 +99,7 @@ class PrioritizedBuffer:
     per_beta = 0.4  # importance-sampling, from initial value increasing to 1
     per_beta_increment_per_sampling = 0.001
 
-    def __init__(self, capacity: int):
+    def __init__(self, capacity: int, ):
 
         # Initialize sum tree
         self.tree = SumTree(capacity)
@@ -130,11 +130,6 @@ class PrioritizedBuffer:
 
     def _getPriority(self, error):
         return (error + self.per_e) ** self.per_a
-
-    def append(self, s, a, r, next_s, done, error):
-        priority = self._getPriority(error)
-        self.tree.add(priority, {"state": s, "action": a, "reward": r, "next_state": next_s, "done": done})
-        self.new_training_samples += 1
 
     def append_list(self, samples, errors):
         for sample, error in zip(samples, errors):
@@ -223,84 +218,6 @@ class FIFOBuffer:
 
     def __len__(self):
         return len(self.buffer)
-
-    def calculate_discounted_return(self, rewards):
-        disc_return = []
-        sum_reward = 0.0
-
-        for r in reversed(rewards):
-            sum_reward *= self.gamma
-            sum_reward += r
-            disc_return.append(sum_reward)
-        return list(reversed(disc_return))
-
-    def add_new_steps(self, states, rewards, ids, exclude_ids=[], actions=None,
-                      step_type='decision'):
-        # Iterate through all available agents
-        for idx, agent_id in enumerate(ids):
-            # Don't add experiences of agents whose episode already ended or which are manually excluded
-            if agent_id in self.done_agents or agent_id in exclude_ids:
-                continue
-            # Combine all observations of one agent in one list
-            state_component_list = []
-            for state_component in states:
-                state_component_list.append(state_component[idx])
-            # Add observed state, reward and action to the deque
-            self.state_deque[agent_id].append(state_component_list)
-            self.reward_deque[agent_id].append(rewards[idx])
-            if np.all(actions) is not None:
-                self.action_deque[agent_id].append(actions[idx])
-            else:
-                self.action_deque[agent_id].append(None)
-
-            # If "done" append the remaining deque steps to the replay buffer
-            # and clear the deques afterwards
-            if step_type == 'terminal':
-                # Only add the collected experiences to the replay buffer if the episode was at least 2 steps long.
-                if len(self.state_deque[agent_id]) > 1:
-                    for n in range(self.n_steps):
-                        # Calculate the discounted reward for each value in the reward deque
-                        discounted_reward = [r * g for r, g in zip(self.reward_deque[agent_id], self.gamma_list)]
-                        # Add the experience to the temporal agent buffer
-                        self.temp_agent_buffer[agent_id].append([self.state_deque[agent_id][0], self.action_deque[agent_id][0],
-                                                                 np.sum(discounted_reward), self.state_deque[agent_id][-1],
-                                                                 True])
-                        # Append placeholder values to each deque
-                        self.state_deque[agent_id].append(self.state_deque[agent_id][-1])
-                        self.action_deque[agent_id].append(None)
-                        self.reward_deque[agent_id].append(0)
-
-                # Clear the deques
-                self.state_deque[agent_id].clear()
-                self.action_deque[agent_id].clear()
-                self.reward_deque[agent_id].clear()
-
-                # Write the collected data to the actual replay buffer.
-                for experience in self.temp_agent_buffer[agent_id]:
-                    self.append(*experience)
-                self.temp_agent_buffer[agent_id].clear()
-                self.collected_trajectories += 1
-
-                if self.store_trajectories or self.agent_num == 1:
-                    self.done_agents.add(agent_id)
-
-            # Write the deque data to the temporal buffer
-            if len(self.state_deque[agent_id]) == self.n_steps+1:
-                # Calculate the discounted reward for each value in the reward deque
-                discounted_reward = [r * g for r, g in zip(self.reward_deque[agent_id], self.gamma_list)]
-                self.temp_agent_buffer[agent_id].append([self.state_deque[agent_id][0], self.action_deque[agent_id][0],
-                                                         np.sum(discounted_reward), self.state_deque[agent_id][-1],
-                                                         False])
-
-            # Write the collected data to the actual replay buffer if not storing whole trajectories.
-            if not self.store_trajectories:
-                for experience in self.temp_agent_buffer[agent_id]:
-                    self.append(*experience)
-                self.temp_agent_buffer[idx].clear()
-
-    def append(self, s, a, r, next_s, done):
-        self.buffer.append({"state": s, "action": a, "reward": r, "next_state": next_s, "done": done})
-        self.new_training_samples += 1
 
     def check_training_condition(self, trainer_configuration):
         if not self.store_trajectories:
@@ -405,12 +322,12 @@ class LocalFIFOBuffer:
             disc_return.append(sum_reward)
         return list(reversed(disc_return))
 
-    def add_new_steps(self, states, rewards, ids, exclude_ids=[], actions=None,
+    def add_new_steps(self, states, rewards, ids, actions=None,
                       step_type='decision'):
         # Iterate through all available agents
         for idx, agent_id in enumerate(ids):
             # Don't add experiences of agents whose episode already ended or which are manually excluded
-            if agent_id in self.done_agents or agent_id in exclude_ids:
+            if agent_id in self.done_agents:
                 continue
             # Combine all observations of one agent in one list
             state_component_list = []
