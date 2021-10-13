@@ -118,42 +118,44 @@ dqn:
     TrainingID: DQNScheduleFirstTest
     TrainingInterval: 8
 sac:
+    Recurrent: true
+    SequenceLength: 20
     ActorNum: 10
-    BatchSize: 128
+    BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
         Epsilon: 0.4
         EpsilonDecay: 0.99995
         EpsilonMin: 0.01
         StepDown: false
-    Gamma: 0.99
+    Gamma: 0.995
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
     LogAlpha: -2.0
     NSteps: 4
     AdaptiveExploration: false
-    NetworkUpdateFrequency: 300
+    NetworkUpdateFrequency: 500
     NetworkParameters:
-    -   Filters: 256
-        Units: 256
+    -   Filters: 32
+        Units: 32
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 256
-        Units: 256
+    -   Filters: 32
+        Units: 32
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 256
-        Units: 256
+    -   Filters: 32
+        Units: 32
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: true
-    ReplayCapacity: 1000000
-    ReplayMinSize: 10000
+    ReplayCapacity: 100000
+    ReplayMinSize: 100
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingID: SAC_VisionBasedRobot
-    TrainingInterval: 0
+    TrainingID: SAC_3DBall_R2D2
+    TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3
     BatchSize: 64

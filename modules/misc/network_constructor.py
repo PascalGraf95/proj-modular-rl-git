@@ -2,7 +2,7 @@
 
 from enum import Enum
 from tensorflow.keras.layers import Dense, Flatten, Conv2D, Concatenate, Input, BatchNormalization, Dropout, Add, Subtract, \
-    Lambda, UpSampling2D, Reshape
+    Lambda, UpSampling2D, Reshape, LSTM
 from tensorflow.keras.activations import relu
 from tensorflow.keras import backend as K
 
@@ -19,7 +19,8 @@ import os
 os.environ["PATH"] += os.pathsep + 'C:/Graphviz/bin/'
 
 NormalDense = Dense
-
+ImageShapeLength = 4
+VectorShapeLength = 2
 
 class NetworkArchitecture(Enum):
     NONE = "None"
@@ -50,13 +51,13 @@ def construct_network(network_parameters):
     else:
         Dense = NormalDense
 
-    # Construct the network Input
+    # Construct one input layer per observation
     network_input = build_network_input(network_parameters.get('Input'), network_parameters)
-
+    # Opportunity to resize image inputs
     if network_parameters.get("InputResize"):
         network_branches = []
         for net_input in network_input:
-            if len(net_input.shape) == 4:
+            if len(net_input.shape) == ImageShapeLength:
                 x = Resizing(*network_parameters["InputResize"])(net_input)
                 network_branches.append(x)
             else:
@@ -89,8 +90,18 @@ def construct_network(network_parameters):
 
 def build_network_input(network_input_shapes, network_parameters):
     network_input = []
+
     for input_shapes in network_input_shapes:
-        x = Input(input_shapes)
+        if network_parameters["Recurrent"]:
+            if type(input_shapes) == int:
+                input_shapes = (input_shapes,)
+            x = Input((None, *input_shapes), batch_size=network_parameters["BatchSize"])
+            global ImageShapeLength
+            global VectorShapeLength
+            ImageShapeLength = 5
+            VectorShapeLength = 3
+        else:
+            x = Input(input_shapes)
         network_input.append(x)
     return network_input
 
@@ -98,12 +109,11 @@ def build_network_input(network_input_shapes, network_parameters):
 def connect_branches(network_input, network_parameters):
     branch_shape_lengths = [len(x.shape) for x in network_input]
     input_types = None
-
     if len(branch_shape_lengths) > 1:
         if len(set(branch_shape_lengths)) == 1:
-            if branch_shape_lengths[0] == 4:
+            if branch_shape_lengths[0] == ImageShapeLength:
                 input_types = "images"
-            elif branch_shape_lengths[0] == 2:
+            elif branch_shape_lengths[0] == VectorShapeLength:
                 input_types = "vectors"
         else:
             input_types = "mixed"
@@ -127,7 +137,7 @@ def connect_branches(network_input, network_parameters):
     if input_types == "mixed":
         # Vector Branches
         vector_branches = []
-        for net_input in [x for x in network_input if len(x.shape) == 2]:
+        for net_input in [x for x in network_input if len(x.shape) == VectorShapeLength]:
             vector_branches.append(net_input)
         if len(vector_branches) > 1:
             vector_branches = Concatenate(axis=-1)(vector_branches)
@@ -135,7 +145,7 @@ def connect_branches(network_input, network_parameters):
             vector_branches = vector_branches[0]
         # Image Branches
         image_branches = []
-        for net_input in [x for x in network_input if len(x.shape) == 4]:
+        for net_input in [x for x in network_input if len(x.shape) == ImageShapeLength]:
             image_branches.append(net_input)
         if len(image_branches) > 1:
             image_branches = Concatenate(axis=-1)(image_branches)
@@ -146,13 +156,12 @@ def connect_branches(network_input, network_parameters):
     if input_types == "forced_images":
         # Vector Branches
         image_branches = []
-        for net_input in [x for x in network_input if len(x.shape) == 2]:
-            print((1, 1, net_input.shape[-1]))
+        for net_input in [x for x in network_input if len(x.shape) == VectorShapeLength]:
             x = Reshape((1, 1, net_input.shape[-1]))(net_input)
             x = UpSampling2D(size=(84, 84))(x)
             image_branches.append(x)
         # Image Branches
-        for net_input in [x for x in network_input if len(x.shape) == 4]:
+        for net_input in [x for x in network_input if len(x.shape) == ImageShapeLength]:
             image_branches.append(net_input)
         if len(image_branches) > 1:
             return [Concatenate(axis=-1)(image_branches)]
@@ -162,7 +171,7 @@ def build_network_body(network_input, network_parameters):
     network_branches = []
     units, filters = 0, 0
     for net_input in network_input:
-        if len(net_input.shape) == 2:
+        if len(net_input.shape) == VectorShapeLength:
             net_architecture = network_parameters.get("VectorNetworkArchitecture")
             units = network_parameters.get("Units")
         else:
@@ -197,18 +206,16 @@ def build_network_output(net_in, network_parameters):
                     net_out = Dense(net_out_shape, activation=net_out_act,
                                     kernel_initializer=RandomUniform(minval=-3e-3, maxval=3e-3),
                                     bias_initializer=RandomUniform(minval=-3e-3, maxval=3e-3))(net_in)
-                elif network_parameters.get('KernelInitializer') == "Orthogonal":
-                    net_out = Dense(net_out_shape, activation=net_out_act,
-                                    kernel_initializer=Orthogonal(0.5),
-                                    bias_initializer=Constant(0.0))(net_in)
                 else:
                     net_out = Dense(net_out_shape, activation=net_out_act)(net_in)
             network_output.append(net_out)
         else:
             network_output.append(net_in)
+    """
     if network_parameters.get('LogStdOutput'):
         log_std = LogStdLayer(net_out_shape)(net_in)
         network_output.append(log_std)
+    """
     return network_output
 
 
@@ -225,81 +232,48 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
     if net_architecture == NetworkArchitecture.NONE.value:
         x = net_inp
     elif net_architecture == NetworkArchitecture.SINGLE_DENSE.value:
-        if network_parameters.get('KernelInitializer') == "Orthogonal":
-            x = Dense(units, activation='selu',
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(net_inp)
+        if network_parameters["Recurrent"]:
+            x = LSTM(units, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+                     stateful=network_parameters["Stateful"])(net_inp)
         else:
             x = Dense(units, activation='selu')(net_inp)
 
     elif net_architecture == NetworkArchitecture.SMALL_DENSE.value:
-        if network_parameters.get('KernelInitializer') == "Orthogonal":
-            x = Dense(units, activation='selu',
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(net_inp)
-            x = Dense(units, activation='selu',
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(x)
+        x = Dense(units, activation='selu')(net_inp)
+        if network_parameters["Recurrent"]:
+            x = LSTM(units, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+                     stateful=network_parameters["Stateful"])(x)
         else:
-            x = Dense(units, activation='selu')(net_inp)
             x = Dense(units, activation='selu')(x)
 
     elif net_architecture == NetworkArchitecture.DENSE.value:
-        if network_parameters.get('KernelInitializer') == "Orthogonal":
-            x = Dense(units, activation='selu',
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(net_inp)
-            x = Dense(units, activation='selu',
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(x)
-            x = Dense(2*units, activation='selu',
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(x)
+        x = Dense(units, activation='selu')(net_inp)
+        x = Dense(units, activation='selu')(x)
+        if network_parameters["Recurrent"]:
+            x = LSTM(2*units, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+                     stateful=network_parameters["Stateful"])(x)
         else:
-            x = Dense(units, activation='selu')(net_inp)
-            x = Dense(units, activation='selu')(x)
             x = Dense(2*units, activation='selu')(x)
 
     elif net_architecture == NetworkArchitecture.LARGE_DENSE.value:
-        if network_parameters.get('KernelInitializer') == "Orthogonal":
-            x = Dense(units, activation='selu',
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(net_inp)
-            x = Dense(units, activation='selu',
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(x)
-            x = Dense(2*units, activation='selu',
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(x)
-            x = Dense(2*units, activation='selu',
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(x)
+        x = Dense(units, activation='selu')(net_inp)
+        x = Dense(units, activation='selu')(x)
+        x = Dense(2*units, activation='selu')(x)
+        if network_parameters["Recurrent"]:
+            x = LSTM(2*units, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+                     stateful=network_parameters["Stateful"])(x)
         else:
-            x = Dense(units, activation='selu')(net_inp)
-            x = Dense(units, activation='selu')(x)
-            x = Dense(2*units, activation='selu')(x)
             x = Dense(2*units, activation='selu')(x)
 
     elif net_architecture == NetworkArchitecture.CNN.value:
-        if network_parameters.get('KernelInitializer') == "Orthogonal":
-            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(net_inp)
-            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(x)
-            x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(x)
-            x = Flatten()(x)
-            x = Dense(512, activation="selu",
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(x)
+        x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
+        x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
+        x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu")(x)
+        x = Flatten()(x)
+        if network_parameters["Recurrent"]:
+            x = LSTM(512, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+                     stateful=network_parameters["Stateful"])(x)
         else:
-            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
-            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
-            x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu")(x)
-            x = Flatten()(x)
             x = Dense(512, activation="selu")(x)
 
     elif net_architecture == NetworkArchitecture.CNN_ICM.value:
@@ -310,31 +284,17 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = Flatten()(x)
 
     elif net_architecture == NetworkArchitecture.CNN_BATCHNORM.value:
-        if network_parameters.get('KernelInitializer') == "Orthogonal":
-            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(net_inp)
-            x = BatchNormalization()(x)
-            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(x)
-            x = BatchNormalization()(x)
-            x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(x)
-            x = BatchNormalization()(x)
-            x = Flatten()(x)
-            x = Dense(512, activation="selu",
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(x)
+        x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
+        x = BatchNormalization()(x)
+        x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
+        x = BatchNormalization()(x)
+        x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu")(x)
+        x = BatchNormalization()(x)
+        x = Flatten()(x)
+        if network_parameters["Recurrent"]:
+            x = LSTM(512, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+                     stateful=network_parameters["Stateful"])(x)
         else:
-            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
-            x = BatchNormalization()(x)
-            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
-            x = BatchNormalization()(x)
-            x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu")(x)
-            x = BatchNormalization()(x)
-            x = Flatten()(x)
             x = Dense(512, activation="selu")(x)
 
     elif net_architecture == NetworkArchitecture.RESNET12.value:
@@ -344,63 +304,31 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         pass
 
     elif net_architecture == NetworkArchitecture.DEEP_CNN.value:
-        if network_parameters.get('KernelInitializer') == "Orthogonal":
-            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(net_inp)
-            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(x)
-            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(x)
-            x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(x)
-            x = Flatten()(x)
-            x = Dense(512, activation="selu",
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(x)
+        x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
+        x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
+        x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
+        x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu")(x)
+        x = Flatten()(x)
+        if network_parameters["Recurrent"]:
+            x = LSTM(512, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+                     stateful=network_parameters["Stateful"])(x)
         else:
-            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
-            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
-            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
-            x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu")(x)
-            x = Flatten()(x)
             x = Dense(512, activation="selu")(x)
 
     elif net_architecture == NetworkArchitecture.DEEP_CNN_BATCHNORM.value:
-        if network_parameters.get('KernelInitializer') == "Orthogonal":
-            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(net_inp)
-            x = BatchNormalization()(x)
-            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(x)
-            x = BatchNormalization()(x)
-            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(x)
-            x = BatchNormalization()(x)
-            x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu",
-                       kernel_initializer=Orthogonal(np.sqrt(2)),
-                       bias_initializer=Constant(0.0))(x)
-            x = BatchNormalization()(x)
-            x = Flatten()(x)
-            x = Dense(512, activation="selu",
-                      kernel_initializer=Orthogonal(np.sqrt(2)),
-                      bias_initializer=Constant(0.0))(x)
+        x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
+        x = BatchNormalization()(x)
+        x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
+        x = BatchNormalization()(x)
+        x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
+        x = BatchNormalization()(x)
+        x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu")(x)
+        x = BatchNormalization()(x)
+        x = Flatten()(x)
+        if network_parameters["Recurrent"]:
+            x = LSTM(512, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+                     stateful=network_parameters["Stateful"])(x)
         else:
-            x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
-            x = BatchNormalization()(x)
-            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
-            x = BatchNormalization()(x)
-            x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
-            x = BatchNormalization()(x)
-            x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu")(x)
-            x = BatchNormalization()(x)
-            x = Flatten()(x)
             x = Dense(512, activation="selu")(x)
 
     else:
@@ -408,14 +336,14 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
 
     return x
 
-
+"""
 class LogStdLayer(tf.keras.layers.Layer):
     def __init__(self, net_out_shape, **kwargs):
         super(LogStdLayer, self).__init__()
         self.net_out_shape = net_out_shape
         self.log_std = tf.Variable(tf.ones(self.net_out_shape) * -1.6, name='LOG_STD',
                                    trainable=True,
-                                   constraint=lambda x: tf.clip_by_value(x, -20, 1))
+                                   constraint=lambda x: tf.clip_by_value(x, -10, 20))
 
     def call(self, inputs):
         return self.log_std
@@ -426,3 +354,4 @@ class LogStdLayer(tf.keras.layers.Layer):
             'net_out_shape': self.net_out_shape,
         })
         return config
+"""

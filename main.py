@@ -39,7 +39,7 @@ def main():
     trainer = Trainer()
     interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
     # If you want to run multiple Unity actors in parallel you need specify the path to the '.exe' file here.
-    environment_path = None #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0_Camera\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
+    environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\3DBall\UnityEnvironment.exe" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0_Camera\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 
     # Choose from "None", "EpsilonGreedy" and "ICM"
     exploration_algorithm = 'EpsilonGreedy'
@@ -48,11 +48,11 @@ def main():
     trainer.select_training_algorithm('SAC')
 
     # Choose from None, "LinearCurriculum", "RememberingCurriculum" and "CrossFadeCurriculum"
-    curriculum_strategy = "LinearCurriculum"
+    curriculum_strategy = None
     trainer.select_curriculum_strategy(curriculum_strategy)
 
     # Choose from "None" and "SemanticSegmentation"
-    preprocessing_algorithm = 'SemanticSegmentation'
+    preprocessing_algorithm = 'None'
     preprocessing_path = r"C:\PGraf\Arbeit\RL\SemanticSegmentation\vae\models\210809_101443_VAE_encoder_235" # Enter the path for the preprocessing model
 
     trainer.save_all_models = True  # Determines if all models or only the actor will be saved during training

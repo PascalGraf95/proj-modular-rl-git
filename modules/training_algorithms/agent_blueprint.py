@@ -2,11 +2,12 @@
 import numpy as np
 import tensorflow as tf
 from ..misc.logger import LocalLogger
-from ..misc.replay_buffer import LocalFIFOBuffer
+from ..misc.replay_buffer import LocalFIFOBuffer, LocalRecurrentBuffer
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
 from ..sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
 from ..curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
+import time
 import ray
 
 
@@ -21,6 +22,7 @@ class Actor:
         # Network
         self.actor_network = None
         self.critic_network = None
+        self.actor_prediction_network = None
         self.network_update_requested = False
         self.new_steps_taken = 0
         self.network_update_frequency = 1000
@@ -33,6 +35,10 @@ class Actor:
         # Local Buffer
         self.local_buffer = None
         self.minimum_capacity_reached = False
+
+        # Recurrent Properties
+        self.recurrent = None
+        self.sequence_length = None
 
         # Local Logger
         self.local_logger = None
@@ -180,14 +186,29 @@ class Actor:
 
     # region Module Instantiation
     def instantiate_local_buffer(self, trainer_configuration):
+        """
         self.local_buffer = LocalFIFOBuffer(capacity=5000,
                                             agent_num=self.agent_number,
                                             n_steps=trainer_configuration.get("NSteps"),
                                             gamma=trainer_configuration.get("Gamma"),
                                             store_trajectories=False)
+        """
+        if self.recurrent:
+            self.local_buffer = LocalRecurrentBuffer(capacity=5000,
+                                                     agent_num=self.agent_number,
+                                                     n_steps=trainer_configuration.get("NSteps"),
+                                                     sequence_length=trainer_configuration.get("SequenceLength"),
+                                                     gamma=trainer_configuration.get("Gamma"))
+        else:
+            self.local_buffer = LocalFIFOBuffer(capacity=5000,
+                                                agent_num=self.agent_number,
+                                                n_steps=trainer_configuration.get("NSteps"),
+                                                gamma=trainer_configuration.get("Gamma"))
         self.network_update_frequency = trainer_configuration.get("NetworkUpdateFrequency")
 
     def instantiate_modules(self, trainer_configuration, exploration_degree):
+        self.recurrent = trainer_configuration["Recurrent"]
+        self.sequence_length = trainer_configuration.get("SequenceLength")
         self.gamma = trainer_configuration["Gamma"]
         self.n_steps = trainer_configuration["NSteps"]
         self.read_environment_configuration()
@@ -214,6 +235,12 @@ class Actor:
 
     def update_actor_network(self, network_weights):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    def reset_actor_state(self):
+        """This function resets the actors LSTM states to random values at the beginning of a new episode."""
+        for layer in self.actor_network.layers:
+            if "lstm" in layer.name:
+                layer.reset_states()
     # endregion
 
     # region Environment Interaction
@@ -255,6 +282,7 @@ class Actor:
         if self.local_buffer.check_reset_condition():
             AgentInterface.reset(self.environment)
             self.local_buffer.done_agents.clear()
+            self.reset_actor_state()
         # Otherwise take a step in the environment according to the chosen action
         else:
             AgentInterface.step_action(self.environment, self.behavior_name, actions)
@@ -387,6 +415,36 @@ class Learner:
             action_batch[idx] = transition['action']
             reward_batch[idx] = transition['reward']
             done_batch[idx] = transition['done']
+        return state_batch, action_batch, reward_batch, next_state_batch, done_batch
+
+    @staticmethod
+    def get_training_batch_from_recurrent_replay_batch(replay_batch, observation_shapes, action_shape, sequence_length):
+        # State and Next State Batches are lists of numpy-arrays
+        state_batch = []
+        next_state_batch = []
+        # Append an array with the correct shape for each part of the observation
+        for obs_shape in observation_shapes:
+            state_batch.append(np.zeros((len(replay_batch), sequence_length, *obs_shape)))
+            next_state_batch.append(np.zeros((len(replay_batch), sequence_length, *obs_shape)))
+        try:
+            action_batch = np.zeros((len(replay_batch), sequence_length, *action_shape))
+        except TypeError:
+            action_batch = np.zeros((len(replay_batch), sequence_length, action_shape))
+
+        reward_batch = np.zeros((len(replay_batch), sequence_length, 1))
+        done_batch = np.zeros((len(replay_batch), sequence_length, 1))
+
+        # Loop through all sequences in the batch
+        for idx_seq, sequence in enumerate(replay_batch):
+            # Loop through all transitions in one sequence
+            for idx_trans, transition in enumerate(sequence):
+                # Loop through all components per transition
+                for idx_comp, (state, next_state) in enumerate(zip(transition['state'], transition['next_state'])):
+                    state_batch[idx_comp][idx_seq][idx_trans] = state
+                    next_state_batch[idx_comp][idx_seq][idx_trans] = next_state
+                action_batch[idx_seq][idx_trans] = transition['action']
+                reward_batch[idx_seq][idx_trans] = transition['reward']
+                done_batch[idx_seq][idx_trans] = transition['done']
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch
     # endregion
 

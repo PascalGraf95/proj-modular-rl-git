@@ -15,10 +15,12 @@ from tensorflow.keras import losses
 from tensorflow.keras.models import clone_model
 import tensorflow_probability as tfp
 import os
+import ray
+import time
 import math
 tfd = tfp.distributions
 global AgentInterface
-import ray
+
 
 
 @ray.remote
@@ -39,6 +41,9 @@ class SACActor(Actor):
         if not active_agent_number:
             return Learner.get_dummy_action(active_agent_number, self.action_shape, self.action_type)
         with tf.device(self.device):
+            # In case of a recurrent network, the state input needs an additional time dimension
+            if self.recurrent:
+                states = [tf.expand_dims(state, axis=1) for state in states]
             mean, log_std = self.actor_network(states)
             if mode == "training":
                 normal = tfd.Normal(mean, tf.exp(log_std))
@@ -48,11 +53,19 @@ class SACActor(Actor):
         return actions.numpy()
 
     def get_sample_errors(self, samples):
-        state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-            = Learner.get_training_batch_from_replay_batch(samples, self.observation_shapes, self.action_shape)
+        """Calculates the prediction error for each state/sequence which corresponds to the initial priority in the
+        prioritized experience replay buffer."""
+        if self.recurrent:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = Learner.get_training_batch_from_recurrent_replay_batch(samples, self.observation_shapes,
+                                                                         self.action_shape, self.sequence_length)
+        else:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = Learner.get_training_batch_from_replay_batch(samples, self.observation_shapes, self.action_shape)
         with tf.device(self.device):
-            # CRITIC TRAINING
-            next_actions = self.act(next_state_batch)
+            mean, log_std = self.actor_prediction_network(next_state_batch)
+            normal = tfd.Normal(mean, tf.exp(log_std))
+            next_actions = tf.tanh(normal.sample())
             # Critic Target Predictions
             critic_prediction = self.critic_network([*next_state_batch, next_actions])
             critic_target = critic_prediction*(1-done_batch)
@@ -60,11 +73,18 @@ class SACActor(Actor):
             # Train Both Critic Networks
             y = reward_batch + (self.gamma**self.n_steps) * critic_target
             sample_errors = np.abs(y - self.critic_network([*state_batch, action_batch]))
+            # In case of a recurrent agent the priority has to be averaged over each sequence according to the
+            # formula in the paper
+            if self.recurrent:
+                eta = 0.9
+                sample_errors = eta*np.max(sample_errors, axis=1) + (1-eta)*np.mean(sample_errors, axis=1)
         return sample_errors
 
     def update_actor_network(self, network_weights):
         self.actor_network.set_weights(network_weights[0])
         self.critic_network.set_weights(network_weights[1])
+        if self.recurrent:
+            self.actor_prediction_network.set_weights(network_weights[0])
         self.network_update_requested = False
         self.new_steps_taken = 0
 
@@ -76,6 +96,18 @@ class SACActor(Actor):
         network_parameters[0]['OutputActivation'] = [None, None]
         network_parameters[0]['NetworkType'] = 'ActorCopy{}'.format(idx)
         network_parameters[0]['KernelInitializer'] = "RandomUniform"
+        # Recurrent Parameters
+        network_parameters[0]['Recurrent'] = self.recurrent
+        network_parameters[0]['ReturnSequences'] = False
+        network_parameters[0]['Stateful'] = True
+        network_parameters[0]['BatchSize'] = self.agent_number
+
+        # Actor for Error Prediction
+        network_parameters[2] = network_parameters[0].copy()
+        network_parameters[2]['NetworkType'] = 'ActorErrorPrediction{}'.format(idx)
+        network_parameters[2]['ReturnSequences'] = True
+        network_parameters[2]['Stateful'] = False
+        network_parameters[2]['BatchSize'] = None
 
         # Critic1
         network_parameters[1]['Input'] = [*environment_parameters.get('ObservationShapes'),
@@ -86,11 +118,18 @@ class SACActor(Actor):
         network_parameters[1]['TargetNetwork'] = False
         network_parameters[1]['Vec2Img'] = False
         network_parameters[1]['KernelInitializer'] = "RandomUniform"
+        # Recurrent Parameters
+        network_parameters[1]['Recurrent'] = self.recurrent
+        network_parameters[1]['ReturnSequences'] = True
+        network_parameters[1]['Stateful'] = False
+        network_parameters[1]['BatchSize'] = None
 
         # Build
         with tf.device(self.device):
             self.actor_network = construct_network(network_parameters[0])
             self.critic_network = construct_network(network_parameters[1])
+            if self.recurrent:
+                self.actor_prediction_network = construct_network(network_parameters[2])
         return True
 
 
@@ -154,6 +193,10 @@ class SACLearner(Learner):
         self.tau = trainer_configuration.get('Tau')
         self.clip_grad = trainer_configuration.get('ClipGrad')
 
+        # Recurrent Paramters
+        self.recurrent = trainer_configuration.get('Recurrent')
+        self.sequence_length = trainer_configuration.get('SequenceLength')
+
         # Misc
         self.training_step = 0
         self.set_gpu_growth()  # Important step to avoid tensorflow OOM errors when running multiprocessing!
@@ -198,6 +241,11 @@ class SACLearner(Learner):
         network_parameters[0]['OutputActivation'] = [None, None]
         network_parameters[0]['NetworkType'] = self.NetworkTypes[0]
         network_parameters[0]['KernelInitializer'] = "RandomUniform"
+        # Recurrent Parameters
+        network_parameters[0]['Recurrent'] = self.recurrent
+        network_parameters[0]['ReturnSequences'] = True
+        network_parameters[0]['Stateful'] = False
+        network_parameters[0]['BatchSize'] = None
 
         # Critic1
         network_parameters[1]['Input'] = [*environment_parameters.get('ObservationShapes'),
@@ -208,6 +256,11 @@ class SACLearner(Learner):
         network_parameters[1]['TargetNetwork'] = True
         network_parameters[1]['Vec2Img'] = False
         network_parameters[1]['KernelInitializer'] = "RandomUniform"
+        # Recurrent Parameters
+        network_parameters[1]['Recurrent'] = self.recurrent
+        network_parameters[1]['ReturnSequences'] = True
+        network_parameters[1]['Stateful'] = False
+        network_parameters[1]['BatchSize'] = None
 
         # Critic2
         network_parameters[2] = network_parameters[1].copy()
@@ -227,12 +280,17 @@ class SACLearner(Learner):
         action = tf.tanh(z)
 
         log_prob = normal.log_prob(z) - tf.math.log(1 - action**2 + self.epsilon)
-        log_prob = tf.reduce_sum(log_prob, axis=1, keepdims=True)
+        log_prob = tf.reduce_sum(log_prob, axis=2, keepdims=True)
         return action, log_prob
 
     def learn(self, replay_batch):
-        state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-            = self.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, self.action_shape)
+        if self.recurrent:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
+                                                                         self.action_shape, self.sequence_length)
+        else:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = self.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, self.action_shape)
 
         # CRITIC TRAINING
         next_actions, next_log_prob = self.forward(next_state_batch)
@@ -245,7 +303,12 @@ class SACLearner(Learner):
 
         # Train Both Critic Networks
         y = reward_batch + (self.gamma**self.n_steps) * critic_target
+
         sample_errors = np.abs(y - self.critic1([*state_batch, action_batch]))
+        if self.recurrent:
+            eta = 0.9
+            sample_errors = eta*np.max(sample_errors, axis=1) + (1-eta)*np.mean(sample_errors, axis=1)
+
         value_loss1 = self.critic1.train_on_batch([*state_batch, action_batch], y)
         value_loss2 = self.critic2.train_on_batch([*state_batch, action_batch], y)
         value_loss = (value_loss1 + value_loss2)/2
