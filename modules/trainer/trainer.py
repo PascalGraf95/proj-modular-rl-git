@@ -212,7 +212,8 @@ class Trainer:
 
         # Initialize the global buffer
         if self.trainer_configuration["PrioritizedReplay"]:
-            self.global_buffer = PrioritizedBuffer.remote(capacity=self.trainer_configuration["ReplayCapacity"])
+            self.global_buffer = PrioritizedBuffer.remote(capacity=self.trainer_configuration["ReplayCapacity"],
+                                                          priority_alpha=self.trainer_configuration["PriorityAlpha"])
         else:
             self.global_buffer = FIFOBuffer.remote(capacity=self.trainer_configuration["ReplayCapacity"],
                                                    agent_num=self.environment_configuration["AgentNumber"],
@@ -311,10 +312,6 @@ class Trainer:
             # endregion
 
             for idx, actor in enumerate(self.actors):
-                # Update the actor networks if requested by the respective actor
-                if ray.get(actor.is_network_update_requested.remote()):
-                    actor.update_actor_network.remote(ray.get(self.learner.get_actor_network_weights.remote()))
-
                 # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
                 # In case of an Prioritized Experience Replay let the actor calculate an initial priority.
                 # Also make sure the environment runs the desired curriculum level
@@ -326,22 +323,29 @@ class Trainer:
                         self.global_buffer.append_list.remote(samples, sample_errors)
                     else:
                         self.global_buffer.append_list.remote(samples)
-                    self.global_logger.append(*ray.get(actor.get_new_stats.remote()), actor_idx=idx)
+                    lengths, rewards, total_episodes_played = ray.get(actor.get_new_stats.remote())
+                    if lengths:
+                        self.global_logger.append(lengths, rewards, total_episodes_played, actor_idx=idx)
 
             # Check if enough new samples have been collected and the minimum capacity is reached in order to
             # start a training cycle.
             if ray.get(self.global_buffer.check_training_condition.remote(self.trainer_configuration)):
+                print("TRAINING")
                 # Sample a new batch of transitions from the global replay buffer
                 samples, indices = ray.get(self.global_buffer.sample.remote(
                     self.trainer_configuration.get("BatchSize")))
                 # Train the learner with the batch and observer the resulting metrics
                 training_object = self.learner.learn.remote(samples)
                 training_metrics, sample_errors, training_step = ray.get(training_object)
+                # Update the actor networks if requested by the learner
+                if ray.get(self.learner.is_network_update_requested.remote()):
+                    for idx, actor in enumerate(self.actors):
+                        actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote())
+
                 # Update the prioritized experience replay buffer with the td-errors
                 self.global_buffer.update.remote(indices, sample_errors)
                 # Train the actors exploration algorithm with the same batch
-                for actor in self.actors:
-                    actor.exploration_learning_step.remote(samples)
+                [actor.exploration_learning_step.remote(samples) for actor in self.actors]
                 # Check if either the reward threshold for a level change has been reached or if the curriculum
                 # strategy transitions between different levels by default
                 _, max_reward, total_episodes = self.global_logger.get_current_max_stats(

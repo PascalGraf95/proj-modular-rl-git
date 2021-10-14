@@ -119,12 +119,12 @@ dqn:
     TrainingInterval: 8
 sac:
     Recurrent: true
-    SequenceLength: 20
-    ActorNum: 10
-    BatchSize: 32
+    SequenceLength: 40
+    ActorNum: 5
+    BatchSize: 16
     ClipGrad: 10.0
     ExplorationParameters:
-        Epsilon: 0.4
+        Epsilon: 0.3
         EpsilonDecay: 0.99995
         EpsilonMin: 0.01
         StepDown: false
@@ -134,27 +134,28 @@ sac:
     LogAlpha: -2.0
     NSteps: 4
     AdaptiveExploration: false
-    NetworkUpdateFrequency: 500
+    NetworkUpdateFrequency: 30
     NetworkParameters:
-    -   Filters: 32
-        Units: 32
+    -   Filters: 50
+        Units: 50
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 32
-        Units: 32
+    -   Filters: 50
+        Units: 50
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 32
-        Units: 32
+    -   Filters: 50
+        Units: 50
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: true
+    PriorityAlpha: 0.8
     ReplayCapacity: 100000
     ReplayMinSize: 100
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingID: SAC_3DBall_R2D2
+    TrainingID: SAC_Worm_Prioritized_Recurrent40_5Actor
     TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3

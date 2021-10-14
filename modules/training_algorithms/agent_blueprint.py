@@ -102,9 +102,6 @@ class Actor:
     # endregion
 
     # region Property Query
-    def is_network_update_requested(self):
-        return self.network_update_requested
-
     def is_minimum_capacity_reached(self):
         return self.minimum_capacity_reached
 
@@ -270,13 +267,13 @@ class Actor:
                                         step_type="decision")
 
         # If enough samples have been collected, mark local buffer ready for readout
-        if self.local_buffer.collected_trajectories:
+        if len(self.local_buffer) >= 10:
             self.minimum_capacity_reached = True
 
         # If enough steps have been taken, mark agent ready for updated network
-        self.new_steps_taken += len(decision_steps)
-        if self.new_steps_taken >= self.network_update_frequency:
-            self.network_update_requested = True
+        # self.new_steps_taken += len(decision_steps)
+        # if self.new_steps_taken >= self.network_update_frequency:
+        #     self.network_update_requested = True
 
         # If all agents are in a terminal state reset the environment
         if self.local_buffer.check_reset_condition():
@@ -339,9 +336,36 @@ class Learner:
     ActionType = []
     NetworkTypes = []
     Metrics = []
+
+    def __init__(self, trainer_configuration, environment_configuration):
+        # Environment Configuration
+        self.action_shape = environment_configuration.get('ActionShape')
+        self.observation_shapes = environment_configuration.get('ObservationShapes')
+
+        # Learning Parameters
+        self.n_steps = trainer_configuration.get('NSteps')
+        self.gamma = trainer_configuration.get('Gamma')
+        self.sync_mode = trainer_configuration.get('SyncMode')
+        self.sync_steps = trainer_configuration.get('SyncSteps')
+        self.tau = trainer_configuration.get('Tau')
+        self.clip_grad = trainer_configuration.get('ClipGrad')
+        self.network_update_frequency = trainer_configuration.get('NetworkUpdateFrequency')
+
+        # Recurrent Paramters
+        self.recurrent = trainer_configuration.get('Recurrent')
+        self.sequence_length = trainer_configuration.get('SequenceLength')
+
+        # Misc
+        self.training_step = 0
+        self.steps_since_actor_update = 0
+        self.set_gpu_growth()  # Important step to avoid tensorflow OOM errors when running multiprocessing!
+
     # endregion
 
     # region Network Construction and Transfer
+    def is_network_update_requested(self):
+        return self.steps_since_actor_update >= self.network_update_frequency
+
     def get_actor_network_weights(self):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 

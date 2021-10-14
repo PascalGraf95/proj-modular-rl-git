@@ -95,12 +95,8 @@ class PrioritizedBuffer:
     an experience was to the agent the more likely it will be sampled. After training the priorities for each training
     sample is updated.
     """
-    per_e = 0.001  # Avoid samples to have 0 probability of being taken
-    per_a = 0.6  # tradeoff between taking only experiences with high priority vs. uniform sampling
-    per_beta = 0.4  # importance-sampling, from initial value increasing to 1
-    per_beta_increment_per_sampling = 0.001
 
-    def __init__(self, capacity: int, ):
+    def __init__(self, capacity: int, priority_alpha=0.6):
 
         # Initialize sum tree
         self.tree = SumTree(capacity)
@@ -113,6 +109,12 @@ class PrioritizedBuffer:
         self.new_training_samples = 0
         self.collected_trajectories = 0
         self.steps_without_training = 0
+
+        # Priority Alpha
+        self.per_a = priority_alpha
+        self.per_e = 0.001  # Avoid samples to have 0 probability of being taken
+        self.per_beta = 0.4  # importance-sampling, from initial value increasing to 1
+        self.per_beta_increment_per_sampling = 0.001
 
     def __len__(self):
         return self.tree.n_entries
@@ -202,6 +204,7 @@ class FIFOBuffer:
         # New sample and trajectory counters
         self.new_training_samples = 0
         self.collected_trajectories = 0
+        self.steps_without_training = 0
 
         self.sampled_indices = None
 
@@ -224,7 +227,10 @@ class FIFOBuffer:
         if not self.store_trajectories:
             if len(self.buffer) > trainer_configuration['ReplayMinSize']:
                 self.min_size_reached = True
-            if self.new_training_samples >= trainer_configuration['TrainingInterval'] and self.min_size_reached:
+            self.steps_without_training += 1
+            #if self.new_training_samples >= trainer_configuration['TrainingInterval'] and self.min_size_reached:
+            if self.steps_without_training >= trainer_configuration['TrainingInterval'] and self.min_size_reached:
+                self.steps_without_training = 0
                 return True
         else:
             if self.collected_trajectories >= trainer_configuration['TrajectoryNum']:

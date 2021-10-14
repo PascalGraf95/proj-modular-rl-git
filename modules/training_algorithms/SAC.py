@@ -63,7 +63,10 @@ class SACActor(Actor):
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_replay_batch(samples, self.observation_shapes, self.action_shape)
         with tf.device(self.device):
-            mean, log_std = self.actor_prediction_network(next_state_batch)
+            if self.recurrent:
+                mean, log_std = self.actor_prediction_network(next_state_batch)
+            else:
+                mean, log_std = self.actor_network(next_state_batch)
             normal = tfd.Normal(mean, tf.exp(log_std))
             next_actions = tf.tanh(normal.sample())
             # Critic Target Predictions
@@ -167,6 +170,8 @@ class SACLearner(Learner):
     # endregion
 
     def __init__(self, mode, trainer_configuration, environment_configuration, network_parameters, model_path=None):
+        super().__init__(trainer_configuration, environment_configuration)
+
         # Networks
         self.actor_network = None
         self.critic1, self.critic_target1 = None, None
@@ -180,26 +185,6 @@ class SACLearner(Learner):
         # Temperature Parameter
         self.log_alpha = None
         self.target_entropy = None
-
-        # Environment Configuration
-        self.action_shape = environment_configuration.get('ActionShape')
-        self.observation_shapes = environment_configuration.get('ObservationShapes')
-
-        # Learning Parameters
-        self.n_steps = trainer_configuration.get('NSteps')
-        self.gamma = trainer_configuration.get('Gamma')
-        self.sync_mode = trainer_configuration.get('SyncMode')
-        self.sync_steps = trainer_configuration.get('SyncSteps')
-        self.tau = trainer_configuration.get('Tau')
-        self.clip_grad = trainer_configuration.get('ClipGrad')
-
-        # Recurrent Paramters
-        self.recurrent = trainer_configuration.get('Recurrent')
-        self.sequence_length = trainer_configuration.get('SequenceLength')
-
-        # Misc
-        self.training_step = 0
-        self.set_gpu_growth()  # Important step to avoid tensorflow OOM errors when running multiprocessing!
 
         # Construct or load the required neural networks based on the trainer configuration and environment information
         if mode == 'training':
@@ -231,6 +216,7 @@ class SACLearner(Learner):
         self.alpha = tf.exp(self.log_alpha).numpy()
 
     def get_actor_network_weights(self):
+        self.steps_since_actor_update = 0
         return [self.actor_network.get_weights(), self.critic1.get_weights()]
 
     def build_network(self, network_parameters, environment_parameters):
@@ -280,7 +266,10 @@ class SACLearner(Learner):
         action = tf.tanh(z)
 
         log_prob = normal.log_prob(z) - tf.math.log(1 - action**2 + self.epsilon)
-        log_prob = tf.reduce_sum(log_prob, axis=2, keepdims=True)
+        if self.recurrent:
+            log_prob = tf.reduce_sum(log_prob, axis=2, keepdims=True)
+        else:
+            log_prob = tf.reduce_sum(log_prob, axis=1, keepdims=True)
         return action, log_prob
 
     def learn(self, replay_batch):
@@ -336,10 +325,19 @@ class SACLearner(Learner):
             print("NAN DETECTED")
 
         self.training_step += 1
+        self.steps_since_actor_update += 1
         self.sync_models()
         return {'Losses/Loss': policy_loss+value_loss, 'Losses/PolicyLoss': policy_loss,
                 'Losses/ValueLoss': value_loss, 'Losses/AlphaLoss': alpha_loss,
                 'Losses/Alpha': tf.reduce_mean(self.alpha).numpy()}, sample_errors, self.training_step
+
+    @staticmethod
+    def value_function_rescaling(x, eps=1e-3):
+        return np.sign(x)*(np.sqrt(np.abs(x)+1)-1)+eps*x
+
+    @staticmethod
+    def inverse_value_function_rescaling(h, eps=1e-3):
+        return np.sign(h)*(((np.sqrt(1+4*eps*(np.abs(h)+1+eps))-1)/(2*eps))-1)
 
     def sync_models(self):
         if self.sync_mode == "hard_sync":
