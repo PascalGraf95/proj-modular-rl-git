@@ -135,12 +135,17 @@ class PrioritizedBuffer:
         return (error + self.per_e) ** self.per_a
 
     def append_list(self, samples, errors):
+        if not samples:
+            return
         for sample, error in zip(samples, errors):
             priority = self._getPriority(error)
             self.tree.add(priority, sample)
         self.new_training_samples += len(samples)
 
-    def sample(self, batch_size: int):
+    @ray.method(num_returns=2)
+    def sample(self, trainer_configuration, batch_size: int):
+        if not self.check_training_condition(trainer_configuration):
+            return None, None
         batch = []
         batch_indices = np.empty((batch_size,), dtype=np.int32)
 
@@ -170,6 +175,9 @@ class PrioritizedBuffer:
         return copy_by_val_replay_batch, batch_indices  # , is_weight
 
     def update(self, indices, errors):
+        if not indices:
+            return
+
         for idx, error in zip(indices, errors):
             priority = self._getPriority(error)
             self.tree.update(idx, priority)
@@ -244,13 +252,21 @@ class FIFOBuffer:
         pass
 
     def append_list(self, samples):
+        if not samples:
+            return
+
         self.buffer.extend(samples)
         self.new_training_samples += len(samples)
 
+    @ray.method(num_returns=2)
     def sample(self,
+               trainer_configuration,
                batch_size: int,
                reset_buffer: bool = False,
                random_samples: bool = True):
+        if not self.check_training_condition(trainer_configuration):
+            return None, None
+
         indices = []
         if random_samples:
             indices = np.random.choice(len(self.buffer), batch_size, replace=True)

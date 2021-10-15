@@ -39,10 +39,10 @@ def main():
     trainer = Trainer()
     interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
     # If you want to run multiple Unity actors in parallel you need specify the path to the '.exe' file here.
-    environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\SingleWorm\UnityEnvironment.exe" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0_Camera\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
+    environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\3DBall\UnityEnvironment.exe" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0_Camera\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 
     # Choose from "None", "EpsilonGreedy" and "ICM"
-    exploration_algorithm = 'EpsilonGreedy'
+    exploration_algorithm = 'None'
 
     # Choose from "DQN", "DDPG", "TD3", "SAC"
     trainer.select_training_algorithm('SAC')
@@ -72,28 +72,11 @@ def main():
 
     # region --- Training / Testing ---
 
-    # Play new episodes until the training/testing is manually interrupted and receive the latest process information
-    while True:
-        if mode == "training":
-            mean_episode_length, mean_episode_reward, \
-                episodes, training_step, loss, \
-                task_properties = next(trainer.training_loop)
-        else:
-            mean_episode_length, mean_episode_reward, \
-                episodes, training_step, loss, \
-                task_properties = next(trainer.testing_loop)
-        training_duration = trainer.get_elapsed_training_time()
-
-        # Print the latest training or testing stats to the console.
-        if episodes - trainer.last_debug_message >= 10:
-            trainer.last_debug_message = episodes
-            print("Played Episodes: {}, Training Steps: {}, Task Level: {:d}/{:d}\n"
-                  "Average Episode Reward: {:.2f}/{:.2f} (for the last {:d} Episodes)\n"
-                  "Elapsed Training Time: {:02d}:{:02d}:{:02d}:{:02d}".format(episodes, training_step, task_properties[1]+1, task_properties[0],
-                                                                              mean_episode_reward, task_properties[3], task_properties[2],
-                                                                              *training_duration))
-            print("--------------------------------------------------------------")
-
+    # Play new episodes until the training/testing is manually interrupted
+    if mode == "training":
+        trainer.async_training_loop()
+    else:
+        trainer.async_testing_loop()
     # endregion
 
 

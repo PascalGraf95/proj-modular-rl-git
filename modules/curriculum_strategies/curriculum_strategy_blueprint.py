@@ -1,6 +1,8 @@
 import numpy as np
+import ray
 
 
+@ray.remote
 class CurriculumStrategy:
     Name = "CurriculumStrategy"
 
@@ -16,11 +18,22 @@ class CurriculumStrategy:
 
         self.level_transition = False
 
+    def has_unity_responded(self):
+        return self.unity_responded
+
     def check_task_level_change_condition(self, average_reward, total_episodes_played, force=False):
         return False
 
-    def get_new_task_level(self):
+    def get_new_task_level(self, target_task_level):
+        if not target_task_level:
+            return None
         return self.task_level
+
+    def get_average_episodes(self):
+        return self.average_episodes
+
+    def get_level_transition(self):
+        return self.level_transition
 
     def update_task_properties(self, unity_responded, task_properties):
         if unity_responded:

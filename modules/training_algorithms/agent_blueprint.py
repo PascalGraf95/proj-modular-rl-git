@@ -108,9 +108,13 @@ class Actor:
     def get_target_task_level(self):
         return self.target_task_level
 
-    def get_task_properties(self):
-        unity_responded, task_properties = self.curriculum_communicator.get_task_properties()
-        return unity_responded, task_properties
+    @ray.method(num_returns=2)
+    def get_task_properties(self, unity_responded_global):
+        if not unity_responded_global:
+            unity_responded, task_properties = self.curriculum_communicator.get_task_properties()
+            return unity_responded, task_properties
+        else:
+            return None, None
 
     def get_exploration_logs(self, idx):
         return self.exploration_algorithm.get_logs(idx)
@@ -289,20 +293,28 @@ class Actor:
     # endregion
 
     # region Misc
-    def exploration_learning_step(self, replay_batch):
+    def exploration_learning_step(self, samples):
+        if not samples:
+            return
         if self.adaptive_exploration:
-            self.exploration_algorithm.learning_step(replay_batch)
+            self.exploration_algorithm.learning_step(samples)
 
+    @ray.method(num_returns=2)
     def get_new_samples(self):
-        self.minimum_capacity_reached = False
-        return self.local_buffer.sample(-1, reset_buffer=True, random_samples=False)
+        if self.minimum_capacity_reached:
+            self.minimum_capacity_reached = False
+            return self.local_buffer.sample(-1, reset_buffer=True, random_samples=False)
+        else:
+            return None, None
 
+    @ray.method(num_returns=3)
     def get_new_stats(self):
         return self.local_logger.get_episode_stats()
 
     def set_new_target_task_level(self, target_task_level):
-        self.target_task_level = target_task_level
-        self.curriculum_side_channel.unity_responded = False
+        if target_task_level:
+            self.target_task_level = target_task_level
+            self.curriculum_side_channel.unity_responded = False
 
     def send_target_task_level(self):
         self.curriculum_communicator.set_task_number(self.target_task_level)

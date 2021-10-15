@@ -6,6 +6,7 @@ import shutil
 from collections import deque
 from tensorflow.python.summary.summary_iterator import summary_iterator
 from datetime import datetime
+import ray
 
 
 class LocalLogger:
@@ -54,6 +55,7 @@ class LocalLogger:
         return lengths, rewards, self.total_episodes_played
 
 
+@ray.remote
 class GlobalLogger:
     """
     Global Logger
@@ -104,7 +106,12 @@ class GlobalLogger:
         minutes, seconds = divmod(remainder, 60)
         return days, hours, minutes, seconds
 
+    def get_best_running_average(self):
+        return self.best_running_average_reward
+
     def append(self, episode_lengths, episode_rewards, total_number_of_episodes, actor_idx=0):
+        if not episode_lengths:
+            return
         # Append new episode rewards and lengths
         self.new_episodes += len(episode_rewards)
         self.episode_reward_deque[actor_idx].extend(episode_rewards)
@@ -121,7 +128,7 @@ class GlobalLogger:
             self.log_dict({"Reward/Agent{:03d}Reward".format(actor_idx):
                                self.episode_reward_deque[actor_idx][-1],
                            "EpisodeLength/Agent{:03d}EpisodeLength".format(actor_idx):
-                               self.episode_length_deque[actor_idx][-1]}, total_number_of_episodes)
+                               self.episode_length_deque[actor_idx][-1]}, total_number_of_episodes, 1)
 
     def get_episode_stats(self):
         self.average_rewards = [np.mean(list(rewards)[-self.running_average_episodes:]) for rewards in self.episode_reward_deque]
@@ -132,6 +139,7 @@ class GlobalLogger:
 
         return mean_length, mean_reward, self.total_episodes_played
 
+    @ray.method(num_returns=3)
     def get_current_max_stats(self, average_num):
         max_agent_average_reward = np.max(self.average_rewards)
         length_list = list(self.episode_length_deque[self.best_actor])
@@ -151,12 +159,13 @@ class GlobalLogger:
                     return True
         return False
 
-    def register_level_change(self):
-        self.best_running_average_reward = -10000
-        self.last_save_time_step = self.total_episodes_played
-        self.average_rewards = [-10000 for i in range(self.actor_num)]
-        self.episode_reward_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
-        self.episode_length_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
+    def register_level_change(self, task_level_condition):
+        if task_level_condition:
+            self.best_running_average_reward = -10000
+            self.last_save_time_step = self.total_episodes_played
+            self.average_rewards = [-10000 for i in range(self.actor_num)]
+            self.episode_reward_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
+            self.episode_length_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
 
     def remove_old_checkpoints(self):
         def get_step_from_file(file):
@@ -174,9 +183,11 @@ class GlobalLogger:
                 os.remove(os.path.join(self.log_dir, file_name))
         return True
 
-    def log_dict(self, metrics, step):
-        for key, val in metrics.items():
-            self.log_scalar(key, val, step)
+    def log_dict(self, metrics, step, logging_frequency):
+        if metrics:
+            if step % logging_frequency == 0 or step == 1:
+                for key, val in metrics.items():
+                    self.log_scalar(key, val, step)
 
     def log_scalar(self, tag, value, step):
         with self.tensorboard_writer.as_default():

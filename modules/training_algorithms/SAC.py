@@ -55,6 +55,9 @@ class SACActor(Actor):
     def get_sample_errors(self, samples):
         """Calculates the prediction error for each state/sequence which corresponds to the initial priority in the
         prioritized experience replay buffer."""
+        if not samples:
+            return None
+
         if self.recurrent:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_recurrent_replay_batch(samples, self.observation_shapes,
@@ -84,6 +87,8 @@ class SACActor(Actor):
         return sample_errors
 
     def update_actor_network(self, network_weights):
+        if not len(network_weights):
+            return
         self.actor_network.set_weights(network_weights[0])
         self.critic_network.set_weights(network_weights[1])
         if self.recurrent:
@@ -216,6 +221,8 @@ class SACLearner(Learner):
         self.alpha = tf.exp(self.log_alpha).numpy()
 
     def get_actor_network_weights(self):
+        if not self.is_network_update_requested():
+            return []
         self.steps_since_actor_update = 0
         return [self.actor_network.get_weights(), self.critic1.get_weights()]
 
@@ -272,7 +279,11 @@ class SACLearner(Learner):
             log_prob = tf.reduce_sum(log_prob, axis=1, keepdims=True)
         return action, log_prob
 
+    @ray.method(num_returns=3)
     def learn(self, replay_batch):
+        if not replay_batch:
+            return None, None, self.training_step
+
         if self.recurrent:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
@@ -375,7 +386,10 @@ class SACLearner(Learner):
         else:
             raise NotADirectoryError("Could not find directory or file for loading models.")
 
-    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False):
+    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
+                        checkpoint_condition=True):
+        if not checkpoint_condition:
+            return
         self.actor_network.save(
             os.path.join(path, "SAC_Actor_Step{}_Reward{:.2f}.h5".format(training_step, running_average_reward)))
         if save_all_models:

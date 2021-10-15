@@ -23,6 +23,7 @@ class Trainer:
         self.config_key = ""
         self.trainer_configuration = None
         self.last_debug_message = 0
+        self.logging_frequency = 100
 
         # Global Tensorboard Logger
         self.global_logger = None
@@ -52,9 +53,8 @@ class Trainer:
         self.global_buffer = None
 
         # Training Loop
-        self.logging_frequency = 100
-        self.training_loop = self.async_training_loop_generator()
-        self.testing_loop = self.async_testing_loop_generator()
+        # self.training_loop = self.async_training_loop()
+        # self.testing_loop = self.async_testing_loop()
 
     # region Configuration Acquirement
     def get_agent_configuration(self):
@@ -222,15 +222,17 @@ class Trainer:
                                                    store_trajectories=False)
         if mode == "training":
             # Initialize the global curriculum strategy
-            self.global_curriculum_strategy = CurriculumStrategy()
+            self.global_curriculum_strategy = CurriculumStrategy.remote()
 
         # Initialize the global logger
         self.logging_name = \
             datetime.strftime(datetime.now(), '%y%m%d_%H%M%S_') + self.trainer_configuration['TrainingID']
-        self.global_logger = GlobalLogger(os.path.join("training/summaries", self.logging_name),
-                                          actor_num=self.trainer_configuration["ActorNum"],
-                                          tensorboard=(mode == 'training'))
+        self.global_logger = GlobalLogger.remote(os.path.join("training/summaries", self.logging_name),
+                                                 actor_num=self.trainer_configuration["ActorNum"],
+                                                 tensorboard=(mode == 'training'))
         if mode == 'training':
+            if not os.path.isdir(os.path.join("./training/summaries", self.logging_name)):
+                os.makedirs(os.path.join("./training/summaries", self.logging_name))
             with open(os.path.join("./training/summaries", self.logging_name, "training_parameters.yaml"), 'w') as file:
                 _ = yaml.dump(self.trainer_configuration, file)
                 _ = yaml.dump(self.environment_configuration, file)
@@ -243,7 +245,7 @@ class Trainer:
 
         :return:
         """
-        return self.global_logger.get_elapsed_time()
+        return self.global_logger.get_elapsed_time.remote()
 
     def async_save_agent_models(self, training_step):
         """
@@ -251,9 +253,10 @@ class Trainer:
         :param training_step:
         :return:
         """
+        checkpoint_condition = self.global_logger.check_checkpoint_condition.remote()
         self.learner.save_checkpoint.remote(os.path.join("training/summaries", self.logging_name),
-                                            self.global_logger.best_running_average_reward,
-                                            training_step, save_all_models=self.save_all_models)
+                                            self.global_logger.get_best_running_average.remote(),
+                                            training_step, self.save_all_models, checkpoint_condition)
 
     def boost_exploration(self):
         """
@@ -280,20 +283,19 @@ class Trainer:
     # endregion
 
     # region Environment Interaction
-    def async_training_loop_generator(self):
+    def async_training_loop(self):
         """
 
         :return:
         """
         # region Initialization
-        training_step = 0
-        training_metrics = {}
-
         # Get the task properties from one of the environments
-        self.global_curriculum_strategy.update_task_properties(*ray.get(self.actors[0].get_task_properties.remote()))
+        unity_responded, task_properties = self.actors[0].get_task_properties.remote(
+            self.global_curriculum_strategy.has_unity_responded.remote())
+        self.global_curriculum_strategy.update_task_properties.remote(unity_responded, task_properties)
 
         # Synchronise all actor networks with the learner networks
-        [actor.update_actor_network.remote(ray.get(self.learner.get_actor_network_weights.remote()))
+        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote())
          for actor in self.actors]
         # endregion
 
@@ -304,80 +306,72 @@ class Trainer:
             # region Curriculum Info Acquisition
             # If the task level changed try to get new task information from the environment
             for actor in self.actors:
-                if not self.global_curriculum_strategy.unity_responded:
-                    unity_responded, task_properties = ray.get(actor.get_task_properties.remote())
-                    # If the retrieved information match the target level information update the global curriculum
-                    if task_properties[1] == ray.get(actor.get_target_task_level.remote()):
-                        self.global_curriculum_strategy.update_task_properties(unity_responded, task_properties)
+                unity_responded_global = self.global_curriculum_strategy.has_unity_responded.remote()
+                unity_responded, task_properties = actor.get_task_properties.remote(unity_responded_global)
+                # If the retrieved information match the target level information update the global curriculum
+                self.global_curriculum_strategy.update_task_properties.remote(unity_responded, task_properties)
             # endregion
 
             for idx, actor in enumerate(self.actors):
                 # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
                 # In case of an Prioritized Experience Replay let the actor calculate an initial priority.
                 # Also make sure the environment runs the desired curriculum level
-                if ray.get(actor.is_minimum_capacity_reached.remote()):
-                    actor.send_target_task_level.remote()
-                    samples, indices = ray.get(actor.get_new_samples.remote())
-                    if self.trainer_configuration["PrioritizedReplay"]:
-                        sample_errors = actor.get_sample_errors.remote(samples)
-                        self.global_buffer.append_list.remote(samples, sample_errors)
-                    else:
-                        self.global_buffer.append_list.remote(samples)
-                    lengths, rewards, total_episodes_played = ray.get(actor.get_new_stats.remote())
-                    if lengths:
-                        self.global_logger.append(lengths, rewards, total_episodes_played, actor_idx=idx)
+                actor.send_target_task_level.remote()
+                samples, indices = actor.get_new_samples.remote()
+                if self.trainer_configuration["PrioritizedReplay"]:
+                    sample_errors = actor.get_sample_errors.remote(samples)
+                    self.global_buffer.append_list.remote(samples, sample_errors)
+                else:
+                    self.global_buffer.append_list.remote(samples)
+                self.global_logger.append.remote(*actor.get_new_stats.remote(), actor_idx=idx)
 
             # Check if enough new samples have been collected and the minimum capacity is reached in order to
             # start a training cycle.
-            if ray.get(self.global_buffer.check_training_condition.remote(self.trainer_configuration)):
-                print("TRAINING")
-                # Sample a new batch of transitions from the global replay buffer
-                samples, indices = ray.get(self.global_buffer.sample.remote(
-                    self.trainer_configuration.get("BatchSize")))
-                # Train the learner with the batch and observer the resulting metrics
-                training_object = self.learner.learn.remote(samples)
-                training_metrics, sample_errors, training_step = ray.get(training_object)
-                # Update the actor networks if requested by the learner
-                if ray.get(self.learner.is_network_update_requested.remote()):
-                    for idx, actor in enumerate(self.actors):
-                        actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote())
+            # Sample a new batch of transitions from the global replay buffer
+            samples, indices = self.global_buffer.sample.remote(self.trainer_configuration,
+                                                                self.trainer_configuration.get("BatchSize"))
+            # Train the learner with the batch and observer the resulting metrics
+            training_metrics, sample_errors, training_step = self.learner.learn.remote(samples)
+            # Update the actor networks if requested by the learner
+            for idx, actor in enumerate(self.actors):
+                actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote())
 
-                # Update the prioritized experience replay buffer with the td-errors
-                self.global_buffer.update.remote(indices, sample_errors)
-                # Train the actors exploration algorithm with the same batch
-                [actor.exploration_learning_step.remote(samples) for actor in self.actors]
-                # Check if either the reward threshold for a level change has been reached or if the curriculum
-                # strategy transitions between different levels by default
-                _, max_reward, total_episodes = self.global_logger.get_current_max_stats(
-                    self.global_curriculum_strategy.average_episodes)
-                if self.global_curriculum_strategy.check_task_level_change_condition(max_reward, total_episodes) or \
-                        self.global_curriculum_strategy.level_transition:
-                    # Note: Currently this only works for the Linear Curriculum
-                    self.global_logger.register_level_change()
-                    target_task_level = self.global_curriculum_strategy.get_new_task_level()
-                    for actor in self.actors:
-                        actor.set_new_target_task_level.remote(target_task_level)
-                # Check if a new best reward has been achieved, if so save the models
-                if self.global_logger.check_checkpoint_condition():
-                    self.async_save_agent_models(training_step)
-                    if self.remove_old_checkpoints:
-                        self.global_logger.remove_old_checkpoints()
+            # Update the prioritized experience replay buffer with the td-errors
+            self.global_buffer.update.remote(indices, sample_errors)
+            # Train the actors exploration algorithm with the same batch
+            [actor.exploration_learning_step.remote(samples) for actor in self.actors]
+            # Check if either the reward threshold for a level change has been reached or if the curriculum
+            # strategy transitions between different levels by default
+            _, max_reward, total_episodes = self.global_logger.get_current_max_stats.remote(
+                self.global_curriculum_strategy.get_average_episodes.remote())
 
-                # Log training results to Tensorboard
-                if training_step % self.logging_frequency == 0:
-                    self.global_logger.log_dict(training_metrics, training_step)
-                    for idx, actor in enumerate(self.actors):
-                        self.global_logger.log_dict(ray.get(actor.get_exploration_logs.remote(idx)),
-                                                    training_step)
+            # if self.global_curriculum_strategy.check_task_level_change_condition.remote(max_reward, total_episodes) or \
+            #         self.global_curriculum_strategy.get_level_transition.remote():
+            task_level_condition = \
+                self.global_curriculum_strategy.check_task_level_change_condition.remote(max_reward,
+                                                                                         total_episodes)
+            # TODO Note: Currently this only works for the Linear Curriculum
+            self.global_logger.register_level_change.remote(task_level_condition)
+            target_task_level = self.global_curriculum_strategy.get_new_task_level.remote(task_level_condition)
+            for actor in self.actors:
+                actor.set_new_target_task_level.remote(target_task_level)
+
+            # Check if a new best reward has been achieved, if so save the models
+            self.async_save_agent_models(training_step)
+            if self.remove_old_checkpoints:
+                self.global_logger.remove_old_checkpoints()
+
+            # Log training results to Tensorboard
+            self.global_logger.log_dict.remote(training_metrics, training_step, self.logging_frequency)
+            for idx, actor in enumerate(self.actors):
+                self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(idx), training_step,
+                                                   self.logging_frequency)
 
             # Get the mean episode length + reward from the best performing actor
-            mean_episode_length, mean_episode_reward, episodes = self.global_logger.get_current_max_stats(
-                self.global_curriculum_strategy.average_episodes)
+            # mean_episode_length, mean_episode_reward, episodes = self.global_logger.get_current_max_stats(
+            #     self.global_curriculum_strategy.average_episodes)
 
-            yield mean_episode_length, mean_episode_reward, episodes, training_step, \
-                training_metrics.get("Losses/Loss"), self.global_curriculum_strategy.return_task_properties()
-
-    def async_testing_loop_generator(self):
+    def async_testing_loop(self):
         """
 
         :return:
