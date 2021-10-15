@@ -379,7 +379,7 @@ class Learner:
     def is_network_update_requested(self):
         return self.steps_since_actor_update >= self.network_update_frequency
 
-    def get_actor_network_weights(self):
+    def get_actor_network_weights(self, update_requested):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
     def build_network(self, network_parameters, environment_parameters):

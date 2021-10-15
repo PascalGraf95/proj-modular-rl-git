@@ -219,8 +219,8 @@ class SACLearner(Learner):
                                                         clipvalue=self.clip_grad)
         self.alpha = tf.exp(self.log_alpha).numpy()
 
-    def get_actor_network_weights(self):
-        if not self.is_network_update_requested():
+    def get_actor_network_weights(self, update_requested):
+        if not update_requested:
             return []
         self.steps_since_actor_update = 0
         return [self.actor_network.get_weights(), self.critic1.get_weights()]

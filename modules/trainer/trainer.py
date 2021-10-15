@@ -295,7 +295,8 @@ class Trainer:
         self.global_curriculum_strategy.update_task_properties.remote(unity_responded, task_properties)
 
         # Synchronise all actor networks with the learner networks
-        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote())
+        network_update_requested = self.learner.is_network_update_requested.remote()
+        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(network_update_requested))
          for actor in self.actors]
         # endregion
 
@@ -333,8 +334,9 @@ class Trainer:
             # Train the learner with the batch and observer the resulting metrics
             training_metrics, sample_errors, training_step = self.learner.learn.remote(samples)
             # Update the actor networks if requested by the learner
+            network_update_requested = self.learner.is_network_update_requested.remote()
             for idx, actor in enumerate(self.actors):
-                actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote())
+                actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(network_update_requested))
 
             # Update the prioritized experience replay buffer with the td-errors
             self.global_buffer.update.remote(indices, sample_errors)

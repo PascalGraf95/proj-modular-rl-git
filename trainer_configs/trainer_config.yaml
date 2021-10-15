@@ -120,7 +120,7 @@ dqn:
 sac:
     Recurrent: false
     SequenceLength: 40
-    ActorNum: 1
+    ActorNum: 6
     BatchSize: 64
     ClipGrad: 10.0
     ExplorationParameters:
@@ -148,15 +148,15 @@ sac:
         Units: 16
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    PrioritizedReplay: false
-    PriorityAlpha: 0.8
+    PrioritizedReplay: true
+    PriorityAlpha: 0.7
     ReplayCapacity: 100000
     ReplayMinSize: 100
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingID: SAC_3DBall_1Actor
-    TrainingInterval: 10
+    TrainingID: SAC_3DBall_6Actor_Prioritized
+    TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3
     BatchSize: 64
