@@ -335,8 +335,8 @@ class Trainer:
             training_metrics, sample_errors, training_step = self.learner.learn.remote(samples)
             # Update the actor networks if requested by the learner
             network_update_requested = self.learner.is_network_update_requested.remote()
-            for idx, actor in enumerate(self.actors):
-                actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(network_update_requested))
+            [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(network_update_requested))
+             for actor in self.actors]
 
             # Update the prioritized experience replay buffer with the td-errors
             self.global_buffer.update.remote(indices, sample_errors)
