@@ -301,7 +301,7 @@ class Trainer:
 
         while True:
             # Each actor plays one step in the environment
-            [actor.play_one_step.remote() for actor in self.actors]
+            actors_ready = [actor.play_one_step.remote() for actor in self.actors]
 
             # region Curriculum Info Acquisition
             # If the task level changed try to get new task information from the environment
@@ -311,7 +311,7 @@ class Trainer:
                 # If the retrieved information match the target level information update the global curriculum
                 self.global_curriculum_strategy.update_task_properties.remote(unity_responded, task_properties)
             # endregion
-
+            
             for idx, actor in enumerate(self.actors):
                 # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
                 # In case of an Prioritized Experience Replay let the actor calculate an initial priority.
@@ -370,6 +370,7 @@ class Trainer:
             # Get the mean episode length + reward from the best performing actor
             # mean_episode_length, mean_episode_reward, episodes = self.global_logger.get_current_max_stats(
             #     self.global_curriculum_strategy.average_episodes)
+            ray.wait(actors_ready)
 
     def async_testing_loop(self):
         """

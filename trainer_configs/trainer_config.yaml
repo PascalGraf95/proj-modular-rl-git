@@ -121,7 +121,7 @@ sac:
     Recurrent: false
     SequenceLength: 40
     ActorNum: 1
-    BatchSize: 16
+    BatchSize: 64
     ClipGrad: 10.0
     ExplorationParameters:
         Epsilon: 0.3

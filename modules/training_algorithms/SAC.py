@@ -22,7 +22,6 @@ tfd = tfp.distributions
 global AgentInterface
 
 
-
 @ray.remote
 class SACActor(Actor):
     def __init__(self, port: int, mode: str,

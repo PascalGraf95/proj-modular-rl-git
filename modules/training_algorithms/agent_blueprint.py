@@ -287,6 +287,7 @@ class Actor:
         # Otherwise take a step in the environment according to the chosen action
         else:
             AgentInterface.step_action(self.environment, self.behavior_name, actions)
+        return True
 
     def act(self, states, mode="training"):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
