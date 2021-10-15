@@ -152,7 +152,11 @@ class PrioritizedBuffer:
         for i in range(batch_size):
             # A value is uniformly sampled from each range
             a, b = priority_segment * i, priority_segment * (i+1)
-            value = np.random.uniform(a, b)
+            try:
+                value = np.random.uniform(a, b)
+            except OverflowError:
+                print(a, b)
+                raise OverflowError
             index, priority, data = self.tree.get(value)
             # priorities.append(priority)
             batch.append(data)
