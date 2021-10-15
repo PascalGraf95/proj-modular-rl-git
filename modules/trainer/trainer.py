@@ -394,7 +394,9 @@ class Trainer:
                         self.global_buffer.append_list.remote(samples, sample_errors)
                     else:
                         self.global_buffer.append_list.remote(samples)
-                    self.global_logger.append(*ray.get(actor.get_new_stats.remote()), actor_idx=idx)
+                    lengths, rewards, total_episodes_played = ray.get(actor.get_new_stats.remote())
+                    if lengths:
+                        self.global_logger.append(lengths, rewards, total_episodes_played, actor_idx=idx)
 
             # Get the mean episode length + reward from the best performing actor
             mean_episode_length, mean_episode_reward, episodes = self.global_logger.get_current_max_stats(10)
