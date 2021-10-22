@@ -19,6 +19,7 @@ import ray
 import time
 import math
 tfd = tfp.distributions
+import matplotlib.pyplot as plt
 global AgentInterface
 
 
@@ -64,6 +65,8 @@ class SACActor(Actor):
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_replay_batch(samples, self.observation_shapes, self.action_shape)
+        if np.any(action_batch is None):
+            return None
         with tf.device(self.device):
             if self.recurrent:
                 mean, log_std = self.actor_prediction_network(next_state_batch)
@@ -213,8 +216,9 @@ class SACLearner(Learner):
 
         # Temperature Parameter Configuration
         self.log_alpha = tf.Variable(tf.ones(1)*trainer_configuration.get('LogAlpha'),
-                                     constraint=lambda x: tf.clip_by_value(x, -10, 20), trainable=True)
+                                     constraint=lambda x: tf.clip_by_value(x, -20, 20), trainable=True)
         self.target_entropy = -tf.reduce_sum(tf.ones(self.action_shape))
+
         self.alpha_optimizer = tf.keras.optimizers.Adam(learning_rate=trainer_configuration.get('LearningRateActor'),
                                                         clipvalue=self.clip_grad)
         self.alpha = tf.exp(self.log_alpha).numpy()
@@ -236,8 +240,8 @@ class SACLearner(Learner):
         # Recurrent Parameters
         network_parameters[0]['Recurrent'] = self.recurrent
         network_parameters[0]['ReturnSequences'] = True
-        network_parameters[0]['Stateful'] = False
-        network_parameters[0]['BatchSize'] = None
+        network_parameters[0]['Stateful'] = True
+        network_parameters[0]['BatchSize'] = self.batch_size
 
         # Critic1
         network_parameters[1]['Input'] = [*environment_parameters.get('ObservationShapes'),
@@ -251,8 +255,8 @@ class SACLearner(Learner):
         # Recurrent Parameters
         network_parameters[1]['Recurrent'] = self.recurrent
         network_parameters[1]['ReturnSequences'] = True
-        network_parameters[1]['Stateful'] = False
-        network_parameters[1]['BatchSize'] = None
+        network_parameters[1]['Stateful'] = True
+        network_parameters[1]['BatchSize'] = self.batch_size
 
         # Critic2
         network_parameters[2] = network_parameters[1].copy()
@@ -265,13 +269,23 @@ class SACLearner(Learner):
 
     def forward(self, states):
         mean, log_std = self.actor_network(states)
-        log_std = tf.clip_by_value(log_std, -20, 20)
+        log_std = tf.clip_by_value(log_std, -20, 3)
         normal = tfd.Normal(mean, tf.exp(log_std))
 
         z = normal.sample()
         action = tf.tanh(z)
 
-        log_prob = normal.log_prob(z) - tf.math.log(1 - action**2 + self.epsilon)
+        log_prob = normal.log_prob(z)
+        log_prob_normalizer = tf.math.log(1 - action**2 + self.epsilon)
+        log_prob -= log_prob_normalizer
+
+        """ 
+        for sequence_log_prob in log_prob_normalizer:
+            x = range(sequence_log_prob.shape[0])
+            plt.plot(x, tf.reduce_sum(sequence_log_prob, axis=1).numpy())
+        plt.show()
+        """
+
         if self.recurrent:
             log_prob = tf.reduce_sum(log_prob, axis=2, keepdims=True)
         else:
@@ -287,32 +301,87 @@ class SACLearner(Learner):
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
                                                                          self.action_shape, self.sequence_length)
+
+            # Reset LSTM states
+            for network in [self.actor_network, self.critic1, self.critic2,
+                            self.critic_target1, self.critic_target2]:
+                for layer in network.layers:
+                    if "lstm" in layer.name:
+                        layer.reset_states()
+
+            # Create Burn In Batches
+            if self.burn_in:
+                # Separate batch into 2 sequences each
+                state_batch, action_batch, reward_batch, next_state_batch, done_batch, \
+                    state_batch_burn, action_batch_burn, reward_batch_burn, next_state_batch_burn, done_batch_burn = \
+                        Learner.separate_burn_in_batch(state_batch, action_batch, reward_batch,
+                                                       next_state_batch, done_batch, self.burn_in)
+
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = self.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, self.action_shape)
+        if np.any(action_batch is None):
+            return None, None, self.training_step
 
         # CRITIC TRAINING
+        # Burn in Critic Target Networks and Actor Network
+        if self.recurrent and self.burn_in:
+            next_actions_burn, next_log_prob_burn = self.forward(next_state_batch_burn)
+            _ = self.critic_target1([*next_state_batch_burn, next_actions_burn])
+            _ = self.critic_target2([*next_state_batch_burn, next_actions_burn])
+
         next_actions, next_log_prob = self.forward(next_state_batch)
 
         # Critic Target Predictions
         critic_target_prediction1 = self.critic_target1([*next_state_batch, next_actions])
         critic_target_prediction2 = self.critic_target2([*next_state_batch, next_actions])
-        critic_target_prediction = tf.minimum(critic_target_prediction1, critic_target_prediction2)
+        critic_target_prediction = self.inverse_value_function_rescaling(
+            tf.minimum(critic_target_prediction1, critic_target_prediction2))
         critic_target = (critic_target_prediction - self.alpha * next_log_prob)*(1-done_batch)
 
         # Train Both Critic Networks
-        y = reward_batch + (self.gamma**self.n_steps) * critic_target
+        y = self.value_function_rescaling(reward_batch + (self.gamma**self.n_steps) * critic_target)
 
+        # Burn in Critic Network
+        if self.recurrent and self.burn_in:
+            self.critic1([*state_batch_burn, action_batch_burn])
+
+        # Calculate Sample Errors to update priorities in Prioritized Experience Replay
         sample_errors = np.abs(y - self.critic1([*state_batch, action_batch]))
+
         if self.recurrent:
             eta = 0.9
             sample_errors = eta*np.max(sample_errors, axis=1) + (1-eta)*np.mean(sample_errors, axis=1)
+
+        # Reset LSTM states
+        if self.recurrent:
+            for network in [self.critic1]:
+                for layer in network.layers:
+                    if "lstm" in layer.name:
+                        layer.reset_states()
+
+            # Burn in Critic Network
+            if self.burn_in:
+                self.critic1([*state_batch_burn, action_batch_burn])
+                self.critic2([*state_batch_burn, action_batch_burn])
 
         value_loss1 = self.critic1.train_on_batch([*state_batch, action_batch], y)
         value_loss2 = self.critic2.train_on_batch([*state_batch, action_batch], y)
         value_loss = (value_loss1 + value_loss2)/2
 
         # ACTOR TRAINING
+        # Reset LSTM states
+        if self.recurrent:
+            for network in [self.critic1, self.critic2, self.actor_network]:
+                for layer in network.layers:
+                    if "lstm" in layer.name:
+                        layer.reset_states()
+            # Burn in Critic and Actor Network
+            if self.burn_in:
+                self.critic1([*state_batch_burn, action_batch_burn])
+                self.critic2([*state_batch_burn, action_batch_burn])
+                self.actor_network(state_batch_burn)
+
         with tf.GradientTape() as tape:
             new_actions, log_prob = self.forward(state_batch)
             critic_prediction1 = self.critic1([*state_batch, new_actions])
@@ -323,6 +392,14 @@ class SACLearner(Learner):
         actor_grads = tape.gradient(policy_loss, self.actor_network.trainable_variables)
         self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor_network.trainable_variables))
 
+        # Reset LSTM states
+        if self.recurrent:
+            for network in [self.actor_network, self.critic1, self.critic2,
+                            self.critic_target1, self.critic_target2]:
+                for layer in network.layers:
+                    if "lstm" in layer.name:
+                        layer.reset_states()
+
         # TEMPERATURE PARAMETER UPDATE
         with tf.GradientTape() as tape:
             alpha_loss = tf.reduce_mean(self.log_alpha * (-log_prob - self.target_entropy))
@@ -332,7 +409,11 @@ class SACLearner(Learner):
         self.alpha = tf.exp(self.log_alpha).numpy()
 
         if np.isnan(value_loss) or np.isnan(alpha_loss) or np.isnan(policy_loss):
+            print(value_loss)
+            print(alpha_loss)
+            print(policy_loss)
             print("NAN DETECTED")
+            time.sleep(1000)
 
         self.training_step += 1
         self.steps_since_actor_update += 1

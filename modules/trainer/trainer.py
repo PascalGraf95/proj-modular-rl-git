@@ -380,13 +380,14 @@ class Trainer:
         :return:
         """
         # Synchronise all actor networks with the learner networks
-        [actor.update_actor_network.remote(ray.get(self.learner.get_actor_network_weights.remote()))
+        [actor.update_actor_network.remote(ray.get(self.learner.get_actor_network_weights.remote(True)))
          for actor in self.actors]
 
         while True:
             # Each actor plays one step in the environment
-            [actor.play_one_step.remote() for actor in self.actors]
-
+            actors_ready = [actor.play_one_step.remote() for actor in self.actors]
+            ray.wait(actors_ready)
+            """
             # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
             # In case of an Prioritized Experience Replay let the actor calculate an initial priority.
             for idx, actor in enumerate(self.actors):
@@ -406,6 +407,7 @@ class Trainer:
 
             yield mean_episode_length, mean_episode_reward, episodes, 0, \
                 0, [0]*4
+            """
     # endregion
 
 

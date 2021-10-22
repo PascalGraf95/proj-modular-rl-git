@@ -135,7 +135,7 @@ class PrioritizedBuffer:
         return (error + self.per_e) ** self.per_a
 
     def append_list(self, samples, errors):
-        if not samples:
+        if np.any(errors is None):
             return
         for sample, error in zip(samples, errors):
             priority = self._getPriority(error)
@@ -160,7 +160,9 @@ class PrioritizedBuffer:
             try:
                 value = np.random.uniform(a, b)
             except OverflowError:
+                print("OVERFLOW")
                 print(a, b)
+                time.sleep(1000)
                 raise OverflowError
             index, priority, data = self.tree.get(value)
             # priorities.append(priority)

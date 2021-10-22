@@ -118,10 +118,12 @@ dqn:
     TrainingID: DQNScheduleFirstTest
     TrainingInterval: 8
 sac:
-    Recurrent: false
-    SequenceLength: 40
-    ActorNum: 6
-    BatchSize: 64
+    Recurrent: true
+    BurnIn: 20
+    SequenceLength: 70
+    Overlap: 20
+    ActorNum: 10
+    BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
         Epsilon: 0.3
@@ -134,29 +136,29 @@ sac:
     LogAlpha: -2.0
     NSteps: 4
     AdaptiveExploration: false
-    NetworkUpdateFrequency: 30
+    NetworkUpdateFrequency: 20
     NetworkParameters:
-    -   Filters: 16
-        Units: 16
+    -   Filters: 64
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 16
-        Units: 16
+    -   Filters: 64
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 16
-        Units: 16
+    -   Filters: 64
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: true
-    PriorityAlpha: 0.7
-    ReplayCapacity: 100000
+    PriorityAlpha: 0.9
+    ReplayCapacity: 200000
     ReplayMinSize: 100
     SyncMode: soft_sync
-    SyncSteps: 50
+    SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_3DBall_6Actor_Prioritized
-    TrainingInterval: 1
+    TrainingID: SAC_Worm_PER_BurnIn_Recurrent
+    TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3
     BatchSize: 64

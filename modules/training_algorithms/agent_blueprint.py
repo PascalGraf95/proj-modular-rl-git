@@ -198,6 +198,7 @@ class Actor:
             self.local_buffer = LocalRecurrentBuffer(capacity=5000,
                                                      agent_num=self.agent_number,
                                                      n_steps=trainer_configuration.get("NSteps"),
+                                                     overlap=trainer_configuration.get("Overlap"),
                                                      sequence_length=trainer_configuration.get("SequenceLength"),
                                                      gamma=trainer_configuration.get("Gamma"))
         else:
@@ -286,7 +287,12 @@ class Actor:
             self.reset_actor_state()
         # Otherwise take a step in the environment according to the chosen action
         else:
-            AgentInterface.step_action(self.environment, self.behavior_name, actions)
+            try:
+                AgentInterface.step_action(self.environment, self.behavior_name, actions)
+            except RuntimeError:
+                print("RUNTIME ERROR")
+                print(actions)
+                time.sleep(1000)
         return True
 
     def act(self, states, mode="training"):
@@ -367,6 +373,8 @@ class Learner:
         # Recurrent Paramters
         self.recurrent = trainer_configuration.get('Recurrent')
         self.sequence_length = trainer_configuration.get('SequenceLength')
+        self.burn_in = trainer_configuration.get('BurnIn')
+        self.batch_size = trainer_configuration.get('BatchSize')
 
         # Misc
         self.training_step = 0
@@ -444,7 +452,7 @@ class Learner:
 
         for idx, transition in enumerate(replay_batch):
             if type(transition) == int:
-                print(transition)
+                print("TRANSITION ERROR")
                 continue
             for idx2, (state, next_state) in enumerate(zip(transition['state'], transition['next_state'])):
                 state_batch[idx2][idx] = state
@@ -473,6 +481,9 @@ class Learner:
 
         # Loop through all sequences in the batch
         for idx_seq, sequence in enumerate(replay_batch):
+            if type(sequence) == int:
+                print("TRANSITION ERROR")
+                return None, None, None, None, None
             # Loop through all transitions in one sequence
             for idx_trans, transition in enumerate(sequence):
                 # Loop through all components per transition
@@ -483,6 +494,34 @@ class Learner:
                 reward_batch[idx_seq][idx_trans] = transition['reward']
                 done_batch[idx_seq][idx_trans] = transition['done']
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch
+
+    @staticmethod
+    def separate_burn_in_batch(state_batch, action_batch, reward_batch, next_state_batch, done_batch, burn_in):
+        # State and Next State Batches are lists of numpy-arrays
+        state_batch_new = []
+        state_batch_burn = []
+        next_state_batch_new = []
+        next_state_batch_burn = []
+        # Append an array with the correct shape for each part of the observation
+        for state_component, next_state_component in zip(state_batch, next_state_batch):
+            state_batch_new.append(state_component[:, burn_in:])
+            state_batch_burn.append(state_component[:, :burn_in])
+            next_state_batch_new.append(next_state_component[:, burn_in:])
+            next_state_batch_burn.append(next_state_component[:, :burn_in])
+        # Actions
+        action_batch_burn = action_batch[:, :burn_in]
+        action_batch = action_batch[:, burn_in:]
+
+        # Rewards
+        reward_batch_burn = reward_batch[:, :burn_in]
+        reward_batch = reward_batch[:, burn_in:]
+
+        # Done
+        done_batch_burn = done_batch[:, :burn_in]
+        done_batch = done_batch[:, burn_in:]
+
+        return state_batch_new, action_batch, reward_batch, next_state_batch_new, done_batch, \
+               state_batch_burn, action_batch_burn, reward_batch_burn, next_state_batch_burn, done_batch_burn
     # endregion
 
     # region Parameter Validation

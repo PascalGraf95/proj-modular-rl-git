@@ -4,6 +4,8 @@ import tensorflow as tf
 import ray
 import time
 import numpy as np
+import tensorflow_probability as tfp
+import matplotlib.pyplot as plt
 #gpus = tf.config.experimental.list_physical_devices('GPU')
 #if gpus:
 #    try:
@@ -21,7 +23,7 @@ class Actor:
         input_layer = tf.keras.layers.Input((None, 2))
         x = tf.keras.layers.Dense(16)(input_layer)
         x = tf.keras.layers.Dense(16)(x)
-        x = tf.keras.layers.LSTM(5, return_sequences=True)(x)
+        x, self.state_h, self.state_c = tf.keras.layers.LSTM(5, return_sequences=True, return_state=True)(x)
         x = tf.keras.layers.Dense(2)(x)
         self.model = tf.keras.Model(inputs=input_layer, outputs=x)
         self.model.compile(optimizer='adam', loss='mse')
@@ -31,6 +33,9 @@ class Actor:
         for layer in self.model.layers:
             if "lstm" in layer.name:
                 print(layer.reset_states())
+
+    def print_states(self):
+        print(self.state_h, self.state_c)
 
     def predict(self, state):
         with tf.device('/cpu:0'):
@@ -67,6 +72,21 @@ class Learner:
 
 
 if __name__ == '__main__':
+    normal = tfp.distributions.Normal(-1.6182493, 0.002102602)
+    print(normal.parameters)
+    data = normal.sample(1, 10000)
+    print(data.shape)
+    hx, hy, _ = plt.hist(data, bins=50, color="lightblue")
+    plt.xlim(-1.6182493-0.02, -1.6182493+0.02)
+
+    plt.title(r'Normal distribution')
+    plt.grid()
+    # plt.show()
+    # x = -1.617729
+    x = -1.4182493
+    d = normal.log_prob(x) / normal.log_prob(-1.6182493) # 2.9427497
+    print(d)
+    """
     ray.init()
     actors = [Actor.remote() for i in range(1)]
     learner = Learner.remote()
@@ -80,6 +100,7 @@ if __name__ == '__main__':
             s = np.random.random((1, 3, 2))
             res = [actor.predict.remote(s) for actor in actors]
             print("ACTOR", ray.get(res))
+            [actor.print_states.remote() for actor in actors]
             #s = np.random.random((1, 1))
             #res = learner.predict.remote(s)
             #print("LEARNER:", ray.get(res))
@@ -87,3 +108,4 @@ if __name__ == '__main__':
         #loss = learner.train.remote()
         #print("LOSS:", ray.get(loss))
         # time.sleep(5)
+    """

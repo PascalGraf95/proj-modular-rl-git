@@ -233,7 +233,7 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = net_inp
     elif net_architecture == NetworkArchitecture.SINGLE_DENSE.value:
         if network_parameters["Recurrent"]:
-            x = LSTM(units, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+            x = LSTM(units, return_sequences=network_parameters["ReturnSequences"],
                      stateful=network_parameters["Stateful"])(net_inp)
         else:
             x = Dense(units, activation='selu')(net_inp)
@@ -241,7 +241,7 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
     elif net_architecture == NetworkArchitecture.SMALL_DENSE.value:
         x = Dense(units, activation='selu')(net_inp)
         if network_parameters["Recurrent"]:
-            x = LSTM(units, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+            x = LSTM(units, return_sequences=network_parameters["ReturnSequences"],
                      stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(units, activation='selu')(x)
@@ -250,7 +250,7 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = Dense(units, activation='selu')(net_inp)
         x = Dense(units, activation='selu')(x)
         if network_parameters["Recurrent"]:
-            x = LSTM(2*units, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+            x = LSTM(2*units, return_sequences=network_parameters["ReturnSequences"],
                      stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(2*units, activation='selu')(x)
@@ -260,7 +260,7 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = Dense(units, activation='selu')(x)
         x = Dense(2*units, activation='selu')(x)
         if network_parameters["Recurrent"]:
-            x = LSTM(2*units, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+            x = LSTM(2*units, return_sequences=network_parameters["ReturnSequences"],
                      stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(2*units, activation='selu')(x)
@@ -271,7 +271,7 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu")(x)
         x = Flatten()(x)
         if network_parameters["Recurrent"]:
-            x = LSTM(512, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+            x = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
                      stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(512, activation="selu")(x)
@@ -292,7 +292,7 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = BatchNormalization()(x)
         x = Flatten()(x)
         if network_parameters["Recurrent"]:
-            x = LSTM(512, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+            x = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
                      stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(512, activation="selu")(x)
@@ -310,7 +310,7 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu")(x)
         x = Flatten()(x)
         if network_parameters["Recurrent"]:
-            x = LSTM(512, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+            x = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
                      stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(512, activation="selu")(x)
@@ -326,7 +326,7 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = BatchNormalization()(x)
         x = Flatten()(x)
         if network_parameters["Recurrent"]:
-            x = LSTM(512, activation='selu', return_sequences=network_parameters["ReturnSequences"],
+            x = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
                      stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(512, activation="selu")(x)

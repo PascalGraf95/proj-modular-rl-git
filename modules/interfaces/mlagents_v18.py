@@ -61,61 +61,6 @@ class MlAgentsV18Interface:
         env.reset()
 
     @staticmethod
-    def get_transitions(env: UnityEnvironment,
-                        environment_configuration: dict,
-                        actions,
-                        last_transitions: dict = {}):
-        decision_steps, terminal_steps = env.get_steps(environment_configuration['BehaviorName'])
-        transitions = {'states': {}, 'actions': {}, 'rewards': {}, 'next_states': {},
-                       'changed_indices': [], 'done_indices': [], 'need_action_indices': decision_steps.agent_id}
-        remaining_agent_indices = list(range(environment_configuration['AgentNumber']))
-        # Catch Decision Steps
-        for idx, agent_id in enumerate(decision_steps.agent_id):
-            decision_step = decision_steps[agent_id]
-            remaining_agent_indices.remove(agent_id)
-            # Build new transition from old transition, last action and new observations.
-            try:
-                transitions['states'][agent_id] = last_transitions.get('next_states')[agent_id]
-            except TypeError:
-                transitions['states'][agent_id] = decision_step.obs
-            transitions['actions'][agent_id] = actions[idx]
-            transitions['rewards'][agent_id] = decision_step.reward
-            transitions['next_states'][agent_id] = decision_step.obs
-
-            # Only add Agent ID to the changed indices if it was not in terminal steps last iteration.
-            if last_transitions.get('done_indices'):
-                if agent_id not in last_transitions.get('done_indices'):
-                    transitions['changed_indices'].append(agent_id)
-
-        # Catch Terminal Steps
-        for idx, agent_id in enumerate(terminal_steps.agent_id):
-            terminal_step = terminal_steps[agent_id]
-
-            remaining_agent_indices.remove(agent_id)
-            # Build new transition from old transition, last action and new observations.
-            try:
-                transitions['states'][agent_id] = last_transitions.get('next_states')[agent_id]
-            except TypeError:
-                transitions['states'][agent_id] = terminal_step.obs
-            transitions['actions'][agent_id] = actions[idx]
-            transitions['rewards'][agent_id] = terminal_step.reward
-            transitions['next_states'][agent_id] = terminal_step.obs
-            # Append to Changed and Done Indices
-            transitions['changed_indices'].append(agent_id)
-            transitions['done_indices'].append(agent_id)
-
-        # Catch Remaining Agents
-        for idx in remaining_agent_indices:
-            # Copy the last transition
-            transitions['states'][idx] = last_transitions.get('states')[idx]
-            transitions['actions'][idx] = last_transitions.get('actions')[idx]
-            transitions['rewards'][idx] = last_transitions.get('rewards')[idx]
-            transitions['next_states'][idx] = last_transitions.get('next_states')[idx]
-            if idx in last_transitions.get('done_indices'):
-                transitions['done_indices'].append(idx)
-        return transitions
-
-    @staticmethod
     def step_action(env: UnityEnvironment, behavior_name: str, actions):
         if actions.shape[0] > 0:
             env.set_actions(behavior_name, ActionTuple(continuous=actions))

@@ -33,16 +33,16 @@ def main():
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
     mode = "training"
-    model_path = None #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\211013_174502_SAC_Worm_Prioritized_Recurrent40_5Actor" # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210911_193402_SAC_Robot_PER_EpislonGreedy_10ActorsAsync"
+    model_path = None  # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\211015_151731_SAC_Worm_10Actors_Prioritized_Recurrent_New" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\211013_174502_SAC_Worm_Prioritized_Recurrent40_5Actor" # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210911_193402_SAC_Robot_PER_EpislonGreedy_10ActorsAsync"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
     interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
     # If you want to run multiple Unity actors in parallel you need specify the path to the '.exe' file here.
-    environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\3DBall\UnityEnvironment.exe" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0_Camera\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
+    environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\SingleWorm\UnityEnvironment.exe" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0_Camera\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 
     # Choose from "None", "EpsilonGreedy" and "ICM"
-    exploration_algorithm = 'None'
+    exploration_algorithm = 'EpsilonGreedy'
 
     # Choose from "DQN", "DDPG", "TD3", "SAC"
     trainer.select_training_algorithm('SAC')
