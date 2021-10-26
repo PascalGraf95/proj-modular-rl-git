@@ -369,6 +369,7 @@ class Learner:
         self.tau = trainer_configuration.get('Tau')
         self.clip_grad = trainer_configuration.get('ClipGrad')
         self.network_update_frequency = trainer_configuration.get('NetworkUpdateFrequency')
+        self.reward_normalization = trainer_configuration.get('RewardNormalization')
 
         # Recurrent Paramters
         self.recurrent = trainer_configuration.get('Recurrent')
@@ -453,7 +454,7 @@ class Learner:
         for idx, transition in enumerate(replay_batch):
             if type(transition) == int:
                 print("TRANSITION ERROR")
-                continue
+                return None, None, None, None, None
             for idx2, (state, next_state) in enumerate(zip(transition['state'], transition['next_state'])):
                 state_batch[idx2][idx] = state
                 next_state_batch[idx2][idx] = next_state

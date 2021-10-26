@@ -119,11 +119,11 @@ dqn:
     TrainingInterval: 8
 sac:
     Recurrent: true
-    BurnIn: 20
-    SequenceLength: 70
+    BurnIn: 0
+    SequenceLength: 60
     Overlap: 20
     ActorNum: 10
-    BatchSize: 32
+    BatchSize: 16
     ClipGrad: 10.0
     ExplorationParameters:
         Epsilon: 0.3
@@ -133,7 +133,7 @@ sac:
     Gamma: 0.995
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -2.0
+    LogAlpha: -3.0
     NSteps: 4
     AdaptiveExploration: false
     NetworkUpdateFrequency: 20
@@ -151,7 +151,8 @@ sac:
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: true
-    PriorityAlpha: 0.9
+    PriorityAlpha: 0.8
+    RewardNormalization: false
     ReplayCapacity: 200000
     ReplayMinSize: 100
     SyncMode: soft_sync

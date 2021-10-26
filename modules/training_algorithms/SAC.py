@@ -279,13 +279,6 @@ class SACLearner(Learner):
         log_prob_normalizer = tf.math.log(1 - action**2 + self.epsilon)
         log_prob -= log_prob_normalizer
 
-        """ 
-        for sequence_log_prob in log_prob_normalizer:
-            x = range(sequence_log_prob.shape[0])
-            plt.plot(x, tf.reduce_sum(sequence_log_prob, axis=1).numpy())
-        plt.show()
-        """
-
         if self.recurrent:
             log_prob = tf.reduce_sum(log_prob, axis=2, keepdims=True)
         else:
@@ -308,6 +301,9 @@ class SACLearner(Learner):
                 for layer in network.layers:
                     if "lstm" in layer.name:
                         layer.reset_states()
+
+            if np.any(action_batch is None):
+                return None, None, self.training_step
 
             # Create Burn In Batches
             if self.burn_in:
@@ -335,12 +331,15 @@ class SACLearner(Learner):
         # Critic Target Predictions
         critic_target_prediction1 = self.critic_target1([*next_state_batch, next_actions])
         critic_target_prediction2 = self.critic_target2([*next_state_batch, next_actions])
-        critic_target_prediction = self.inverse_value_function_rescaling(
-            tf.minimum(critic_target_prediction1, critic_target_prediction2))
+        critic_target_prediction = tf.minimum(critic_target_prediction1, critic_target_prediction2)
+        if self.reward_normalization:
+            critic_target_prediction = self.inverse_value_function_rescaling(critic_target_prediction)
         critic_target = (critic_target_prediction - self.alpha * next_log_prob)*(1-done_batch)
 
         # Train Both Critic Networks
-        y = self.value_function_rescaling(reward_batch + (self.gamma**self.n_steps) * critic_target)
+        y = reward_batch + (self.gamma**self.n_steps) * critic_target
+        if self.reward_normalization:
+            y = self.value_function_rescaling(y)
 
         # Burn in Critic Network
         if self.recurrent and self.burn_in:

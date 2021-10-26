@@ -181,7 +181,7 @@ class PrioritizedBuffer:
         return copy_by_val_replay_batch, batch_indices  # , is_weight
 
     def update(self, indices, errors):
-        if not np.any(indices):
+        if np.any(indices is None) or np.any(errors is None):
             return
 
         for idx, error in zip(indices, errors):
