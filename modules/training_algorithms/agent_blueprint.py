@@ -152,7 +152,7 @@ class Actor:
             self.connect = self.connect_to_gym_environment
 
         elif interface == "Carla":
-            from ..interfaces.carla import CarlaInterface as AgentInterface
+            from ..interfaces.carlaInterface import CarlaInterface as AgentInterface
             self.connect = self.connect_to_carla_environment
         
         else:

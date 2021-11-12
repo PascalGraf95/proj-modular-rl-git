@@ -171,6 +171,8 @@ class Trainer:
         # Connect to either the Unity or Gym environment
         if interface == "MLAgentsV18":
             [actor.connect_to_unity_environment.remote() for actor in self.actors]
+        elif interface == "Carla":
+            [actor.connect_to_carla_environment.remote() for actor in self.actors]
         else:
             [actor.connect_to_gym_environment.remote() for actor in self.actors]
 

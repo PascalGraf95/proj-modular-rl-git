@@ -118,9 +118,9 @@ dqn:
     TrainingID: DQNScheduleFirstTest
     TrainingInterval: 8
 sac:
-    ActorNum: 10
-    BatchSize: 128
-    ClipGrad: 10.0
+    ActorNum: 1
+    BatchSize: 32
+    ClipGrad: 1.0
     ExplorationParameters:
         Epsilon: 0.4
         EpsilonDecay: 0.99995
@@ -131,29 +131,29 @@ sac:
     LearningRateCritic: 0.0005
     LogAlpha: -2.0
     NSteps: 4
-    AdaptiveExploration: false
-    NetworkUpdateFrequency: 300
+    AdaptiveExploration: true
+    NetworkUpdateFrequency: 50
     NetworkParameters:
-    -   Filters: 256
-        Units: 256
+    -   Filters: 32
+        Units: 32
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 256
-        Units: 256
+    -   Filters: 32
+        Units: 32
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 256
-        Units: 256
+    -   Filters: 32
+        Units: 32
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: true
     ReplayCapacity: 1000000
-    ReplayMinSize: 10000
+    ReplayMinSize: 50
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingID: SAC_VisionBasedRobot
-    TrainingInterval: 0
+    TrainingID: RL_ACC_TEST_v1
+    TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3
     BatchSize: 64

@@ -3,9 +3,25 @@
 import numpy as np
 #from mlagents_envs.environment import UnityEnvironment, ActionTuple
 #from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
+import sys
+sys.path.append("/home/ai-admin/proj-modular-reinforcement-learning/modules/interfaces/")
 from environments.carlaEnvironment import CarlaEnvironment
 import cv2
 
+
+class Steps:
+    def __init__(self, observation, reward):
+        if np.any(observation):
+            self.agent_id = np.reshape(np.array(0), 1)
+            self.obs = [np.expand_dims(observation, axis=0)]
+            self.reward = np.reshape(np.array(reward), 1)
+        else:
+            self.agent_id = np.empty(0)
+            self.obs = [np.empty((0))]
+            self.reward = np.empty(0)
+
+    def __len__(self):
+        return 1
 
 class CarlaInterface:
 
@@ -33,16 +49,17 @@ class CarlaInterface:
 
     @staticmethod
     def get_action_shape(env: CarlaEnvironment):
+        action_type_form = env.ACTION_TYPE_FORM
         action_type = env.action_space
-        if type(action_type) == gym.spaces.Discrete:
+        if action_type_form == "DISCRETE":
             return (action_type.n, )
         else:
             return action_type.shape[0]
 
     @staticmethod
     def get_action_type(env: CarlaEnvironment):
-        action_type = env.action_space
-        if type(action_type) == gym.spaces.Discrete:
+        action_type_form = env.ACTION_TYPE_FORM
+        if action_type_form == "DISCRETE":
             CarlaInterface.action_space = "DISCRETE"
             return "DISCRETE"
         else:
@@ -65,8 +82,8 @@ class CarlaInterface:
         return decision_steps, terminal_steps
 
     @staticmethod
-    def reset(env: CarlaEnvironment):
-        CarlaInterface.observation = env.reset()
+    def reset(env: CarlaEnvironment, scenario):
+        CarlaInterface.observation = env.reset(scenario)
         CarlaInterface.reward, CarlaInterface.done = 0, False
 
     @staticmethod
@@ -93,7 +110,7 @@ if __name__ == "__main__":
     for scenario in scenarios:
         
         # reset the environment
-        env.reset(scenario)
+        CarlaInterface.reset(env, "/home/ai-admin/proj-modular-reinforcement-learning/" + scenario)
 
         # run the loop
         action = None

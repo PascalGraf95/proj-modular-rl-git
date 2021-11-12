@@ -8,26 +8,23 @@ import json
 
 
 
-# define global variables
-SHOW_PREVIEW = False
-IM_WIDTH = 640
-IM_HEIGHT = 480
-SECONDS_PER_EPISODE = 40
-
-
 # ---------------------------------------------------------------------------------------
 # SIMULATION ENV
 # ---------------------------------------------------------------------------------------
 class CarlaEnvironment:
     
     # assign static variables
-    SHOW_CAM = SHOW_PREVIEW
+    SHOW_CAM = False
     STEER_AMT = 1.0
-    IM_WIDTH = IM_WIDTH
-    IM_HEIGHT = IM_HEIGHT
+    IM_WIDTH = 640
+    IM_HEIGHT = 480
     MPS_TO_KPH = 3.6
     KPH_TO_MPS = 1 / 3.6
     DISTANCE_BUMPER_COMP = 4.8
+    SECONDS_PER_EPISODE = 40
+    ACTION_TYPE_FORM = "CONTINUOUS"
+    action_space = np.array([1])
+    observation_space = np.array([1, 2, 3, 4, 5])
 
     # assign image
     img_front_camera = None
@@ -290,7 +287,7 @@ class CarlaEnvironment:
         # *****************************************
         # 4. CHECK MAX TIMER
         # *****************************************
-        if self.episode_start + SECONDS_PER_EPISODE < time.time():
+        if self.episode_start + self.SECONDS_PER_EPISODE < time.time():
             done = True
 
         # *****************************************
