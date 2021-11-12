@@ -119,35 +119,35 @@ dqn:
     TrainingInterval: 8
 sac:
     Recurrent: true
-    BurnIn: 0
-    SequenceLength: 60
-    Overlap: 20
+    BurnIn: 5
+    SequenceLength: 20
+    Overlap: 5
     ActorNum: 10
-    BatchSize: 16
+    BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
-        Epsilon: 0.3
-        EpsilonDecay: 0.99995
+        Epsilon: 0.4
+        EpsilonDecay: 0.9995
         EpsilonMin: 0.01
         StepDown: false
-    Gamma: 0.995
+    Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -3.0
+    LogAlpha: 0.0
     NSteps: 4
     AdaptiveExploration: false
-    NetworkUpdateFrequency: 20
+    NetworkUpdateFrequency: 50
     NetworkParameters:
-    -   Filters: 64
-        Units: 64
+    -   Filters: 32
+        Units: 32
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 64
-        Units: 64
+    -   Filters: 32
+        Units: 32
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 64
-        Units: 64
+    -   Filters: 32
+        Units: 32
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: true
@@ -158,7 +158,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_Worm_PER_BurnIn_Recurrent
+    TrainingID: SAC_Robot_Recurrent
     TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3

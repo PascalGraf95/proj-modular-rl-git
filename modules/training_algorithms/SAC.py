@@ -35,16 +35,22 @@ class SACActor(Actor):
         super().__init__(port, mode, interface, preprocessing_algorithm, preprocessing_path,
                          exploration_algorithm, environment_path, device)
 
-    def act(self, states, mode="training"):
+    def act(self, states, agent_ids=None, mode="training"):
         # Check if any agent in the environment is not in a terminal state
-        active_agent_number = np.shape(states[0])[0]
+        active_agent_number = len(agent_ids)
         if not active_agent_number:
             return Learner.get_dummy_action(active_agent_number, self.action_shape, self.action_type)
         with tf.device(self.device):
-            # In case of a recurrent network, the state input needs an additional time dimension
             if self.recurrent:
+                # Set the initial LSTM states correctly according to the number of active agents
+                self.set_lstm_states(agent_ids)
+                # In case of a recurrent network, the state input needs an additional time dimension
                 states = [tf.expand_dims(state, axis=1) for state in states]
-            mean, log_std = self.actor_network(states)
+                (mean, log_std), hidden_state, cell_state = self.actor_network(states)
+                # Update the LSTM states according to the latest network prediction
+                self.update_lstm_states(agent_ids, [hidden_state.numpy(), cell_state.numpy()])
+            else:
+                mean, log_std = self.actor_network(states)
             if mode == "training":
                 normal = tfd.Normal(mean, tf.exp(log_std))
                 actions = tf.tanh(normal.sample())
@@ -67,6 +73,7 @@ class SACActor(Actor):
                 = Learner.get_training_batch_from_replay_batch(samples, self.observation_shapes, self.action_shape)
         if np.any(action_batch is None):
             return None
+
         with tf.device(self.device):
             if self.recurrent:
                 mean, log_std = self.actor_prediction_network(next_state_batch)
@@ -95,8 +102,7 @@ class SACActor(Actor):
         self.critic_network.set_weights(network_weights[1])
         if self.recurrent:
             self.actor_prediction_network.set_weights(network_weights[0])
-        self.network_update_requested = False
-        self.new_steps_taken = 0
+        self.steps_taken_since_network_update = 0
 
     def build_network(self, network_parameters, environment_parameters, idx):
         # Actor
@@ -109,13 +115,15 @@ class SACActor(Actor):
         # Recurrent Parameters
         network_parameters[0]['Recurrent'] = self.recurrent
         network_parameters[0]['ReturnSequences'] = False
-        network_parameters[0]['Stateful'] = True
-        network_parameters[0]['BatchSize'] = self.agent_number
+        network_parameters[0]['ReturnStates'] = True
+        network_parameters[0]['Stateful'] = False
+        network_parameters[0]['BatchSize'] = None  # self.agent_number
 
         # Actor for Error Prediction
         network_parameters[2] = network_parameters[0].copy()
         network_parameters[2]['NetworkType'] = 'ActorErrorPrediction{}'.format(idx)
         network_parameters[2]['ReturnSequences'] = True
+        network_parameters[2]['ReturnStates'] = False
         network_parameters[2]['Stateful'] = False
         network_parameters[2]['BatchSize'] = None
 
@@ -133,6 +141,7 @@ class SACActor(Actor):
         network_parameters[1]['ReturnSequences'] = True
         network_parameters[1]['Stateful'] = False
         network_parameters[1]['BatchSize'] = None
+        network_parameters[1]['ReturnStates'] = False
 
         # Build
         with tf.device(self.device):
@@ -140,6 +149,7 @@ class SACActor(Actor):
             self.critic_network = construct_network(network_parameters[1])
             if self.recurrent:
                 self.actor_prediction_network = construct_network(network_parameters[2])
+                self.get_lstm_layers()
         return True
 
 
@@ -226,7 +236,6 @@ class SACLearner(Learner):
     def get_actor_network_weights(self, update_requested):
         if not update_requested:
             return []
-        self.steps_since_actor_update = 0
         return [self.actor_network.get_weights(), self.critic1.get_weights()]
 
     def build_network(self, network_parameters, environment_parameters):
@@ -241,6 +250,7 @@ class SACLearner(Learner):
         network_parameters[0]['Recurrent'] = self.recurrent
         network_parameters[0]['ReturnSequences'] = True
         network_parameters[0]['Stateful'] = True
+        network_parameters[0]['ReturnStates'] = False
         network_parameters[0]['BatchSize'] = self.batch_size
 
         # Critic1
@@ -256,6 +266,7 @@ class SACLearner(Learner):
         network_parameters[1]['Recurrent'] = self.recurrent
         network_parameters[1]['ReturnSequences'] = True
         network_parameters[1]['Stateful'] = True
+        network_parameters[1]['ReturnStates'] = False
         network_parameters[1]['BatchSize'] = self.batch_size
 
         # Critic2
@@ -295,10 +306,9 @@ class SACLearner(Learner):
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
                                                                          self.action_shape, self.sequence_length)
 
-            # Reset LSTM states
-            for network in [self.actor_network, self.critic1, self.critic2,
-                            self.critic_target1, self.critic_target2]:
-                for layer in network.layers:
+            for net in [self.critic1, self.critic2, self.critic_target1,
+                        self.critic_target2, self.actor_network]:
+                for layer in net.layers:
                     if "lstm" in layer.name:
                         layer.reset_states()
 
@@ -332,54 +342,51 @@ class SACLearner(Learner):
         critic_target_prediction1 = self.critic_target1([*next_state_batch, next_actions])
         critic_target_prediction2 = self.critic_target2([*next_state_batch, next_actions])
         critic_target_prediction = tf.minimum(critic_target_prediction1, critic_target_prediction2)
+
         if self.reward_normalization:
             critic_target_prediction = self.inverse_value_function_rescaling(critic_target_prediction)
         critic_target = (critic_target_prediction - self.alpha * next_log_prob)*(1-done_batch)
 
         # Train Both Critic Networks
         y = reward_batch + (self.gamma**self.n_steps) * critic_target
+
         if self.reward_normalization:
             y = self.value_function_rescaling(y)
 
         # Burn in Critic Network
         if self.recurrent and self.burn_in:
-            self.critic1([*state_batch_burn, action_batch_burn])
+            _ = self.critic1([*state_batch_burn, action_batch_burn])
+            _ = self.critic2([*state_batch_burn, action_batch_burn])
 
         # Calculate Sample Errors to update priorities in Prioritized Experience Replay
         sample_errors = np.abs(y - self.critic1([*state_batch, action_batch]))
-
         if self.recurrent:
             eta = 0.9
             sample_errors = eta*np.max(sample_errors, axis=1) + (1-eta)*np.mean(sample_errors, axis=1)
 
-        # Reset LSTM states
         if self.recurrent:
-            for network in [self.critic1]:
-                for layer in network.layers:
-                    if "lstm" in layer.name:
-                        layer.reset_states()
-
-            # Burn in Critic Network
+            for layer in self.critic1.layers:
+                if "lstm" in layer.name:
+                    layer.reset_states()
             if self.burn_in:
-                self.critic1([*state_batch_burn, action_batch_burn])
-                self.critic2([*state_batch_burn, action_batch_burn])
+                _ = self.critic1([*state_batch_burn, action_batch_burn])
 
         value_loss1 = self.critic1.train_on_batch([*state_batch, action_batch], y)
         value_loss2 = self.critic2.train_on_batch([*state_batch, action_batch], y)
         value_loss = (value_loss1 + value_loss2)/2
 
         # ACTOR TRAINING
-        # Reset LSTM states
+        # Burn in Critic and Actor Network
         if self.recurrent:
-            for network in [self.critic1, self.critic2, self.actor_network]:
-                for layer in network.layers:
+            for net in [self.critic1, self.critic2, self.actor_network]:
+                for layer in net.layers:
                     if "lstm" in layer.name:
                         layer.reset_states()
-            # Burn in Critic and Actor Network
+
             if self.burn_in:
-                self.critic1([*state_batch_burn, action_batch_burn])
-                self.critic2([*state_batch_burn, action_batch_burn])
-                self.actor_network(state_batch_burn)
+                _ = self.critic1([*state_batch_burn, action_batch_burn])
+                _ = self.critic2([*state_batch_burn, action_batch_burn])
+                _, _ = self.forward(state_batch_burn)
 
         with tf.GradientTape() as tape:
             new_actions, log_prob = self.forward(state_batch)
@@ -391,14 +398,6 @@ class SACLearner(Learner):
         actor_grads = tape.gradient(policy_loss, self.actor_network.trainable_variables)
         self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor_network.trainable_variables))
 
-        # Reset LSTM states
-        if self.recurrent:
-            for network in [self.actor_network, self.critic1, self.critic2,
-                            self.critic_target1, self.critic_target2]:
-                for layer in network.layers:
-                    if "lstm" in layer.name:
-                        layer.reset_states()
-
         # TEMPERATURE PARAMETER UPDATE
         with tf.GradientTape() as tape:
             alpha_loss = tf.reduce_mean(self.log_alpha * (-log_prob - self.target_entropy))
@@ -406,13 +405,6 @@ class SACLearner(Learner):
         alpha_grads = tape.gradient(alpha_loss, [self.log_alpha])
         self.alpha_optimizer.apply_gradients(zip(alpha_grads, [self.log_alpha]))
         self.alpha = tf.exp(self.log_alpha).numpy()
-
-        if np.isnan(value_loss) or np.isnan(alpha_loss) or np.isnan(policy_loss):
-            print(value_loss)
-            print(alpha_loss)
-            print(policy_loss)
-            print("NAN DETECTED")
-            time.sleep(1000)
 
         self.training_step += 1
         self.steps_since_actor_update += 1

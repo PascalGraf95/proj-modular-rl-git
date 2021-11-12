@@ -479,9 +479,6 @@ class LocalRecurrentBuffer:
 
         # New sample and trajectory counters
         self.new_training_samples = 0
-        self.collected_trajectories = 0
-
-        self.sampled_indices = None
 
         # Deque to enable n-step reward calculation
         self.state_deque = [deque(maxlen=n_steps+1) for x in range(self.agent_num)]
@@ -567,8 +564,8 @@ class LocalRecurrentBuffer:
                 self.reward_deque[agent_id].clear()
 
                 # Clear the temporal buffers
-                self.temp_agent_buffer = [[[]] for x in range(self.agent_num)]
-                self.collected_trajectories += 1
+                self.temp_agent_buffer[agent_id] = [[]]
+                # [[[]] for x in range(self.agent_num)]
 
                 if self.agent_num == 1:
                     self.done_agents.add(agent_id)
@@ -631,7 +628,6 @@ class LocalRecurrentBuffer:
             self.action_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
             self.reward_deque = [deque(maxlen=self.n_steps) for x in range(self.agent_num)]
 
-        self.collected_trajectories = 0
         self.new_training_samples = 0
 
         copy_by_val_replay_batch = deepcopy(replay_batch)

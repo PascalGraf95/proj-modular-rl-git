@@ -2,7 +2,6 @@ import numpy as np
 import ray
 
 
-@ray.remote
 class CurriculumStrategy:
     Name = "CurriculumStrategy"
 
@@ -14,7 +13,7 @@ class CurriculumStrategy:
         self.number_of_tasks = 0
         self.transition_value = 0
         self.average_episodes = 0
-        self.unity_responded = True
+        self.unity_responded = False
 
         self.level_transition = False
 
@@ -42,9 +41,18 @@ class CurriculumStrategy:
             self.average_episodes = task_properties[2]
             self.transition_value = task_properties[3]
             self.unity_responded = unity_responded
+            print("Task: {}/{}, Average Episodes {}, Average Reward {}".format(self.task_level+1, self.number_of_tasks,
+                                                                               self.average_episodes,
+                                                                               self.transition_value))
 
     def return_task_properties(self):
         return self.number_of_tasks, self.task_level, self.average_episodes, self.transition_value
+
+
+@ray.remote
+class NoCurriculumStrategy(CurriculumStrategy):
+    def __init__(self):
+        super().__init__()
 
 
 class CurriculumCommunicator:

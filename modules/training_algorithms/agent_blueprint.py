@@ -24,7 +24,7 @@ class Actor:
         self.critic_network = None
         self.actor_prediction_network = None
         self.network_update_requested = False
-        self.new_steps_taken = 0
+        self.steps_taken_since_network_update = 0
         self.network_update_frequency = 1000
 
         # Environment
@@ -39,6 +39,9 @@ class Actor:
         # Recurrent Properties
         self.recurrent = None
         self.sequence_length = None
+        self.lstm = None
+        self.lstm_units = None
+        self.lstm_state = None
 
         # Local Logger
         self.local_logger = None
@@ -103,7 +106,10 @@ class Actor:
 
     # region Property Query
     def is_minimum_capacity_reached(self):
-        return self.minimum_capacity_reached
+        return len(self.local_buffer) >= 10
+
+    def is_network_update_requested(self):
+        return self.steps_taken_since_network_update >= self.network_update_frequency
 
     def get_target_task_level(self):
         return self.target_task_level
@@ -187,13 +193,6 @@ class Actor:
 
     # region Module Instantiation
     def instantiate_local_buffer(self, trainer_configuration):
-        """
-        self.local_buffer = LocalFIFOBuffer(capacity=5000,
-                                            agent_num=self.agent_number,
-                                            n_steps=trainer_configuration.get("NSteps"),
-                                            gamma=trainer_configuration.get("Gamma"),
-                                            store_trajectories=False)
-        """
         if self.recurrent:
             self.local_buffer = LocalRecurrentBuffer(capacity=5000,
                                                      agent_num=self.agent_number,
@@ -235,6 +234,12 @@ class Actor:
     def build_network(self, network_parameters, environment_parameters, idx):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
+    def get_lstm_layers(self):
+        self.lstm = self.actor_network.get_layer("lstm")
+        self.lstm_units = self.lstm.units
+        self.lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
+                           np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
+
     def update_actor_network(self, network_weights):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
@@ -243,6 +248,34 @@ class Actor:
         for layer in self.actor_network.layers:
             if "lstm" in layer.name:
                 layer.reset_states()
+
+    def register_terminal_agents(self, terminal_ids):
+        if not self.recurrent:
+            return
+        # Reset the hidden and cell state for agents that are in a terminal episode state
+        for agent_id in terminal_ids:
+            self.lstm_state[0][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
+            self.lstm_state[1][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
+
+    def set_lstm_states(self, agent_ids):
+        active_agent_number = len(agent_ids)
+        lstm_state = [np.zeros((active_agent_number, self.lstm_units), dtype=np.float32),
+                      np.zeros((active_agent_number, self.lstm_units), dtype=np.float32)]
+        for idx, agent_id in enumerate(agent_ids):
+            lstm_state[0][idx] = self.lstm_state[0][agent_id]
+            lstm_state[1][idx] = self.lstm_state[1][agent_id]
+
+        self.initial_state = [tf.convert_to_tensor(lstm_state[0]), tf.convert_to_tensor(lstm_state[1])]
+        self.lstm.get_initial_state = self.get_initial_state
+
+    def get_initial_state(self, inputs):
+        return self.initial_state
+
+    def update_lstm_states(self, agent_ids, lstm_state):
+        for idx, agent_id in enumerate(agent_ids):
+            self.lstm_state[0][agent_id] = lstm_state[0][idx]
+            self.lstm_state[1][agent_id] = lstm_state[1][idx]
+
     # endregion
 
     # region Environment Interaction
@@ -252,10 +285,12 @@ class Actor:
         # Preprocess steps if an respective algorithm has been activated
         decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
                                                                                               terminal_steps)
+        # Register terminal agents, so the hidden LSTM state is reset
+        self.register_terminal_agents(terminal_steps.agent_id)
         # Choose the next action either by exploring or exploiting
         actions = self.exploration_algorithm.act(decision_steps)
         if actions is None:
-            actions = self.act(decision_steps.obs, mode=self.mode)
+            actions = self.act(decision_steps.obs, agent_ids=decision_steps.agent_id, mode=self.mode)
 
         # Append steps and actions to the local replay buffer
         self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
@@ -268,34 +303,27 @@ class Actor:
         # Track the rewards in a local logger
         self.local_logger.track_episode(terminal_steps.reward, terminal_steps.agent_id,
                                         step_type="terminal")
+
         self.local_logger.track_episode(decision_steps.reward, decision_steps.agent_id,
                                         step_type="decision")
 
-        # If enough samples have been collected, mark local buffer ready for readout
-        if len(self.local_buffer) >= 10:
-            self.minimum_capacity_reached = True
-
         # If enough steps have been taken, mark agent ready for updated network
-        # self.new_steps_taken += len(decision_steps)
-        # if self.new_steps_taken >= self.network_update_frequency:
-        #     self.network_update_requested = True
+        self.steps_taken_since_network_update += len(decision_steps)
 
         # If all agents are in a terminal state reset the environment
         if self.local_buffer.check_reset_condition():
             AgentInterface.reset(self.environment)
             self.local_buffer.done_agents.clear()
-            self.reset_actor_state()
+            # self.reset_actor_state()
         # Otherwise take a step in the environment according to the chosen action
         else:
             try:
                 AgentInterface.step_action(self.environment, self.behavior_name, actions)
             except RuntimeError:
                 print("RUNTIME ERROR")
-                print(actions)
-                time.sleep(1000)
         return True
 
-    def act(self, states, mode="training"):
+    def act(self, states, agent_ids=None, mode="training"):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
     # endregion
 
@@ -308,8 +336,7 @@ class Actor:
 
     @ray.method(num_returns=2)
     def get_new_samples(self):
-        if self.minimum_capacity_reached:
-            self.minimum_capacity_reached = False
+        if self.is_minimum_capacity_reached():
             return self.local_buffer.sample(-1, reset_buffer=True, random_samples=False)
         else:
             return None, None
@@ -385,9 +412,6 @@ class Learner:
     # endregion
 
     # region Network Construction and Transfer
-    def is_network_update_requested(self):
-        return self.steps_since_actor_update >= self.network_update_frequency
-
     def get_actor_network_weights(self, update_requested):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
@@ -401,6 +425,9 @@ class Learner:
                 tf.config.experimental.set_memory_growth(gpu, True)
 
     def sync_models(self):
+        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    def get_lstm_layers(self):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
     # endregion
 
@@ -453,7 +480,7 @@ class Learner:
 
         for idx, transition in enumerate(replay_batch):
             if type(transition) == int:
-                print("TRANSITION ERROR")
+                print("Warning: Transition with wrong data type. This training step will be skipped.")
                 return None, None, None, None, None
             for idx2, (state, next_state) in enumerate(zip(transition['state'], transition['next_state'])):
                 state_batch[idx2][idx] = state
@@ -483,7 +510,7 @@ class Learner:
         # Loop through all sequences in the batch
         for idx_seq, sequence in enumerate(replay_batch):
             if type(sequence) == int:
-                print("TRANSITION ERROR")
+                print("Warning: Transition with wrong data type. This training step will be skipped .")
                 return None, None, None, None, None
             # Loop through all transitions in one sequence
             for idx_trans, transition in enumerate(sequence):

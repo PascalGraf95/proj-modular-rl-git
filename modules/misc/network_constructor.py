@@ -69,13 +69,17 @@ def construct_network(network_parameters):
     x = connect_branches(network_branches, network_parameters)
 
     # Construct the network body/bodies
-    network_body = build_network_body(x, network_parameters)
+    network_body, hidden_state, cell_state = build_network_body(x, network_parameters)
 
     # Construct the network output.
     network_output = build_network_output(network_body, network_parameters)
 
     # Create the final model and plot it.
-    model = Model(inputs=network_input, outputs=network_output, name=network_parameters.get("NetworkType"))
+    if network_parameters.get("Recurrent") and network_parameters.get("ReturnStates"):
+        model = Model(inputs=network_input, outputs=[network_output, hidden_state, cell_state],
+                      name=network_parameters.get("NetworkType"))
+    else:
+        model = Model(inputs=network_input, outputs=network_output, name=network_parameters.get("NetworkType"))
     model.summary()
     try:
         plot_model(model, "plots/"+network_parameters.get("NetworkType") + ".png", show_shapes=True)
@@ -170,6 +174,7 @@ def connect_branches(network_input, network_parameters):
 def build_network_body(network_input, network_parameters):
     network_branches = []
     units, filters = 0, 0
+    hidden_state, cell_state = None, None
     for net_input in network_input:
         if len(net_input.shape) == VectorShapeLength:
             net_architecture = network_parameters.get("VectorNetworkArchitecture")
@@ -177,11 +182,19 @@ def build_network_body(network_input, network_parameters):
         else:
             net_architecture = network_parameters.get("VisualNetworkArchitecture")
             filters = network_parameters.get("Filters")
-        network_branches.append(get_network_component(net_input, net_architecture, network_parameters, units=units, filters=filters))
+
+        if network_parameters.get("Recurrent") and network_parameters.get("ReturnStates"):
+            network_branch, hidden_state, cell_state = get_network_component(net_input, net_architecture,
+                                                                             network_parameters,
+                                                                             units=units, filters=filters)
+        else:
+            network_branch = get_network_component(net_input, net_architecture,
+                                                   network_parameters, units=units, filters=filters)
+        network_branches.append(network_branch)
     network_body = connect_branches(network_branches, network_parameters)
     if len(network_branches) > 1:
         network_body = [get_network_component(network_body[0], "SingleDense", network_parameters, units=network_parameters.get("Units")*5)]
-    return network_body[0]
+    return network_body[0], hidden_state, cell_state
 
 
 def build_network_output(net_in, network_parameters):
@@ -233,16 +246,24 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = net_inp
     elif net_architecture == NetworkArchitecture.SINGLE_DENSE.value:
         if network_parameters["Recurrent"]:
-            x = LSTM(units, return_sequences=network_parameters["ReturnSequences"],
-                     stateful=network_parameters["Stateful"])(net_inp)
+            if network_parameters.get("ReturnStates"):
+                x, hidden_state, cell_state = LSTM(units, return_sequences=network_parameters["ReturnSequences"],
+                                                   stateful=network_parameters["Stateful"], return_state=True)(net_inp)
+            else:
+                x = LSTM(units, return_sequences=network_parameters["ReturnSequences"],
+                         stateful=network_parameters["Stateful"])(net_inp)
         else:
             x = Dense(units, activation='selu')(net_inp)
 
     elif net_architecture == NetworkArchitecture.SMALL_DENSE.value:
         x = Dense(units, activation='selu')(net_inp)
         if network_parameters["Recurrent"]:
-            x = LSTM(units, return_sequences=network_parameters["ReturnSequences"],
-                     stateful=network_parameters["Stateful"])(x)
+            if network_parameters.get("ReturnStates"):
+                x, hidden_state, cell_state = LSTM(units, return_sequences=network_parameters["ReturnSequences"],
+                                                   stateful=network_parameters["Stateful"], return_state=True)(x)
+            else:
+                x = LSTM(units, return_sequences=network_parameters["ReturnSequences"],
+                         stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(units, activation='selu')(x)
 
@@ -250,8 +271,12 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = Dense(units, activation='selu')(net_inp)
         x = Dense(units, activation='selu')(x)
         if network_parameters["Recurrent"]:
-            x = LSTM(2*units, return_sequences=network_parameters["ReturnSequences"],
-                     stateful=network_parameters["Stateful"])(x)
+            if network_parameters.get("ReturnStates"):
+                x, hidden_state, cell_state = LSTM(2*units, return_sequences=network_parameters["ReturnSequences"],
+                                                   stateful=network_parameters["Stateful"], return_state=True)(x)
+            else:
+                x = LSTM(2*units, return_sequences=network_parameters["ReturnSequences"],
+                         stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(2*units, activation='selu')(x)
 
@@ -260,8 +285,12 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = Dense(units, activation='selu')(x)
         x = Dense(2*units, activation='selu')(x)
         if network_parameters["Recurrent"]:
-            x = LSTM(2*units, return_sequences=network_parameters["ReturnSequences"],
-                     stateful=network_parameters["Stateful"])(x)
+            if network_parameters.get("ReturnStates"):
+                x, hidden_state, cell_state = LSTM(2*units, return_sequences=network_parameters["ReturnSequences"],
+                                                   stateful=network_parameters["Stateful"], return_state=True)(x)
+            else:
+                x = LSTM(2*units, return_sequences=network_parameters["ReturnSequences"],
+                         stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(2*units, activation='selu')(x)
 
@@ -271,8 +300,12 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = Conv2D(filters*2, kernel_size=3, strides=1, activation="selu")(x)
         x = Flatten()(x)
         if network_parameters["Recurrent"]:
-            x = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
-                     stateful=network_parameters["Stateful"])(x)
+            if network_parameters.get("ReturnStates"):
+                x, hidden_state, cell_state = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
+                                                   stateful=network_parameters["Stateful"], return_state=True)(x)
+            else:
+                x = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
+                         stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(512, activation="selu")(x)
 
@@ -292,8 +325,13 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = BatchNormalization()(x)
         x = Flatten()(x)
         if network_parameters["Recurrent"]:
-            x = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
-                     stateful=network_parameters["Stateful"])(x)
+            if network_parameters.get("ReturnStates"):
+                x, hidden_state, cell_state = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
+                                                   stateful=network_parameters["Stateful"], return_state=True)(x)
+            else:
+                x = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
+                         stateful=network_parameters["Stateful"])(x)
+
         else:
             x = Dense(512, activation="selu")(x)
 
@@ -310,8 +348,12 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = Conv2D(filters*4, kernel_size=3, strides=1, activation="selu")(x)
         x = Flatten()(x)
         if network_parameters["Recurrent"]:
-            x = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
-                     stateful=network_parameters["Stateful"])(x)
+            if network_parameters.get("ReturnStates"):
+                x, hidden_state, cell_state = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
+                                                   stateful=network_parameters["Stateful"], return_state=True)(x)
+            else:
+                x = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
+                         stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(512, activation="selu")(x)
 
@@ -326,14 +368,19 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         x = BatchNormalization()(x)
         x = Flatten()(x)
         if network_parameters["Recurrent"]:
-            x = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
-                     stateful=network_parameters["Stateful"])(x)
+            if network_parameters.get("ReturnStates"):
+                x, hidden_state, cell_state = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
+                                                   stateful=network_parameters["Stateful"], return_state=True)(x)
+            else:
+                x = LSTM(512, return_sequences=network_parameters["ReturnSequences"],
+                         stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(512, activation="selu")(x)
 
     else:
         raise ValueError("Unknown Network Architecture \"{}\"".format(net_architecture))
-
+    if network_parameters.get("ReturnStates") and network_parameters.get("Recurrent"):
+        return x, hidden_state, cell_state
     return x
 
 """

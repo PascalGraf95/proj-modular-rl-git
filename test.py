@@ -1,111 +1,63 @@
-import os
-#os.environ["CUDA_VISIBLE_DEVICES"]="-1"
 import tensorflow as tf
-import ray
-import time
 import numpy as np
-import tensorflow_probability as tfp
-import matplotlib.pyplot as plt
-#gpus = tf.config.experimental.list_physical_devices('GPU')
-#if gpus:
-#    try:
-#        tf.config.experimental.set_virtual_device_configuration(gpus[0], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)])
-#    except RuntimeError as e:
-#        print(e)
+import time
 
-@ray.remote
-class Actor:
+np.random.seed(42)
+tf.random.set_seed(42)
+
+
+class Mooodel():
     def __init__(self):
-        with tf.device('/cpu:0'):
-            self.construct_model()
+        input_layer = tf.keras.Input(shape=(None, 2))
+        lstm_out, hidden_state, cell_state = tf.keras.layers.LSTM(3, return_state=True)(input_layer)
+        output = tf.keras.layers.Dense(2)(lstm_out)
+        self.model = tf.keras.Model(inputs=input_layer, outputs=[output, hidden_state, cell_state])
+        self.lstm = self.model.get_layer("lstm")
+        print(self.lstm.units)
 
-    def construct_model(self):
-        input_layer = tf.keras.layers.Input((None, 2))
-        x = tf.keras.layers.Dense(16)(input_layer)
-        x = tf.keras.layers.Dense(16)(x)
-        x, self.state_h, self.state_c = tf.keras.layers.LSTM(5, return_sequences=True, return_state=True)(x)
-        x = tf.keras.layers.Dense(2)(x)
-        self.model = tf.keras.Model(inputs=input_layer, outputs=x)
-        self.model.compile(optimizer='adam', loss='mse')
-        self.model.summary()
+    def get_zero_initial_state(self, inputs):
+        return [tf.zeros((2, 3)), tf.zeros((2, 3))]
 
-    def print_layers(self):
-        for layer in self.model.layers:
-            if "lstm" in layer.name:
-                print(layer.reset_states())
+    def get_initial_state(self, inputs):
+        return self.initial_state
 
-    def print_states(self):
-        print(self.state_h, self.state_c)
+    def set_zero_initial_state(self):
+        self.lstm.get_initial_state = lambda x: [tf.zeros((2, 3)), tf.zeros((2, 3))]
 
-    def predict(self, state):
-        with tf.device('/cpu:0'):
-            return self.model(state)
+    def set_initial_state(self, states):
+        self.initial_state = states
+        self.lstm.get_initial_state = lambda x: states
 
+    def __call__(self, inputs, states=None):
+        """
+        if states is None:
+            self.lstm.get_initial_state = self.get_zero_initial_state
 
-@ray.remote(num_gpus=1)
-class Learner:
-    def __init__(self):
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        if gpus:
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-        self.construct_model()
-        self.optimizer = tf.keras.optimizers.Adam()
+        else:
+            self.initial_state = states
+            self.lstm.get_initial_state = self.get_initial_state
+        """
 
-    def construct_model(self):
-        input_layer = tf.keras.layers.Input(1)
-        x = tf.keras.layers.Dense(16)(input_layer)
-        x = tf.keras.layers.Dense(3)(x)
-        self.model = tf.keras.Model(inputs=input_layer, outputs=x)
-
-    def predict(self, state):
-        return self.model(state)
-
-    def train(self):
-        s = np.random.random((2, 1))
-        with tf.GradientTape() as tape:
-            x = self.predict(s)
-            loss = tf.losses.mse(np.random.random((2, 3)), x)
-        grads = tape.gradient(loss, self.model.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
-        return loss
+        return self.model(inputs)
 
 
 if __name__ == '__main__':
-    normal = tfp.distributions.Normal(-1.6182493, 0.002102602)
-    print(normal.parameters)
-    data = normal.sample(1, 10000)
-    print(data.shape)
-    hx, hy, _ = plt.hist(data, bins=50, color="lightblue")
-    plt.xlim(-1.6182493-0.02, -1.6182493+0.02)
+    lstm_state = [np.ones((2, 3), dtype=np.float32), np.ones((2, 3), dtype=np.float32)]
+    #print(lstm_state)
+    #print(lstm_state[0].shape)
+    #print(tf.zeros(3).shape)
+    #lstm_state[0][0] = np.zeros(3)
+    #lstm_state[1][0] = np.zeros(3)
+    print(lstm_state)
 
-    plt.title(r'Normal distribution')
-    plt.grid()
-    # plt.show()
-    # x = -1.617729
-    x = -1.4182493
-    d = normal.log_prob(x) / normal.log_prob(-1.6182493) # 2.9427497
-    print(d)
-    """
-    ray.init()
-    actors = [Actor.remote() for i in range(1)]
-    learner = Learner.remote()
-
-    for actor in actors:
-        actor.print_layers.remote()
-
-    for i in range(1):
-        for i in range(2):
-            # batch_size, time_steps, obs
-            s = np.random.random((1, 3, 2))
-            res = [actor.predict.remote(s) for actor in actors]
-            print("ACTOR", ray.get(res))
-            [actor.print_states.remote() for actor in actors]
-            #s = np.random.random((1, 1))
-            #res = learner.predict.remote(s)
-            #print("LEARNER:", ray.get(res))
-            time.sleep(1)
-        #loss = learner.train.remote()
-        #print("LOSS:", ray.get(loss))
-        # time.sleep(5)
-    """
+    mdl = Mooodel()
+    time.sleep(3)
+    x = np.random.rand(2, 1, 2).astype(np.float32)
+    out, hidden_state, cell_state = mdl(x)
+    print(np.mean(out))
+    mdl.set_initial_state([tf.convert_to_tensor(lstm_state[0]), tf.convert_to_tensor(lstm_state[1])])
+    out, hidden_state, cell_state = mdl(x)
+    print(np.mean(out))
+    mdl.set_zero_initial_state()
+    out, hidden_state, cell_state = mdl(x)
+    print(np.mean(out))
