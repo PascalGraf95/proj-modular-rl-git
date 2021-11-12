@@ -91,6 +91,9 @@ class Actor:
     def connect_to_gym_environment(self):
         self.environment = AgentInterface.connect(self.environment_path)
 
+    def connect_to_carla_environment(self):
+        self.environment = AgentInterface.connect()
+
     def set_unity_parameters(self, **kwargs):
         self.engine_configuration_channel.set_configuration_parameters(**kwargs)
     # endregion
@@ -147,6 +150,11 @@ class Actor:
         elif interface == "OpenAIGym":
             from ..interfaces.openaigym import OpenAIGymInterface as AgentInterface
             self.connect = self.connect_to_gym_environment
+
+        elif interface == "Carla":
+            from ..interfaces.carla import CarlaInterface as AgentInterface
+            self.connect = self.connect_to_carla_environment
+        
         else:
             raise ValueError("An interface for {} is not (yet) supported by this trainer. "
                              "You can implement an interface yourself by utilizing the interface blueprint class "

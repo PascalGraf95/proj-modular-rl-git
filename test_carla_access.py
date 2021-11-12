@@ -30,7 +30,7 @@ world = client.get_world()
 
 # Check for the available maps and load a new one
 print(client.get_available_maps())
-world = client.load_world('Town02')
+world = client.load_world('Town06')
 
 
 # ---------------------------------------------------------------------------------------
@@ -59,10 +59,11 @@ target =  random.choice(blueprint_library.filter('model3'))
 target.set_attribute('color', '255,0,0')
 
 # spawn the actor
-transform_target = carla.Transform(carla.Location(x=120, y=0, z=40), carla.Rotation(yaw=0))
-transform_vehicle = carla.Transform(carla.Location(x=100, y=0, z=40), carla.Rotation(yaw=0))
+transform_target = carla.Transform(carla.Location(x=120, y=-20, z=40), carla.Rotation(yaw=0))
+transform_vehicle = carla.Transform(carla.Location(x=100, y=-20, z=40), carla.Rotation(yaw=0))
 actor_vehicle = world.spawn_actor(vehicle, transform_vehicle)
 actor_target = world.spawn_actor(target, transform_target)
 
 print(actor_target.get_velocity())
-actor_target.set_target_velocity(carla.Vector3D(1, 0 , 0))
+actor_target.set_target_velocity(carla.Vector3D(50, 0 , 0))
+actor_vehicle.set_target_velocity(carla.Vector3D(50, 0 , 0))

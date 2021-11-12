@@ -1,0 +1,34 @@
+{
+    "init_speed_target": 10,
+    "init_dx_target": 10,
+    "init_speed_ego": 10,
+    "init_speed_set": 10,
+    "init_speed_restriction": 100,
+    "target_behaviour_sequence":
+    [
+        {
+            "ID": 1,
+            "type": "RAMP",
+            "start_speed": 10,
+            "end_speed": 15,
+            "start_time": 10,
+            "end_time": 12
+        },
+        {   
+            "ID": 2,
+            "type": "RAMP",
+            "start_speed": 15,
+            "end_speed": 0,
+            "start_time": 30,
+            "end_time": 40
+        }
+    ],
+    "speed_restriction_sequence":
+    [
+        {
+            "ID": 1,
+            "start_time": 10,
+            "speed_restriction": 50
+        }
+    ]
+}

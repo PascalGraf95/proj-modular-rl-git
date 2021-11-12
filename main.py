@@ -5,11 +5,11 @@
 # region --- Imports ---
 
 import numpy as np
-import sys
-import time
-import contextlib
-import msvcrt
-import os
+#import sys
+#import time
+#import contextlib
+#import msvcrt
+#import os
 from modules.trainer.trainer import Trainer
 
 np.set_printoptions(precision=2)
@@ -37,7 +37,7 @@ def main():
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
-    interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
+    interface = 'Carla'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
     # If you want to run multiple Unity actors in parallel you need specify the path to the '.exe' file here.
     environment_path = None #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0_Camera\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 
