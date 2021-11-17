@@ -301,11 +301,13 @@ class SACLearner(Learner):
         if not replay_batch:
             return None, None, self.training_step
 
+        # region --- REPLAY BATCH PREPROCESSING
         if self.recurrent:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
                                                                          self.action_shape, self.sequence_length)
 
+            # Reset hidden LSTM states for all networks
             for net in [self.critic1, self.critic2, self.critic_target1,
                         self.critic_target2, self.actor_network]:
                 for layer in net.layers:
@@ -328,8 +330,9 @@ class SACLearner(Learner):
                 = self.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, self.action_shape)
         if np.any(action_batch is None):
             return None, None, self.training_step
+        # endregion
 
-        # CRITIC TRAINING
+        # region --- CRITIC TRAINING ---
         # Burn in Critic Target Networks and Actor Network
         if self.recurrent and self.burn_in:
             next_actions_burn, next_log_prob_burn = self.forward(next_state_batch_burn)
@@ -374,8 +377,9 @@ class SACLearner(Learner):
         value_loss1 = self.critic1.train_on_batch([*state_batch, action_batch], y)
         value_loss2 = self.critic2.train_on_batch([*state_batch, action_batch], y)
         value_loss = (value_loss1 + value_loss2)/2
+        # endregion
 
-        # ACTOR TRAINING
+        # region --- ACTOR TRAINING ---
         # Burn in Critic and Actor Network
         if self.recurrent:
             for net in [self.critic1, self.critic2, self.actor_network]:
@@ -397,14 +401,16 @@ class SACLearner(Learner):
 
         actor_grads = tape.gradient(policy_loss, self.actor_network.trainable_variables)
         self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor_network.trainable_variables))
+        # endregion
 
-        # TEMPERATURE PARAMETER UPDATE
+        # region --- TEMPERATURE PARAMETER TRAINING ---
         with tf.GradientTape() as tape:
             alpha_loss = tf.reduce_mean(self.log_alpha * (-log_prob - self.target_entropy))
 
         alpha_grads = tape.gradient(alpha_loss, [self.log_alpha])
         self.alpha_optimizer.apply_gradients(zip(alpha_grads, [self.log_alpha]))
         self.alpha = tf.exp(self.log_alpha).numpy()
+        # endregion
 
         self.training_step += 1
         self.steps_since_actor_update += 1

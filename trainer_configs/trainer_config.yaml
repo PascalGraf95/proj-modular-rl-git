@@ -119,14 +119,14 @@ dqn:
     TrainingInterval: 8
 sac:
     Recurrent: true
-    BurnIn: 5
-    SequenceLength: 20
+    BurnIn: 0
+    SequenceLength: 15
     Overlap: 5
-    ActorNum: 10
+    ActorNum: 1
     BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
-        Epsilon: 0.4
+        Epsilon: 0.3
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
         StepDown: false
@@ -136,7 +136,7 @@ sac:
     LogAlpha: 0.0
     NSteps: 4
     AdaptiveExploration: false
-    NetworkUpdateFrequency: 50
+    NetworkUpdateFrequency: 20
     NetworkParameters:
     -   Filters: 32
         Units: 32

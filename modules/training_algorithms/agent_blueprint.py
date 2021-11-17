@@ -426,9 +426,6 @@ class Learner:
 
     def sync_models(self):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
-    def get_lstm_layers(self):
-        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
     # endregion
 
     # region Checkpoints

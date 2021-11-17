@@ -281,7 +281,6 @@ class Trainer:
         [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True))
          for actor in self.actors]
         # endregion
-        i = 0
 
         while True:
             # Each actor plays one step in the environment
@@ -347,8 +346,9 @@ class Trainer:
                 self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(idx), training_step,
                                                    self.logging_frequency)
 
-            # Wait for the actors to finish their environment steps
+            # Wait for the actors to finish their environment steps and learner to finish the learning step
             ray.wait(actors_ready)
+            ray.wait([training_metrics])
 
     def async_testing_loop(self):
         """

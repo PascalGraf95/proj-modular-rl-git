@@ -14,7 +14,6 @@ class CurriculumStrategy:
         self.transition_value = 0
         self.average_episodes = 0
         self.unity_responded = False
-
         self.level_transition = False
 
     def has_unity_responded(self):

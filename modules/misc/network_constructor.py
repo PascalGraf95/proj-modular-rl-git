@@ -43,7 +43,10 @@ or filters as well as the desired input and output shapes.
 """
 
 
-def construct_network(network_parameters):
+def construct_network(network_parameters, plot_network_model=False):
+    """Constructs a neural network for Reinforcement Learning with arbitrary input and output shapes and a defined
+    type of network body (see NetworkArchitecture enum above)."""
+
     # Distinguish Dense vs. NoisyDense Layer (Only for DQN)
     global Dense
     if network_parameters.get("NoisyNetworks"):
@@ -53,7 +56,7 @@ def construct_network(network_parameters):
 
     # Construct one input layer per observation
     network_input = build_network_input(network_parameters.get('Input'), network_parameters)
-    # Opportunity to resize image inputs
+    # Opportunity to resize image inputs to a specified size
     if network_parameters.get("InputResize"):
         network_branches = []
         for net_input in network_input:
@@ -71,20 +74,21 @@ def construct_network(network_parameters):
     # Construct the network body/bodies
     network_body, hidden_state, cell_state = build_network_body(x, network_parameters)
 
-    # Construct the network output.
+    # Construct the network output
     network_output = build_network_output(network_body, network_parameters)
 
-    # Create the final model and plot it.
+    # Create the final model and plot it
     if network_parameters.get("Recurrent") and network_parameters.get("ReturnStates"):
         model = Model(inputs=network_input, outputs=[network_output, hidden_state, cell_state],
                       name=network_parameters.get("NetworkType"))
     else:
         model = Model(inputs=network_input, outputs=network_output, name=network_parameters.get("NetworkType"))
-    model.summary()
-    try:
-        plot_model(model, "plots/"+network_parameters.get("NetworkType") + ".png", show_shapes=True)
-    except ImportError:
-        print("Could not create a model plot for {}.".format(network_parameters.get("NetworkType")))
+    if plot_network_model:
+        model.summary()
+        try:
+            plot_model(model, "plots/"+network_parameters.get("NetworkType") + ".png", show_shapes=True)
+        except ImportError:
+            print("Could not create a model plot for {}.".format(network_parameters.get("NetworkType")))
 
     if network_parameters.get('TargetNetwork'):
         target_model = clone_model(model)
@@ -93,6 +97,7 @@ def construct_network(network_parameters):
 
 
 def build_network_input(network_input_shapes, network_parameters):
+    """ Builds the input layers for an arbitrary number of inputs with arbitrary shape."""
     network_input = []
 
     for input_shapes in network_input_shapes:
@@ -111,6 +116,7 @@ def build_network_input(network_input_shapes, network_parameters):
 
 
 def connect_branches(network_input, network_parameters):
+    """Connects multiple vector XOR image branches via Concatenate layers"""
     branch_shape_lengths = [len(x.shape) for x in network_input]
     input_types = None
     if len(branch_shape_lengths) > 1:
@@ -138,7 +144,7 @@ def connect_branches(network_input, network_parameters):
         return [Concatenate(axis=-1)(network_branches)]
 
     # Case mixed inputs append Dense Layer to Vector inputs and concatenate images and vectors respectively.
-    if input_types == "mixed":
+    elif input_types == "mixed":
         # Vector Branches
         vector_branches = []
         for net_input in [x for x in network_input if len(x.shape) == VectorShapeLength]:
@@ -157,7 +163,8 @@ def connect_branches(network_input, network_parameters):
             image_branches = image_branches[0]
         return [image_branches, vector_branches]
 
-    if input_types == "forced_images":
+    # Gives the opportunity to convert vector inputs to images and append them to the image input
+    elif input_types == "forced_images":
         # Vector Branches
         image_branches = []
         for net_input in [x for x in network_input if len(x.shape) == VectorShapeLength]:
@@ -172,6 +179,9 @@ def connect_branches(network_input, network_parameters):
 
 
 def build_network_body(network_input, network_parameters):
+    """Builds the actual network body based on the network type keyword and the number of units/filters.
+    If the network branches have not been connected yet, each branch receives its own network body. Their outputs
+    are connected afterwards."""
     network_branches = []
     units, filters = 0, 0
     hidden_state, cell_state = None, None
@@ -193,11 +203,13 @@ def build_network_body(network_input, network_parameters):
         network_branches.append(network_branch)
     network_body = connect_branches(network_branches, network_parameters)
     if len(network_branches) > 1:
-        network_body = [get_network_component(network_body[0], "SingleDense", network_parameters, units=network_parameters.get("Units")*5)]
+        network_body = [get_network_component(network_body[0], "SingleDense",
+                                              network_parameters, units=network_parameters.get("Units")*5)]
     return network_body[0], hidden_state, cell_state
 
 
 def build_network_output(net_in, network_parameters):
+    """Builds one or multiple network outputs. Supports dueling networks and special kernel initialization."""
     network_output = []
     for net_out_shape, net_out_act in zip(network_parameters.get('Output'),
                                           network_parameters.get('OutputActivation')):
@@ -224,11 +236,6 @@ def build_network_output(net_in, network_parameters):
             network_output.append(net_out)
         else:
             network_output.append(net_in)
-    """
-    if network_parameters.get('LogStdOutput'):
-        log_std = LogStdLayer(net_out_shape)(net_in)
-        network_output.append(log_std)
-    """
     return network_output
 
 
@@ -242,6 +249,7 @@ def connect_network_branches(network_branches, network_parameters):
 
 
 def get_network_component(net_inp, net_architecture, network_parameters, units=32, filters=32):
+    """Returns a special type of network architecture based on a keyword and the given input."""
     if net_architecture == NetworkArchitecture.NONE.value:
         x = net_inp
     elif net_architecture == NetworkArchitecture.SINGLE_DENSE.value:
@@ -383,22 +391,3 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         return x, hidden_state, cell_state
     return x
 
-"""
-class LogStdLayer(tf.keras.layers.Layer):
-    def __init__(self, net_out_shape, **kwargs):
-        super(LogStdLayer, self).__init__()
-        self.net_out_shape = net_out_shape
-        self.log_std = tf.Variable(tf.ones(self.net_out_shape) * -1.6, name='LOG_STD',
-                                   trainable=True,
-                                   constraint=lambda x: tf.clip_by_value(x, -10, 20))
-
-    def call(self, inputs):
-        return self.log_std
-
-    def get_config(self):
-        config = super().get_config().copy()
-        config.update({
-            'net_out_shape': self.net_out_shape,
-        })
-        return config
-"""

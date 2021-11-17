@@ -3,6 +3,7 @@
 import numpy as np
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
+import time
 
 
 class MlAgentsV18Interface:
