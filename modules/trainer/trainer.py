@@ -92,7 +92,7 @@ class Trainer:
         global CurriculumStrategy
 
         if curriculum_strategy == "None" or not curriculum_strategy:
-            from ..curriculum_strategies.curriculum_strategy_blueprint import NoCurriculumStrategy
+            from ..curriculum_strategies.curriculum_strategy_blueprint import NoCurriculumStrategy as CurriculumStrategy
         elif curriculum_strategy == "LinearCurriculum":
             from ..curriculum_strategies.linear_curriculum import LinearCurriculum as CurriculumStrategy
         else:
@@ -301,6 +301,8 @@ class Trainer:
                 # Also make sure the environment runs the desired curriculum level
                 actor.send_target_task_level.remote()
                 samples, indices = actor.get_new_samples.remote()
+                # Calculate and add intrinsic rewards (if supported by the respective exploration algorithm)
+                samples = actor.get_intrinsic_rewards.remote(samples)
                 if self.trainer_configuration["PrioritizedReplay"]:
                     sample_errors = actor.get_sample_errors.remote(samples)
                     self.global_buffer.append_list.remote(samples, sample_errors)
@@ -311,6 +313,7 @@ class Trainer:
             # Sample a new batch of transitions from the global replay buffer
             samples, indices = self.global_buffer.sample.remote(self.trainer_configuration,
                                                                 self.trainer_configuration.get("BatchSize"))
+
             # Train the learner with the batch and observer the resulting metrics
             training_metrics, sample_errors, training_step = self.learner.learn.remote(samples)
 

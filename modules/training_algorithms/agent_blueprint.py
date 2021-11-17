@@ -175,6 +175,8 @@ class Actor:
             from ..exploration_algorithms.exploration_algorithm_blueprint import ExplorationAlgorithm
         elif exploration_algorithm == "ICM":
             from ..exploration_algorithms.intrinsic_curiosity_module import IntrinsicCuriosityModule as ExplorationAlgorithm
+        elif exploration_algorithm == "RND":
+            from ..exploration_algorithms.random_network_distillation import RandomNetworkDistillation as ExplorationAlgorithm
         else:
             raise ValueError("There is no {} exploration algorithm.".format(exploration_algorithm))
 
@@ -218,7 +220,8 @@ class Actor:
         self.exploration_algorithm = ExplorationAlgorithm(self.environment_configuration["ActionShape"],
                                                           self.environment_configuration["ObservationShapes"],
                                                           self.environment_configuration["ActionType"],
-                                                          trainer_configuration["ExplorationParameters"])
+                                                          trainer_configuration["ExplorationParameters"],
+                                                          trainer_configuration)
         self.curriculum_communicator = CurriculumCommunicator(self.curriculum_side_channel)
 
         self.preprocessing_algorithm = PreprocessingAlgorithm(self.preprocessing_path)
@@ -333,6 +336,11 @@ class Actor:
             return
         if self.adaptive_exploration:
             self.exploration_algorithm.learning_step(samples)
+
+    def get_intrinsic_rewards(self, samples):
+        if not samples:
+            return samples
+        return self.exploration_algorithm.get_intrinsic_reward(samples)
 
     @ray.method(num_returns=2)
     def get_new_samples(self):

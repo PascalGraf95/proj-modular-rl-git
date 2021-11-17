@@ -34,14 +34,14 @@ def main():
     # If you want to run multiple Unity actors in parallel you need specify the path to the '.exe' file here.
     environment_path = None #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0\DoBotEnvironment.exe" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0_Camera\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 
-    # Choose from "None", "EpsilonGreedy" and "ICM"
-    exploration_algorithm = "None"
+    # Choose from "None", "EpsilonGreedy", "ICM" and "RND"
+    exploration_algorithm = "RND"
 
     # Choose from "DQN", "DDPG", "TD3", "SAC"
     trainer.select_training_algorithm('SAC')
 
     # Choose from None, "LinearCurriculum" ("RememberingCurriculum" and "CrossFadeCurriculum" are currently disabled)
-    curriculum_strategy = "LinearCurriculum"
+    curriculum_strategy = None
     trainer.select_curriculum_strategy(curriculum_strategy)
 
     # Choose from "None" and "SemanticSegmentation"

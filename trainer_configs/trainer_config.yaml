@@ -126,6 +126,9 @@ sac:
     BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
+        FeatureSpaceSize: 5
+        LearningRate: 1.0e-3
+        CuriosityScalingFactor: 0.01
         Epsilon: 0.3
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01

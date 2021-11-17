@@ -9,6 +9,7 @@ from ..training_algorithms.agent_blueprint import Learner
 import itertools
 from tensorflow.keras import Input, Model
 from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
+import time
 
 
 class RandomNetworkDistillation(ExplorationAlgorithm):
@@ -22,116 +23,86 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
     ParameterSpace = {
         "FeatureSpaceSize": int,
         "CuriosityScalingFactor": float,
-        "ForwardLossWeight": float,
         "LearningRate": float,
     }
 
-    def __init__(self, action_shape, observation_shapes, action_space, parameters):
+    def __init__(self, action_shape, observation_shapes, action_space, exploration_parameters, training_parameters):
         self.action_space = action_space
         self.action_shape = action_shape
         self.observation_shapes = observation_shapes
+        self.recurrent = training_parameters["Recurrent"]
+        self.sequence_length = training_parameters["SequenceLength"]
 
-        self.feature_space_size = parameters["FeatureSpaceSize"]
-        self.reward_scaling_factor = parameters["CuriosityScalingFactor"]*parameters["ExplorationDegree"]
-        self.forward_loss_weight = parameters["ForwardLossWeight"]
+        self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
+        self.reward_scaling_factor = exploration_parameters["CuriosityScalingFactor"] * \
+                                     exploration_parameters["ExplorationDegree"]
         self.mse = MeanSquaredError()
-        self.optimizer = Adam(parameters["LearningRate"])
+        self.optimizer = Adam(exploration_parameters["LearningRate"])
 
-        self.inverse_loss = 0
-        self.forward_loss = 0
         self.max_intrinsic_reward = 0
         self.loss = 0
 
-        self.forward_model, self.inverse_model, self.feature_extractor = self.build_network()
+        self.prediction_model, self.target_model = self.build_network()
 
     def build_network(self):
-        network_parameters = [{}, {}, {}]
-        # Feature Extractor: Extracts relevant state features
-        if len(self.observation_shapes) == 1:
-            feature_input = Input(self.observation_shapes[0])
-            x = feature_input
-        else:
-            feature_input = []
-            for obs_shape in self.observation_shapes:
-                feature_input.append(Input(obs_shape))
-            x = Concatenate()(feature_input)
-        x = Dense(self.feature_space_size*4, activation="elu")(x)
-        x = Dense(self.feature_space_size*2, activation="elu")(x)
-        x = Dense(self.feature_space_size, activation="elu")(x)
-        feature_extractor = Model(feature_input, x, name="ICM Feature Extractor")
+        # Prediction Model: tries to mimic the target model
+        feature_input = Input((self.sequence_length, *self.observation_shapes[0]))
+        x = Dense(64, activation="elu")(feature_input)
+        x = Dense(64, activation="elu")(x)
+        x = Dense(self.feature_space_size, activation="linear")(x)
+        prediction_model = Model(feature_input, x, name="RND Prediction Model")
 
-        # Inverse Model: Predicts the action given features for the current and the next state
-        state_feature_input = Input(self.feature_space_size)
-        next_state_feature_input = Input(self.feature_space_size)
-        x = Concatenate(axis=-1)([state_feature_input, next_state_feature_input])
-        x = Dense(32, 'elu')(x)
-        x = Dense(self.action_shape, 'tanh')(x)
-        inverse_model = Model([state_feature_input, next_state_feature_input], x, name="ICM Inverse Model")
+        # Target Model: Randomly Initialized
+        feature_input = Input((self.sequence_length, *self.observation_shapes[0]))
+        x = Dense(64, activation="elu")(feature_input)
+        x = Dense(64, activation="elu")(x)
+        x = Dense(self.feature_space_size, activation="linear")(x)
+        target_model = Model(feature_input, x, name="RND Target Model")
 
-        # Forward Model: Predicts the next state's features given the current state features and the action
-        state_feature_input = Input(self.feature_space_size)
-        action_input = Input(self.action_shape)
-        x = Concatenate(axis=-1)([state_feature_input, action_input])
-        x = Dense(32, 'elu')(x)
-        x = Dense(self.feature_space_size, 'elu')(x)
-        forward_model = Model([state_feature_input, action_input], x, name="ICM Forward Model")
-
-        # Summaries
-        forward_model.summary()
-        inverse_model.summary()
-        feature_extractor.summary()
-
-        return forward_model, inverse_model, feature_extractor
+        return prediction_model, target_model
 
     def learning_step(self, replay_batch):
-        state_batch, action_batch, \
-         reward_batch, next_state_batch, \
-         done_batch = Learner.get_training_batch_from_replay_batch(replay_batch,
-                                                                   self.observation_shapes,
-                                                                   self.action_shape)
+        if self.recurrent:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
+                                                                         self.action_shape, self.sequence_length)
+
+        else:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, self.action_shape)
 
         # Calculate Loss
         with tf.GradientTape() as tape:
-            # Feature Extraction
-            state_features = self.feature_extractor(state_batch)
-            next_state_features = self.feature_extractor(next_state_batch)
+            # Feature Prediction
+            target_features = self.target_model(state_batch)
+            prediction_features = self.prediction_model(state_batch)
+            # Loss Calculation
+            self.loss = self.mse(target_features, prediction_features)
 
-            # Forward Loss
-            next_state_prediction = self.forward_model([state_features, action_batch])
-            self.forward_loss = self.mse(next_state_features, next_state_prediction)
-
-            # Inverse Loss
-            action_prediction = self.inverse_model([state_features, next_state_features])
-            self.inverse_loss = self.mse(action_batch, action_prediction)
-
-            # Combined Loss
-            self.loss = self.forward_loss*self.forward_loss_weight + self.inverse_loss*(1-self.forward_loss_weight)
-
-        # Calculate Gradients
-        grad = tape.gradient(self.loss, [self.forward_model.trainable_weights,
-                                         self.inverse_model.trainable_weights,
-                                         self.feature_extractor.trainable_weights])
-        # Apply Gradients to all models
-        self.optimizer.apply_gradients(zip(grad[0], self.forward_model.trainable_weights))
-        self.optimizer.apply_gradients(zip(grad[1], self.inverse_model.trainable_weights))
-        self.optimizer.apply_gradients(zip(grad[2], self.feature_extractor.trainable_weights))
+        # Calculate Gradients and apply the weight updates
+        grad = tape.gradient(self.loss, self.prediction_model.trainable_weights)
+        self.optimizer.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
         return
 
     def get_intrinsic_reward(self, replay_batch):
-        state_batch, action_batch, \
-            reward_batch, next_state_batch, \
-            done_batch = Learner.get_training_batch_from_replay_batch(replay_batch,
-                                                                      self.observation_shapes,
-                                                                      self.action_shape)
+        if self.recurrent:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
+                                                                         self.action_shape, self.sequence_length)
 
-        # Extract features from the current and next state
-        state_features = self.feature_extractor(state_batch)
-        next_state_features = self.feature_extractor(next_state_batch)
-        # Predict next state features given current features and action
-        next_state_prediction = self.forward_model([state_features, action_batch])
+        else:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, self.action_shape)
+
+        print(state_batch[0].shape, self.target_model.input_shape, len(state_batch))
+        # Predict features with the target and prediction model
+        target_features = self.target_model(state_batch)
+        prediction_features = self.prediction_model(state_batch)
+        print("TARGET FEATURES", target_features.shape)
+        time.sleep(10)
         # Calculate the intrinsic reward by MSE between prediction and actual next state feature
         intrinsic_reward = tf.math.reduce_sum(
-            tf.math.square(next_state_features - next_state_prediction), axis=-1).numpy()
+            tf.math.abs(target_features - prediction_features), axis=-1).numpy()
         # Scale the reward
         intrinsic_reward *= self.reward_scaling_factor
         self.max_intrinsic_reward = np.max(intrinsic_reward)
@@ -149,9 +120,8 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
     def act(self, decision_steps):
         return
 
-    def get_logs(self):
-        return {"Exploration/InverseLoss": self.inverse_loss,
-                "Exploration/ForwardLoss": self.forward_loss,
+    def get_logs(self, idx):
+        return {"Exploration/RNDLoss": self.loss,
                 "Exploration/MaxIntrinsicReward": self.max_intrinsic_reward}
 
     def prevent_checkpoint(self):
