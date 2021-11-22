@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+#from _typeshed import Self
 import numpy as np
 #from mlagents_envs.environment import UnityEnvironment, ActionTuple
 #from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
@@ -7,6 +8,7 @@ import sys
 sys.path.append("/home/ai-admin/proj-modular-reinforcement-learning/modules/interfaces/")
 from environments.carlaEnvironment import CarlaEnvironment
 import cv2
+import time
 
 
 class Steps:
@@ -33,7 +35,9 @@ class CarlaInterface:
 
     @staticmethod
     def connect():
-        return CarlaEnvironment()
+        env = CarlaEnvironment()
+        CarlaInterface.reset(env)
+        return env
 
     @staticmethod
     def get_behavior_name(env: CarlaEnvironment):
@@ -82,12 +86,14 @@ class CarlaInterface:
         return decision_steps, terminal_steps
 
     @staticmethod
-    def reset(env: CarlaEnvironment, scenario):
-        CarlaInterface.observation = env.reset(scenario)
-        CarlaInterface.reward, CarlaInterface.done = 0, False
+    def reset(env: CarlaEnvironment):
+        CarlaInterface.observation = env.reset()
+        CarlaInterface.reward = 0
+        CarlaInterface.done = False
 
     @staticmethod
     def step_action(env: CarlaEnvironment, behavior_name: str, actions):
+
         if CarlaInterface.action_space == "DISCRETE":
             CarlaInterface.observation, CarlaInterface.reward, \
                 CarlaInterface.done, CarlaInterface.info = env.step(actions[0][0])
@@ -104,7 +110,7 @@ if __name__ == "__main__":
     env = CarlaInterface.connect()
 
     # define the different scenarios
-    scenarios = ["scenario_1.json", "scenario_2.json", "scenario_3.json"]
+    scenarios = ["scenario_2.json", "scenario_2.json", "scenario_3.json"]
     
     # outer loop to run different episodes
     for scenario in scenarios:
@@ -113,7 +119,7 @@ if __name__ == "__main__":
         CarlaInterface.reset(env, "/home/ai-admin/proj-modular-reinforcement-learning/" + scenario)
 
         # run the loop
-        action = None
+        action = 0.2
         while True:
 
             # take a step in simulation

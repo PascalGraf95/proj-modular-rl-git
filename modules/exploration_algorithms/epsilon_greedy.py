@@ -1,5 +1,6 @@
 import numpy as np
 from .exploration_algorithm_blueprint import ExplorationAlgorithm
+import time
 
 
 class EpsilonGreedy(ExplorationAlgorithm):

@@ -1,8 +1,8 @@
 {
     "init_speed_target": 10,
-    "init_dx_target": 10,
-    "init_speed_ego": 10,
-    "init_speed_set": 10,
+    "init_dx_target": 15,
+    "init_speed_ego": 0,
+    "init_speed_set": 30,
     "init_speed_restriction": 100,
     "target_behaviour_sequence":
     [

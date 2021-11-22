@@ -25,6 +25,7 @@ class CarlaEnvironment:
     ACTION_TYPE_FORM = "CONTINUOUS"
     action_space = np.array([1])
     observation_space = np.array([1, 2, 3, 4, 5])
+    DELTA_T = 0.100 #s
 
     # assign image
     img_front_camera = None
@@ -45,6 +46,9 @@ class CarlaEnvironment:
         # set up a sctor list
         self.actor_list = []
 
+        # check the episode start time
+        self.episode_start = time.time()
+
         # Choose a vehicle blueprint at random
         self.vehicle = random.choice(self.blueprint_library.filter('model3'))
         self.target =  random.choice(self.blueprint_library.filter('model3'))
@@ -52,15 +56,15 @@ class CarlaEnvironment:
     # ---------------------------------------------------------------------------------------
     # RESET METHOD
     # ---------------------------------------------------------------------------------------
-    def reset(self, scenario_name):
+    def reset(self):
         
         # destroy all actors
         for actor in self.actor_list:
             actor.destroy()
         self.actor_list = []
 
-        # read a scenario
-        self.scenario_name = scenario_name
+        # Load a scenario definition
+        self.scenario_name = "scenario_1.json"
         self.scenario_definition = self.read_scenario(self.scenario_name)
 
         # set transforms and vehicle
@@ -87,7 +91,7 @@ class CarlaEnvironment:
         self.sensor.listen(lambda data: self.process_img(data))
 
         # Wait for a certain time until the simulation is ready
-        time.sleep(4)
+        time.sleep(2)
 
         # Wait until cam is running
         while self.img_front_camera is None:
@@ -99,9 +103,13 @@ class CarlaEnvironment:
 
         # check the episode start time
         self.episode_start = time.time()
+        self.lastrun = time.time()
 
-        # Return the front camera image
-        return self.img_front_camera
+        # Return the observation
+        dx_rel = self.scenario_definition['init_dx_target'] - self.DISTANCE_BUMPER_COMP
+        vx_rel = (self.scenario_definition['init_speed_ego'] - self.scenario_definition['init_speed_ego']) * self.MPS_TO_KPH
+        return np.array([self.scenario_definition['init_speed_set'], self.scenario_definition['init_speed_restriction'],\
+             self.scenario_definition['init_speed_ego'] * self.MPS_TO_KPH, dx_rel, vx_rel])
 
     # ---------------------------------------------------------------------------------------
     # PROCESS IMAGES
@@ -166,47 +174,27 @@ class CarlaEnvironment:
         done = False
 
         # *****************************************
-        # 1. APPLY SCENARIO TO ENVIRONMENT
+        # 1. APPLY ACTION TO AGENT
         # *****************************************
-        
-        # 1.1 Manipulate target speed according to scenario
-        # ===================================================
-        # loop over all sequences in the target behaviour 
-        for sequence in self.scenario_definition['target_behaviour_sequence']:
-            
-            # check which sequence is active
-            if (time.time() - self.episode_start) < sequence["end_time"] and \
-                (time.time() - self.episode_start) > sequence["start_time"]:
-
-                # Print the current ID
-                #print(round(time.time() - self.episode_start, 3), "in sequence ID: ", sequence["ID"])
-
-                # A active sequemce has been found
-                sequence_active = True
-                target_speed = self.determine_target_speed_ramp(sequence, time.time() - self.episode_start)
-                
-                # apply the control
-                self.actor_target.set_target_velocity(carla.Vector3D(target_speed * self.KPH_TO_MPS, 0 , 0))
-
-
-        # 1.1 Manipulate target speed according to scenario
-        # ===================================================
-        # loop over all sequences in the target behaviour 
-        for sequence in self.scenario_definition['speed_restriction_sequence']:
-
-            # check which sequence is active
-            if (time.time() - self.episode_start) > sequence["start_time"]:
-
-                # Set the speed restriction
-                self.speed_restriction = sequence["speed_restriction"]
+        if action < 0:
+            self.actor_vehicle.apply_control(carla.VehicleControl(throttle=0.0, brake=float(abs(action)), steer=0))
+            print("braking")
+        elif action > 0:
+            self.actor_vehicle.apply_control(carla.VehicleControl(throttle=float(abs(action)), brake=0.0, steer=0))
+            print("accelerating")
+        elif action == 0:
+            print("nothing")
+            # Do nothing
+            #self.actor_vehicle.apply_control(carla.VehicleControl(throttle=1.0, steer=0))
 
 
         # *****************************************
-        # 2. APPLY ACTION TO AGENT
+        # 2. SIMULATE AGENT
         # *****************************************
-        #self.actor_vehicle.set_target_velocity(carla.Vector3D(30 * self.KPH_TO_MPS, 0 , 0))
-
-
+        runtime = time.time()-self.lastrun
+        if runtime < self.DELTA_T:
+            time.sleep(self.DELTA_T - runtime)
+        self.lastrun = time.time()
 
         # *****************************************
         # 3. CALCULATE REWARD
@@ -228,6 +216,8 @@ class CarlaEnvironment:
         x_vehicle = self.actor_vehicle.get_location().x
         x_target = self.actor_target.get_location().x
         ego_speed = self.actor_vehicle.get_velocity().x
+        dx_rel = x_target - x_vehicle - self.DISTANCE_BUMPER_COMP
+        vx_rel = self.actor_target.get_velocity().x * self.MPS_TO_KPH - self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH
         if ego_speed > 0.1:
             headway = (x_target - x_vehicle - self.DISTANCE_BUMPER_COMP) / ego_speed
         else:
@@ -236,14 +226,15 @@ class CarlaEnvironment:
         # apply suggested reward function
         if headway < 0.5:
             reward_headway = -100
+            #done = True
         elif headway < 1.75:
-            reward_headway = -5
+            reward_headway = -25
         elif headway < 1.9:
-            reward_headway = 5
+            reward_headway = 10
         elif headway < 2.1:
             reward_headway = 50
         elif headway < 2.25:
-            reward_headway = 5
+            reward_headway = 10
         elif headway < 10:
             reward_headway = 1
         elif headway > 10:
@@ -261,7 +252,18 @@ class CarlaEnvironment:
         elif abs(self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH - self.speed_set) < 3:
             reward_set_speed = 10
         else:
-            reward_set_speed = -50
+            #Check if the tendency is correct
+            if self.actor_vehicle.get_velocity().x < self.speed_set:
+                if self.actor_vehicle.get_acceleration().x > 0:
+                    reward_set_speed = -25
+                else:
+                    reward_set_speed = -50
+
+            elif self.actor_vehicle.get_velocity().x > self.speed_set:
+                if self.actor_vehicle.get_acceleration().x < 0:
+                    reward_set_speed = -25
+                else:
+                    reward_set_speed = -50
 
 
         # 3.4 Aggregate Rewards
@@ -278,22 +280,38 @@ class CarlaEnvironment:
             if reward_set_speed > 0 and headway > 1.9:
                 reward_motion = reward_set_speed
 
+            # set speed is overshoot
+            elif self.actor_vehicle.get_velocity().x > self.speed_set:
+                reward_motion = reward_set_speed
+
+            # Set speed is not overshot
+            # Target is close
+            # Use the headway reward
             else:
                 reward_motion = reward_headway
 
         # aggregate the final reward
         reward = reward_speed_restriction + reward_motion
 
+        # normalize reward
+        reward /= 50
+
         # *****************************************
-        # 4. CHECK MAX TIMER
+        # 4. CHECK ABORTIONS
         # *****************************************
         if self.episode_start + self.SECONDS_PER_EPISODE < time.time():
+            done = True
+
+        if dx_rel < 1:
             done = True
 
         # *****************************************
         # 5. DEBUG
         # *****************************************
         img = self.img_front_camera
+        # Show the camera
+        cv2.imshow("", img)
+        cv2.waitKey(1)
         #img = cv2.putText(self.img_front_camera, 'OpenCV', (10, 5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 1, cv2.LINE_AA)
 
         print("=================================================================")
@@ -306,5 +324,49 @@ class CarlaEnvironment:
         print("REWARD                 : ", reward)
 
 
+        # *****************************************
+        # 6. APPLY SCENARIO TO ENVIRONMENT
+        # *****************************************
+        
+        # 6.1 Manipulate target speed according to scenario
+        # ===================================================
+        # loop over all sequences in the target behaviour 
+        for sequence in self.scenario_definition['target_behaviour_sequence']:
+            
+            # check which sequence is active
+            if (time.time() - self.episode_start) < sequence["end_time"] and \
+                (time.time() - self.episode_start) > sequence["start_time"]:
+
+                # Print the current ID
+                #print(round(time.time() - self.episode_start, 3), "in sequence ID: ", sequence["ID"])
+
+                # A active sequemce has been found
+                sequence_active = True
+                target_speed = self.determine_target_speed_ramp(sequence, time.time() - self.episode_start)
+                
+                # apply the control
+                self.actor_target.set_target_velocity(carla.Vector3D(target_speed * self.KPH_TO_MPS, 0 , 0))
+
+
+        # 6.2 Manipulate target speed according to scenario
+        # ===================================================
+        # loop over all sequences in the target behaviour 
+        for sequence in self.scenario_definition['speed_restriction_sequence']:
+
+            # check which sequence is active
+            if (time.time() - self.episode_start) > sequence["start_time"]:
+
+                # Set the speed restriction
+                self.speed_restriction = sequence["speed_restriction"]
+
+        # *****************************************
+        # 7. CALCULATE THE OBSERVATIONS
+        # *****************************************
+        x_vehicle = self.actor_vehicle.get_location().x
+        x_target = self.actor_target.get_location().x
+        ego_speed = self.actor_vehicle.get_velocity().x
+        dx_rel = x_target - x_vehicle - self.DISTANCE_BUMPER_COMP
+        vx_rel = self.actor_target.get_velocity().x * self.MPS_TO_KPH - self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH
+
         # return the observation, reward, done 
-        return img, reward, done, None
+        return np.array([self.speed_set, self.speed_restriction, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, dx_rel, vx_rel]), reward, done, None

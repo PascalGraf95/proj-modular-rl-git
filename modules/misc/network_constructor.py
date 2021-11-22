@@ -76,6 +76,7 @@ def construct_network(network_parameters):
     # Create the final model and plot it.
     model = Model(inputs=network_input, outputs=network_output, name=network_parameters.get("NetworkType"))
     model.summary()
+    
     try:
         plot_model(model, "plots/"+network_parameters.get("NetworkType") + ".png", show_shapes=True)
     except ImportError:

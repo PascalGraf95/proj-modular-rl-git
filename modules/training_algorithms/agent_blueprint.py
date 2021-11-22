@@ -8,6 +8,7 @@ from ..sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
 from ..curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
 import ray
+import time
 
 
 class Actor:
@@ -93,6 +94,7 @@ class Actor:
 
     def connect_to_carla_environment(self):
         self.environment = AgentInterface.connect()
+        self.curriculum_side_channel = CurriculumSideChannelTaskInfo()
 
     def set_unity_parameters(self, **kwargs):
         self.engine_configuration_channel.set_configuration_parameters(**kwargs)
@@ -233,8 +235,10 @@ class Actor:
                                                                                               terminal_steps)
         # Choose the next action either by exploring or exploiting
         actions = self.exploration_algorithm.act(decision_steps)
+        print("Action_exploration", actions)
         if actions is None:
             actions = self.act(decision_steps.obs, mode=self.mode)
+            print("Action_final", actions)
 
         # Append steps and actions to the local replay buffer
         self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,

@@ -33,7 +33,7 @@ def main():
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
     mode = "training"
-    model_path = None # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210911_193402_SAC_Robot_PER_EpislonGreedy_10ActorsAsync"
+    model_path = "" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211117_001503_RL_ACC_TEST_v1/old/first/" # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\210911_193402_SAC_Robot_PER_EpislonGreedy_10ActorsAsync"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
@@ -48,11 +48,11 @@ def main():
     trainer.select_training_algorithm('SAC')
 
     # Choose from None, "LinearCurriculum", "RememberingCurriculum" and "CrossFadeCurriculum"
-    curriculum_strategy = "LinearCurriculum"
+    curriculum_strategy = "None"
     trainer.select_curriculum_strategy(curriculum_strategy)
 
     # Choose from "None" and "SemanticSegmentation"
-    preprocessing_algorithm = 'SemanticSegmentation'
+    preprocessing_algorithm = "None"
     preprocessing_path = r"C:\PGraf\Arbeit\RL\SemanticSegmentation\vae\models\210809_101443_VAE_encoder_235" # Enter the path for the preprocessing model
 
     trainer.save_all_models = True  # Determines if all models or only the actor will be saved during training

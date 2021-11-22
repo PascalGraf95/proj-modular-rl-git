@@ -176,13 +176,18 @@ class Trainer:
         else:
             [actor.connect_to_gym_environment.remote() for actor in self.actors]
 
+        
         # For each actor instantiate the necessary modules
         for i, actor in enumerate(self.actors):
             actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree[i])
-            if mode == "training":
-                actor.set_unity_parameters.remote(time_scale=1000, width=10, height=10, quality_level=1)
-            else:
-                actor.set_unity_parameters.remote(time_scale=1, width=500, height=500)
+            
+            ## EDIT: DONT DO THAT FOR CARLA
+            if interface == "MLAgentsV18":
+            
+                if mode == "training":
+                    actor.set_unity_parameters.remote(time_scale=1000, width=10, height=10, quality_level=1)
+                else:
+                    actor.set_unity_parameters.remote(time_scale=1, width=500, height=500)
 
         # Get the environment configuration from the first actor's env
         environment_configuration = self.actors[0].get_environment_configuration.remote()
