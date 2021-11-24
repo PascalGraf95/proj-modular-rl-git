@@ -76,7 +76,7 @@ class CarlaEnvironment:
 
         # Load a scenario definition
         self.scenario_name = random.choice(self.scenario_list)
-        #self.scenario_name = "11_1.json"
+        self.scenario_name = "41_1.json"
         self.scenario_definition = self.read_scenario(self.SCENARIO_PATH + self.scenario_name)
 
         # set transforms and vehicle
@@ -118,7 +118,7 @@ class CarlaEnvironment:
         # apply initial speeds
         self.actor_target.set_target_velocity(carla.Vector3D(self.scenario_definition['init_speed_target'] * self.KPH_TO_MPS, 0 , 0))
         self.actor_vehicle.set_target_velocity(carla.Vector3D(self.scenario_definition['init_speed_ego'] * self.KPH_TO_MPS, 0 , 0))
-        self.target_speed = self.scenario_definition['init_speed_ego']
+        self.target_speed = self.scenario_definition['init_speed_target']
 
         # check the episode start time
         self.episode_start = time.time()
