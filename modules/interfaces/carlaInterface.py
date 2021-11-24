@@ -108,18 +108,15 @@ if __name__ == "__main__":
 
     # Create the environment
     env = CarlaInterface.connect()
-
-    # define the different scenarios
-    scenarios = ["scenario_2.json", "scenario_2.json", "scenario_3.json"]
     
     # outer loop to run different episodes
-    for scenario in scenarios:
+    while True:
         
         # reset the environment
-        CarlaInterface.reset(env, "/home/ai-admin/proj-modular-reinforcement-learning/" + scenario)
+        CarlaInterface.reset(env)
 
         # run the loop
-        action = 0.2
+        action = 0.0
         while True:
 
             # take a step in simulation
@@ -127,7 +124,3 @@ if __name__ == "__main__":
 
             # check if the episode is over
             if done: break
-
-            # Show the camera
-            cv2.imshow("", observation)
-            cv2.waitKey(1)

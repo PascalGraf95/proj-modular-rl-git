@@ -235,10 +235,11 @@ class Actor:
                                                                                               terminal_steps)
         # Choose the next action either by exploring or exploiting
         actions = self.exploration_algorithm.act(decision_steps)
-        print("Action_exploration", actions)
+        print("Action exploration: ", actions)
         if actions is None:
             actions = self.act(decision_steps.obs, mode=self.mode)
-            print("Action_final", actions)
+        
+        print("Action final: ", actions)
 
         # Append steps and actions to the local replay buffer
         self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,

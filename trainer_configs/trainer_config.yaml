@@ -152,7 +152,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingID: RL_ACC_TEST_v2_normalized_reward
+    TrainingID: RL_ACC_TEST_v3_normalized_reward_control_speed_full_scenarios
     TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3
