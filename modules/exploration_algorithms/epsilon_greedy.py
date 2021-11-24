@@ -19,7 +19,7 @@ class EpsilonGreedy(ExplorationAlgorithm):
         'StepDown': int
     }
 
-    def __init__(self, action_shape, state_shape, action_space, parameters):
+    def __init__(self, action_shape, state_shape, action_space, parameters, trainer_configuration):
         self.action_shape = action_shape
         self.action_space = action_space
         self.epsilon = parameters["Epsilon"]*parameters["ExplorationDegree"]
@@ -33,7 +33,7 @@ class EpsilonGreedy(ExplorationAlgorithm):
         config_dict = EpsilonGreedy.__dict__
         return ExplorationAlgorithm.get_config(config_dict)
 
-    def act(self, decision_steps):
+    def act(self, decision_steps, index=None):
         if len(decision_steps.agent_id):
             if np.random.rand() <= self.epsilon:
                 if self.action_space == "DISCRETE":

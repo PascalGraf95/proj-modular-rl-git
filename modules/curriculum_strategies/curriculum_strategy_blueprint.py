@@ -52,6 +52,7 @@ class CurriculumStrategy:
 class NoCurriculumStrategy(CurriculumStrategy):
     def __init__(self):
         super().__init__()
+        self.unity_responded = True
 
 
 class CurriculumCommunicator:

@@ -79,6 +79,7 @@ class Actor:
         # Prediction Parameters
         self.gamma = None
         self.n_steps = None
+        self.index = None
 
         # Mode
         self.mode = mode
@@ -291,7 +292,7 @@ class Actor:
         # Register terminal agents, so the hidden LSTM state is reset
         self.register_terminal_agents(terminal_steps.agent_id)
         # Choose the next action either by exploring or exploiting
-        actions = self.exploration_algorithm.act(decision_steps)
+        actions = self.exploration_algorithm.act(decision_steps, self.index)
         if actions is None:
             actions = self.act(decision_steps.obs, agent_ids=decision_steps.agent_id, mode=self.mode)
 
@@ -340,7 +341,9 @@ class Actor:
     def get_intrinsic_rewards(self, samples):
         if not samples:
             return samples
-        return self.exploration_algorithm.get_intrinsic_reward(samples)
+        with tf.device(self.device):
+            samples = self.exploration_algorithm.get_intrinsic_reward(samples)
+        return samples
 
     @ray.method(num_returns=2)
     def get_new_samples(self):
@@ -358,8 +361,9 @@ class Actor:
             self.target_task_level = target_task_level
             self.curriculum_side_channel.unity_responded = False
 
-    def send_target_task_level(self):
-        self.curriculum_communicator.set_task_number(self.target_task_level)
+    def send_target_task_level(self, unity_responded_global):
+        if not unity_responded_global:
+            self.curriculum_communicator.set_task_number(self.target_task_level)
 
     def get_sample_errors(self, samples):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")

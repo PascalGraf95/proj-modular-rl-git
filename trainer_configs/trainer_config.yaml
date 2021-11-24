@@ -126,9 +126,9 @@ sac:
     BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
-        FeatureSpaceSize: 5
+        FeatureSpaceSize: 10
         LearningRate: 1.0e-3
-        CuriosityScalingFactor: 0.01
+        CuriosityScalingFactor: 0.05
         Epsilon: 0.3
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
@@ -141,27 +141,27 @@ sac:
     AdaptiveExploration: false
     NetworkUpdateFrequency: 20
     NetworkParameters:
-    -   Filters: 32
-        Units: 32
+    -   Filters: 64
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 32
-        Units: 32
+    -   Filters: 64
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 32
-        Units: 32
+    -   Filters: 64
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: true
     PriorityAlpha: 0.8
     RewardNormalization: false
     ReplayCapacity: 200000
-    ReplayMinSize: 100
+    ReplayMinSize: 50
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_Robot_Recurrent
+    TrainingID: SAC_Crawler
     TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3

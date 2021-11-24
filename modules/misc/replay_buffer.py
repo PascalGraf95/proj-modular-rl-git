@@ -141,6 +141,7 @@ class PrioritizedBuffer:
             priority = self._getPriority(error)
             self.tree.add(priority, sample)
         self.new_training_samples += len(samples)
+        # print("LENGTH", self.__len__())
 
     @ray.method(num_returns=2)
     def sample(self, trainer_configuration, batch_size: int):

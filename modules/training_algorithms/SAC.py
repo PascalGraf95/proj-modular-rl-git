@@ -105,6 +105,7 @@ class SACActor(Actor):
         self.steps_taken_since_network_update = 0
 
     def build_network(self, network_parameters, environment_parameters, idx):
+        self.index = idx
         # Actor
         network_parameters[0]['Input'] = environment_parameters.get('ObservationShapes')
         network_parameters[0]['Output'] = [environment_parameters.get('ActionShape'),
@@ -145,7 +146,7 @@ class SACActor(Actor):
 
         # Build
         with tf.device(self.device):
-            self.actor_network = construct_network(network_parameters[0])
+            self.actor_network = construct_network(network_parameters[0], plot_network_model=True)
             self.critic_network = construct_network(network_parameters[1])
             if self.recurrent:
                 self.actor_prediction_network = construct_network(network_parameters[2])

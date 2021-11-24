@@ -46,7 +46,8 @@ def main():
 
     # Choose from "None" and "SemanticSegmentation"
     preprocessing_algorithm = 'None'
-    preprocessing_path = r"C:\PGraf\Arbeit\RL\SemanticSegmentation\vae\models\210809_101443_VAE_encoder_235" # Enter the path for the preprocessing model
+     # Enter the path for the preprocessing model if needed
+    preprocessing_path = r"C:\PGraf\Arbeit\RL\SemanticSegmentation\vae\models\210809_101443_VAE_encoder_235"
 
     trainer.save_all_models = True  # Determines if all models or only the actor will be saved during training
     trainer.remove_old_checkpoints = False  # Determines if old model checkpoints will be overwritten

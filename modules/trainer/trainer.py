@@ -273,6 +273,7 @@ class Trainer:
         """
         # region Initialization
         # Get the task properties from one of the environments
+        unity_responded_global = False
         unity_responded, task_properties = self.actors[0].get_task_properties.remote(
             self.global_curriculum_strategy.has_unity_responded.remote())
         self.global_curriculum_strategy.update_task_properties.remote(unity_responded, task_properties)
@@ -285,7 +286,6 @@ class Trainer:
         while True:
             # Each actor plays one step in the environment
             actors_ready = [actor.play_one_step.remote() for actor in self.actors]
-
             # region Curriculum Info Acquisition
             # If the task level changed try to get new task information from the environment
             for actor in self.actors:
@@ -294,25 +294,24 @@ class Trainer:
                 # If the retrieved information match the target level information update the global curriculum
                 self.global_curriculum_strategy.update_task_properties.remote(unity_responded, task_properties)
             # endregion
-            
             for idx, actor in enumerate(self.actors):
                 # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
                 # In case of an Prioritized Experience Replay let the actor calculate an initial priority.
                 # Also make sure the environment runs the desired curriculum level
-                actor.send_target_task_level.remote()
+                actor.send_target_task_level.remote(unity_responded_global)
                 samples, indices = actor.get_new_samples.remote()
-                # Calculate and add intrinsic rewards (if supported by the respective exploration algorithm)
-                samples = actor.get_intrinsic_rewards.remote(samples)
                 if self.trainer_configuration["PrioritizedReplay"]:
                     sample_errors = actor.get_sample_errors.remote(samples)
+                    ray.wait([sample_errors])
                     self.global_buffer.append_list.remote(samples, sample_errors)
                 else:
                     self.global_buffer.append_list.remote(samples)
                 self.global_logger.append.remote(*actor.get_new_stats.remote(), actor_idx=idx)
-
             # Sample a new batch of transitions from the global replay buffer
             samples, indices = self.global_buffer.sample.remote(self.trainer_configuration,
                                                                 self.trainer_configuration.get("BatchSize"))
+            # Add intrinsic rewards to the batch of transitions
+            samples = self.actors[0].get_intrinsic_rewards.remote(samples)
 
             # Train the learner with the batch and observer the resulting metrics
             training_metrics, sample_errors, training_step = self.learner.learn.remote(samples)
@@ -320,8 +319,7 @@ class Trainer:
             # Update the actor networks if requested
             [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
                 actor.is_network_update_requested.remote()))
-             for actor in self.actors]
-
+                for actor in self.actors]
             # Update the prioritized experience replay buffer with the td-errors
             self.global_buffer.update.remote(indices, sample_errors)
             # Train the actors exploration algorithm with the same batch
@@ -348,7 +346,6 @@ class Trainer:
             for idx, actor in enumerate(self.actors):
                 self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(idx), training_step,
                                                    self.logging_frequency)
-
             # Wait for the actors to finish their environment steps and learner to finish the learning step
             ray.wait(actors_ready)
             ray.wait([training_metrics])
