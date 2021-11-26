@@ -87,9 +87,6 @@ def read_json(path):
 # main loop
 if __name__ == "__main__":
 
-    jsonMeasurement = {"scenarioname": "SC1", "timestamps": [1,2,3,4,5], "setspeed": [30, 30, 30, 30, 30],\
-         "speedrestriction": [50, 50, 50, 50, 50], "targetspeed": [10, 15, 20, 25, 30], "egospeed": [15, 20, 25, 30, 35], "headway": [5, 3, 2.5, 2, 2.3]}
-
-    #save_measurement(jsonMeasurement, "test.json")
-    data = read_json("scenario_1.json.json")
+    jsonMeasurement = "42_1.json_measurement.json"
+    data = read_json(jsonMeasurement)
     PlotMeasurement(data)

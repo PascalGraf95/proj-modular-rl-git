@@ -33,7 +33,7 @@ def main():
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
     mode = "training"
-    model_path = "" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211122_011414_RL_ACC_TEST_v2_normalized_reward/best/" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211117_001503_RL_ACC_TEST_v1/old/first/" 
+    model_path = "" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211124_152201_RL_ACC_TEST_v4_normalized_reward_control_speed_full_scenarios/best/" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211117_001503_RL_ACC_TEST_v1/old/first/" 
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()

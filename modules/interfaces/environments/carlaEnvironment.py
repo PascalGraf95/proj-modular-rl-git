@@ -16,7 +16,7 @@ class CarlaEnvironment:
     
     # assign static variables
     SHOW_CAM = False
-    MEASUREMENT_ACTIVE = False
+    MEASUREMENT_ACTIVE = True
     IM_WIDTH = 640
     IM_HEIGHT = 480
     MPS_TO_KPH = 3.6
@@ -76,7 +76,7 @@ class CarlaEnvironment:
 
         # Load a scenario definition
         self.scenario_name = random.choice(self.scenario_list)
-        self.scenario_name = "41_1.json"
+        self.scenario_name = "42_1.json"
         self.scenario_definition = self.read_scenario(self.SCENARIO_PATH + self.scenario_name)
 
         # set transforms and vehicle
@@ -267,6 +267,11 @@ class CarlaEnvironment:
 
         # 4.1 Reward based on the current headway
         # ==========================================
+
+        """
+        # V1 - V4 Reward
+
+        # Determine Headway
         if v_vehicle > 0.1:
             headway = (x_target - x_vehicle - self.DISTANCE_BUMPER_COMP) / v_vehicle
         else:
@@ -288,12 +293,44 @@ class CarlaEnvironment:
             reward_headway = 1
         elif headway > 10:
             reward_headway = 0.5
+        """
+
+        # V1 - V5 Reward
+
+        # Definitions
+        max_headway_to_be_rewarded = 5
+
+        # Determine Headway
+        if v_vehicle > 0.1:
+            headway = (x_target - x_vehicle - self.DISTANCE_BUMPER_COMP) / v_vehicle
+        else:
+            headway = 99
+
+        # apply suggested reward function
+        if headway < 0.5:
+            reward_headway = -100
+            #done = True
+        elif headway < 1.75:
+            reward_headway = -25
+        elif headway < 1.9:
+            reward_headway = 10
+        elif headway < 2.1:
+            reward_headway = 50
+        elif headway < 2.25:
+            reward_headway = 10
+        elif headway < max_headway_to_be_rewarded:
+            reward_headway = 1
+        elif headway > max_headway_to_be_rewarded:
+            reward_headway = 0.5
 
         # 4.2 Reward based on the current control speed
         # ==========================================
         # Determine the control speed
         control_speed = min(self.speed_restriction, self.speed_set)
 
+        """ 
+        # V3 REWARD
+        
         # Check if the ego speed is in range
         if abs(v_vehicle * self.MPS_TO_KPH - control_speed) < 1:
             reward_speed = 50
@@ -315,13 +352,96 @@ class CarlaEnvironment:
                 if a_vehicle < 0:
                     reward_speed = -25
                 else:
+                    reward_speed = -50 
+        """
+
+        """"
+        # V4 REWARD
+        # Check if the ego speed is in range
+        if abs(v_vehicle * self.MPS_TO_KPH - control_speed) < 1:
+            reward_speed = 50
+
+        elif abs(v_vehicle * self.MPS_TO_KPH - control_speed) < 2:
+            reward_speed = 25
+
+        elif abs(v_vehicle * self.MPS_TO_KPH - control_speed) < 3:
+            reward_speed = 10
+        else:
+            #Check if the tendency is correct
+            if v_vehicle * self.MPS_TO_KPH < control_speed:
+                if a_vehicle > 1.0:
+                    reward_speed = -25
+                else:
                     reward_speed = -50
+
+            elif v_vehicle * self.MPS_TO_KPH > control_speed:
+                if a_vehicle < -1.0:
+                    reward_speed = -25
+                else:
+                    reward_speed = -50 
+        """
+
+        # V5 REWARD
+
+        # Defintions
+        max_reward = 50
+        min_reward = -50
+        max_reward_outside_target_range = -25
+        min_reward_inside_target_range = 10
+        target_range_max_deviation = 3
+        outside_range_max_deviation = 130
+
+        # Determine the deviation
+        deviation_from_control_speed = abs(v_vehicle * self.MPS_TO_KPH - control_speed)
+        
+        # Check if the reward is in the target zone
+        if deviation_from_control_speed > 3:
+
+            # Reward in target zone
+            # Reward structure:
+            #
+            #  deviation 
+            #   130                           3     0
+            # | 0 ----------------------------|-----|
+            # |                               |
+            # | -25                           |
+            # |                             /
+            # |                          /
+            # |                       /
+            # |                    /
+            # |                 /
+            # |              /
+            # |           /
+            # |        /
+            # | -50 /
+
+            # Determine the reward
+            slope = (max_reward_outside_target_range - min_reward) / (outside_range_max_deviation - target_range_max_deviation)
+            reward_speed = max_reward_outside_target_range - slope * (deviation_from_control_speed - target_range_max_deviation)
+
+        else:
+            # Reward in target zone
+            # Reward structure:
+            #
+            # | 50             /
+            # |               /
+            # |              /
+            # | 10          /
+            # |            |
+            # | 0 ---------|-----|
+            #  deviation   3     0
+
+            # Determine the reward
+            slope = (max_reward - min_reward_inside_target_range) / (target_range_max_deviation - 0)
+            reward_speed = max_reward - deviation_from_control_speed * slope
+        
+
 
         # 4.3 Aggregate Rewards
         # ==========================================
 
         # check if target is far --> set speed matters
-        if headway > 10:
+        if headway > max_headway_to_be_rewarded:
             reward_motion = reward_speed
 
         # when the target is close, differenciate
