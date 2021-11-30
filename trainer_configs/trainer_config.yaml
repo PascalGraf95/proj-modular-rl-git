@@ -120,15 +120,15 @@ dqn:
 sac:
     Recurrent: true
     BurnIn: 0
-    SequenceLength: 15
-    Overlap: 5
-    ActorNum: 1
-    BatchSize: 32
+    SequenceLength: 60
+    Overlap: 20
+    ActorNum: 10
+    BatchSize: 16
     ClipGrad: 10.0
     ExplorationParameters:
         FeatureSpaceSize: 10
         LearningRate: 1.0e-3
-        CuriosityScalingFactor: 0.05
+        CuriosityScalingFactor: 0.3
         Epsilon: 0.3
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
@@ -139,7 +139,7 @@ sac:
     LogAlpha: 0.0
     NSteps: 4
     AdaptiveExploration: false
-    NetworkUpdateFrequency: 20
+    NetworkUpdateFrequency: 30
     NetworkParameters:
     -   Filters: 64
         Units: 64
@@ -157,11 +157,11 @@ sac:
     PriorityAlpha: 0.8
     RewardNormalization: false
     ReplayCapacity: 200000
-    ReplayMinSize: 50
+    ReplayMinSize: 100
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_Crawler
+    TrainingID: SAC_Worm_PER0.8_Recurrent60_10Actors_0.3Eps
     TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3

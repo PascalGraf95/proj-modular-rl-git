@@ -42,6 +42,7 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         self.max_intrinsic_reward = 0
         self.mean_intrinsic_reward = 0
         self.loss = 0
+        self.calculated_reward = False
 
         self.observation_deque = deque(maxlen=1000)
         self.observation_mean = 0
@@ -95,7 +96,7 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes,
                                                                self.action_shape)
-        if np.any(state_batch == np.nan):
+        if np.any(np.isnan(action_batch)):
             return replay_batch
 
         # Normalize the observations
@@ -103,6 +104,8 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
             state -= self.observation_mean
             state /= self.observation_std
             state = np.clip(state, -5, 5)
+
+        self.calculated_reward = True
 
         # Predict features with the target and prediction model
         with tf.device('/cpu:0'):
@@ -162,9 +165,14 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         self.observation_std = np.std(self.observation_deque)
 
     def get_logs(self, idx):
-        return {"Exploration/RNDLoss": self.loss,
-                "Exploration/MaxIntrinsicReward": self.max_intrinsic_reward,
-                "Exploration/MeanIntrinsicReward": self.mean_intrinsic_reward}
+        if self.calculated_reward:
+            self.calculated_reward = False
+            return {"Exploration/RNDLoss": self.loss,
+                    "Exploration/MaxIntrinsicReward": self.max_intrinsic_reward,
+                    "Exploration/MeanIntrinsicReward": self.mean_intrinsic_reward}
+        else:
+            return None
+
 
     def prevent_checkpoint(self):
         return False
