@@ -178,7 +178,11 @@ class Trainer:
         for i, actor in enumerate(self.actors):
             actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree[i])
             if mode == "training":
-                actor.set_unity_parameters.remote(time_scale=1000, width=10, height=10, quality_level=1)
+                actor.set_unity_parameters.remote(time_scale=1000,
+                                                  width=10, height=10,
+                                                  quality_level=1,
+                                                  target_frame_rate=-1,
+                                                  capture_frame_rate=60)
             else:
                 actor.set_unity_parameters.remote(time_scale=1, width=500, height=500)
 
@@ -199,7 +203,7 @@ class Trainer:
                                                     self.environment_configuration, idx)
                          for idx, actor in enumerate(self.actors)]
         # Wait for the networks to be build
-        ray.get(network_ready)
+        ray.wait(network_ready)
 
         # Initialize the global buffer
         if self.trainer_configuration["PrioritizedReplay"]:
@@ -294,15 +298,16 @@ class Trainer:
                 # If the retrieved information match the target level information update the global curriculum
                 self.global_curriculum_strategy.update_task_properties.remote(unity_responded, task_properties)
             # endregion
+            # Make sure the environment runs the desired curriculum level
+            [actor.send_target_task_level.remote(unity_responded_global) for actor in self.actors]
+            sample_error_list = []
             for idx, actor in enumerate(self.actors):
                 # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
                 # In case of an Prioritized Experience Replay let the actor calculate an initial priority.
-                # Also make sure the environment runs the desired curriculum level
-                actor.send_target_task_level.remote(unity_responded_global)
                 samples, indices = actor.get_new_samples.remote()
                 if self.trainer_configuration["PrioritizedReplay"]:
                     sample_errors = actor.get_sample_errors.remote(samples)
-                    ray.wait([sample_errors])
+                    sample_error_list.append(sample_errors)
                     self.global_buffer.append_list.remote(samples, sample_errors)
                 else:
                     self.global_buffer.append_list.remote(samples)
@@ -346,9 +351,21 @@ class Trainer:
             for idx, actor in enumerate(self.actors):
                 self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(idx), training_step,
                                                    self.logging_frequency)
+
+            # In case of recurrent training, check if the sequence length should be adapted
+            if self.trainer_configuration["Recurrent"]:
+                new_sequence_length = self.global_logger.get_new_sequence_length.remote(
+                    self.trainer_configuration["SequenceLength"], training_step)
+                if ray.get(new_sequence_length):
+                    self.trainer_configuration["SequenceLength"] = ray.get(new_sequence_length)
+                    [actor.update_sequence_length.remote(self.trainer_configuration) for actor in self.actors]
+                    self.learner.update_sequence_length.remote(self.trainer_configuration)
+                    self.global_buffer.reset.remote()
+
             # Wait for the actors to finish their environment steps and learner to finish the learning step
             ray.wait(actors_ready)
             ray.wait([training_metrics])
+            ray.wait(sample_error_list)
 
     def async_testing_loop(self):
         """

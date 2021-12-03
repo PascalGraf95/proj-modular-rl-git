@@ -210,6 +210,10 @@ class Actor:
                                                 gamma=trainer_configuration.get("Gamma"))
         self.network_update_frequency = trainer_configuration.get("NetworkUpdateFrequency")
 
+    def update_sequence_length(self, trainer_configuration):
+        self.sequence_length = trainer_configuration.get("SequenceLength")
+        self.local_buffer.reset(self.sequence_length)
+
     def instantiate_modules(self, trainer_configuration, exploration_degree):
         self.recurrent = trainer_configuration["Recurrent"]
         self.sequence_length = trainer_configuration.get("SequenceLength")
@@ -454,6 +458,9 @@ class Learner:
     # endregion
 
     # region Misc
+    def update_sequence_length(self, trainer_configuration):
+        self.sequence_length = trainer_configuration.get("SequenceLength")
+
     def boost_exploration(self):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 

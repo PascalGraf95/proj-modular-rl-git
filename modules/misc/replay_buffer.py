@@ -205,6 +205,7 @@ class FIFOBuffer:
 
         # Initialize actual buffer with defined capacity
         self.buffer = deque(maxlen=capacity)
+        self.capacity = capacity
         # Flag to indicate if training threshold has been reached
         self.min_size_reached = False
         # n-Step reward sum
@@ -237,6 +238,9 @@ class FIFOBuffer:
 
     def __len__(self):
         return len(self.buffer)
+
+    def reset(self):
+        self.buffer = deque(maxlen=self.capacity)
 
     def check_training_condition(self, trainer_configuration):
         if not self.store_trajectories:
@@ -341,6 +345,15 @@ class LocalFIFOBuffer:
 
     def __len__(self):
         return len(self.buffer)
+
+    def reset(self):
+        # Deque to enable n-step reward calculation
+        self.state_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
+        self.action_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
+        self.reward_deque = [deque(maxlen=self.n_steps) for x in range(self.agent_num)]
+
+        # Temporal buffer for storing trajectories
+        self.temp_agent_buffer = [[] for x in range(self.agent_num)]
 
     def calculate_discounted_return(self, rewards):
         disc_return = []
@@ -495,6 +508,16 @@ class LocalRecurrentBuffer:
 
     def __len__(self):
         return len(self.buffer)
+
+    def reset(self, sequence_length):
+        # Deque to enable n-step reward calculation
+        self.state_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
+        self.action_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
+        self.reward_deque = [deque(maxlen=self.n_steps) for x in range(self.agent_num)]
+
+        # Temporal buffer for storing trajectories
+        self.temp_agent_buffer = [[] for x in range(self.agent_num)]
+        self.sequence_length = sequence_length
 
     def calculate_discounted_return(self, rewards):
         disc_return = []

@@ -25,14 +25,14 @@ def main():
 
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
-    mode = "testing"
-    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\211126_073021_SAC_Worm_PER0.8_Recurrent60_10Actors_0.3Eps" # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\211122_150626_SAC_Crawler"#r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\211025_173951_SAC_Worm_PER_BurnIn_Recurrent"
+    mode = "training"
+    model_path = None #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\211201_101350_SAC_Worm_PER0.8_Recurrent60_10Actors_0.3Eps" # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\211122_150626_SAC_Crawler"#r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\211025_173951_SAC_Worm_PER_BurnIn_Recurrent"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
     interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
     # If you want to run multiple Unity actors in parallel you need specify the path to the '.exe' file here.
-    environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\SingleWorm\UnityEnvironment.exe" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0\DoBotEnvironment.exe" # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
+    environment_path = r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\AirHockey\AirHockeyRebuild.exe" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\SingleWorm\UnityEnvironment.exe" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0\DoBotEnvironment.exe" # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 
     # Choose from "None", "EpsilonGreedy", "ICM" and "RND"
     exploration_algorithm = "EpsilonGreedy"
