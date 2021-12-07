@@ -173,6 +173,8 @@ class Trainer:
             [actor.connect_to_unity_environment.remote() for actor in self.actors]
         elif interface == "Carla":
             [actor.connect_to_carla_environment.remote() for actor in self.actors]
+        elif interface == "Passat":
+            [actor.connect_to_passat_environment.remote() for actor in self.actors]
         else:
             [actor.connect_to_gym_environment.remote() for actor in self.actors]
 

@@ -32,12 +32,12 @@ def main():
 
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
-    mode = "training"
-    model_path = "" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211124_152201_RL_ACC_TEST_v4_normalized_reward_control_speed_full_scenarios/best/" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211117_001503_RL_ACC_TEST_v1/old/first/" 
+    mode = "testing"
+    model_path = "/home/ai-admin/test/" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211124_152201_RL_ACC_TEST_v4_normalized_reward_control_speed_full_scenarios/best/" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211117_001503_RL_ACC_TEST_v1/old/first/" 
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
-    interface = 'Carla'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
+    interface = 'Passat'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym", Carla and Passat
     # If you want to run multiple Unity actors in parallel you need specify the path to the '.exe' file here.
     environment_path = None #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Grabbing\Level0_Camera\DoBotEnvironment.exe"  # In case of "OpenAIGym" enter the desired env name here, e.g. "LunarLanderContinuous-v2"
 

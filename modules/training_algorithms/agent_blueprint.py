@@ -96,6 +96,10 @@ class Actor:
         self.environment = AgentInterface.connect()
         self.curriculum_side_channel = CurriculumSideChannelTaskInfo()
 
+    def connect_to_passat_environment(self):
+        self.environment = AgentInterface.connect()
+        self.curriculum_side_channel = CurriculumSideChannelTaskInfo()
+
     def set_unity_parameters(self, **kwargs):
         self.engine_configuration_channel.set_configuration_parameters(**kwargs)
     # endregion
@@ -156,6 +160,10 @@ class Actor:
         elif interface == "Carla":
             from ..interfaces.carlaInterface import CarlaInterface as AgentInterface
             self.connect = self.connect_to_carla_environment
+
+        elif interface == "Passat":
+            from ..interfaces.passatInterface import PassatInterface as AgentInterface
+            self.connect = self.connect_to_passat_environment
         
         else:
             raise ValueError("An interface for {} is not (yet) supported by this trainer. "
