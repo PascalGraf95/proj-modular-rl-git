@@ -353,7 +353,7 @@ class Trainer:
                                                    self.logging_frequency)
 
             # In case of recurrent training, check if the sequence length should be adapted
-            if self.trainer_configuration["Recurrent"]:
+            if self.trainer_configuration["Recurrent"] and self.trainer_configuration["AdaptiveSequenceLength"]:
                 new_sequence_length = self.global_logger.get_new_sequence_length.remote(
                     self.trainer_configuration["SequenceLength"], training_step)
                 if ray.get(new_sequence_length):

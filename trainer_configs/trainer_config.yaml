@@ -120,7 +120,8 @@ dqn:
 sac:
     Recurrent: true
     BurnIn: 0
-    SequenceLength: 12
+    AdaptiveSequenceLength: false
+    SequenceLength: 15
     Overlap: 5
     ActorNum: 10
     BatchSize: 32
@@ -136,7 +137,7 @@ sac:
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -1.0
+    LogAlpha: -4.0
     NSteps: 4
     AdaptiveExploration: false
     NetworkUpdateFrequency: 30
@@ -161,8 +162,8 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_AirHockey_ShotOnGoal
-    TrainingInterval: 5
+    TrainingID: SAC_AirHockey_ShotOnGoal_New
+    TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3
     BatchSize: 64

@@ -150,7 +150,7 @@ class GlobalLogger:
         return max_agent_average_length, max_agent_average_reward, self.total_episodes_played
 
     def get_new_sequence_length(self, sequence_length, training_step):
-        if training_step % 1000 or not training_step:
+        if training_step % 100 or not training_step:
             return None
         length_list = []
         # Append all episode lengths into one list
@@ -159,13 +159,11 @@ class GlobalLogger:
         # Sort the list from low to high and look at the length of the lower 30%
         length_list.sort()
         new_sequence_length = length_list[int(0.3*len(length_list))]
-        print("NEW TEST SEQUENCE LENGTH: ", new_sequence_length, training_step)
+        new_sequence_length = np.clip(new_sequence_length, 5, 80)
         if np.abs(new_sequence_length - sequence_length) >= 10:
-            print("SCHALALALA")
-            if 5 < new_sequence_length < 80:
-                print("New sequence length recommended!")
-                print("Old sequence length: {}, new recommendation: {}".format(sequence_length, new_sequence_length))
-                return new_sequence_length
+            print("New sequence length recommended!")
+            print("Old sequence length: {}, new recommendation: {}".format(sequence_length, new_sequence_length))
+            return new_sequence_length
         return None
 
     def check_checkpoint_condition(self):
