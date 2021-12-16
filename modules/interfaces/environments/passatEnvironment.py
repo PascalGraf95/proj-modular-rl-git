@@ -23,6 +23,9 @@ class PassatEnvironment:
     action_space = np.array([1])
     observation_space = np.array([1, 2, 3, 4, 5])
     DELTA_T = 0.100 #s
+    MAX_ACCEL = 2.5 #m/s²
+    MAX_DECEL = 4.5 #m/s²
+    acceleration = 0
 
     # measurement variables
     MEASUREMENT_DICT = {"scenarioname": "", "timestamps": [], "setspeed": [], "speedrestriction": [], "targetspeed": [], "egospeed": [], "headway": []}
@@ -73,9 +76,15 @@ class PassatEnvironment:
         self.lastrun = time.time()
 
         # Return the observation
-        dx_rel = 0
-        vx_rel = 0
-        return np.array([self.speed_set, self.speed_restriction, self.speed_ego_mps * self.MPS_TO_KPH, dx_rel, vx_rel])
+        self.x_vehicle = 0
+        self.x_target = 0
+        self.v_vehicle = 0
+        self.v_target = 0
+        self.a_vehicle = 0
+        self.a_target = 0
+        self.dx_rel = 0
+        self.vx_rel = 0
+        return np.array([self.speed_set, self.speed_restriction, self.speed_ego_mps * self.MPS_TO_KPH, self.dx_rel, self.vx_rel])
 
     # ---------------------------------------------------------------------------------------
     # SAVE MEASUREMENT
@@ -102,15 +111,15 @@ class PassatEnvironment:
         # 1. APPLY ACTION TO AGENT
         # *****************************************
         if action < 0:
-            self.acceleration = float(abs(action))
+            self.acceleration = float(action) * self.MAX_DECEL
             print("braking")
         elif action > 0:
-            self.acceleration = float(abs(action))
+            self.acceleration = float(action) * self.MAX_ACCEL
             print("accelerating")
         elif action == 0:
             print("nothing")
 
-
+        """
         # *****************************************
         # 2. SIMULATE FOR CERTAIN TIME
         # *****************************************
@@ -118,19 +127,21 @@ class PassatEnvironment:
         if runtime < self.DELTA_T:
             time.sleep(self.DELTA_T - runtime)
         self.lastrun = time.time()
+        """
 
-
+        """
         # *****************************************
         # 3. GET THE OBSERVATIONS
         # *****************************************
-        x_vehicle = 0
-        x_target = 10
-        v_vehicle = 0
-        v_target = 10
-        a_vehicle = 0
-        a_target = 0
-        dx_rel = x_target - x_vehicle - self.DISTANCE_BUMPER_COMP
-        vx_rel = v_target * self.MPS_TO_KPH - v_vehicle * self.MPS_TO_KPH
+        self.x_vehicle = 0
+        self.x_target = 10
+        self.v_vehicle = 0
+        self.v_target = 10
+        self.a_vehicle = 0
+        self.a_target = 0
+        self.dx_rel = self.x_target - self.x_vehicle - self.DISTANCE_BUMPER_COMP
+        self.vx_rel = self.v_target * self.MPS_TO_KPH - self.v_vehicle * self.MPS_TO_KPH
+        """
 
 
         # *****************************************
@@ -174,8 +185,8 @@ class PassatEnvironment:
         max_headway_to_be_rewarded = 5
 
         # Determine Headway
-        if v_vehicle > 0.1:
-            headway = (x_target - x_vehicle - self.DISTANCE_BUMPER_COMP) / v_vehicle
+        if self.v_vehicle > 0.1:
+            headway = self.dx_rel / self.v_vehicle
         else:
             headway = 99
 
@@ -265,7 +276,7 @@ class PassatEnvironment:
         outside_range_max_deviation = 130
 
         # Determine the deviation
-        deviation_from_control_speed = abs(v_vehicle * self.MPS_TO_KPH - control_speed)
+        deviation_from_control_speed = abs(self.v_vehicle * self.MPS_TO_KPH - control_speed)
         
         # Check if the reward is in the target zone
         if deviation_from_control_speed > 3:
@@ -325,7 +336,7 @@ class PassatEnvironment:
                 reward_motion = reward_speed
 
             # set speed is overshoot
-            elif v_vehicle * self.MPS_TO_KPH > control_speed:
+            elif self.v_vehicle * self.MPS_TO_KPH > control_speed:
                 reward_motion = reward_speed
 
             # Set speed is not overshot
@@ -348,8 +359,8 @@ class PassatEnvironment:
             self.MEASUREMENT_DICT["timestamps"].append(time.time() - self.episode_start)
             self.MEASUREMENT_DICT["setspeed"].append(self.speed_set)
             self.MEASUREMENT_DICT["speedrestriction"].append(self.speed_restriction)
-            self.MEASUREMENT_DICT["targetspeed"].append(v_target * self.MPS_TO_KPH)
-            self.MEASUREMENT_DICT["egospeed"].append(v_vehicle * self.MPS_TO_KPH)
+            self.MEASUREMENT_DICT["targetspeed"].append(self.v_target * self.MPS_TO_KPH)
+            self.MEASUREMENT_DICT["egospeed"].append(self.v_vehicle * self.MPS_TO_KPH)
             self.MEASUREMENT_DICT["headway"].append(headway)
 
 
@@ -358,8 +369,8 @@ class PassatEnvironment:
         # *****************************************
         print("=================================================================")
         print(round(time.time() - self.episode_start, 3))
-        print("TARGET SPEED      [kph]: ", v_target * self.MPS_TO_KPH)
-        print("AGENT  SPEED      [kph]: ", v_vehicle * self.MPS_TO_KPH)
+        print("TARGET SPEED      [kph]: ", self.v_target * self.MPS_TO_KPH)
+        print("AGENT  SPEED      [kph]: ", self.v_vehicle * self.MPS_TO_KPH)
         print("SPEED RESTRICTION [kph]: ", self.speed_restriction)
         print("SPEED SETTING     [kph]: ", self.speed_set)
         print("HEADWAY           [ s ]: ", headway)
@@ -372,8 +383,8 @@ class PassatEnvironment:
         if self.episode_start + self.SECONDS_PER_EPISODE < time.time():
             done = True
 
-        if dx_rel < 1:
+        if self.dx_rel < 1:
             done = True
 
         # return the observation, reward, done 
-        return np.array([self.speed_set, self.speed_restriction, v_vehicle, dx_rel, vx_rel]), reward, done, None
+        return np.array([self.speed_set, self.speed_restriction, self.v_vehicle, self.dx_rel, self.vx_rel]), reward, done, None

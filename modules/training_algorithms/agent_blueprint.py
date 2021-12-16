@@ -102,6 +102,19 @@ class Actor:
 
     def set_unity_parameters(self, **kwargs):
         self.engine_configuration_channel.set_configuration_parameters(**kwargs)
+
+    def get_acceleration(self):
+        return self.environment.acceleration
+
+    def set_observations(self, speed_set, speed_restriction, v_ego_mps, v_relative_mps, dx_relative):
+        self.environment.speed_set = speed_set
+        self.environment.speed_restriction = speed_restriction
+        self.environment.v_vehicle = v_ego_mps
+        self.environment.v_rel = v_relative_mps
+        self.environment.dx_rel = dx_relative
+
+
+
     # endregion
 
     # region Property Query

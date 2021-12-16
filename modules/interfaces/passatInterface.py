@@ -101,6 +101,10 @@ class PassatInterface:
             PassatInterface.observation, PassatInterface.reward, \
                 PassatInterface.done, PassatInterface.info = env.step(actions[0])
 
+    @staticmethod
+    def get_acceleration(env: PassatEnvironment, behavior_name: str):
+        return env.acceleration
+
 
 
 # main loop
