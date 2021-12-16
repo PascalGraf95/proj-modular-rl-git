@@ -93,7 +93,11 @@ class PassatInterface:
 
     @staticmethod
     def step_action(env: PassatEnvironment, behavior_name: str, actions):
-
+        
+        if len(actions) == 0:
+            actions = np.array([0.0])
+        
+        
         if PassatInterface.action_space == "DISCRETE":
             PassatInterface.observation, PassatInterface.reward, \
                 PassatInterface.done, PassatInterface.info = env.step(actions[0][0])

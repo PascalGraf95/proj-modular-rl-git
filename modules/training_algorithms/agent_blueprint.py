@@ -110,7 +110,7 @@ class Actor:
         self.environment.speed_set = speed_set
         self.environment.speed_restriction = speed_restriction
         self.environment.v_vehicle = v_ego_mps
-        self.environment.v_rel = v_relative_mps
+        self.environment.vx_rel = v_relative_mps
         self.environment.dx_rel = dx_relative
 
 

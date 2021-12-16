@@ -59,8 +59,8 @@ class PassatEnvironment:
         self.actor_list = []
 
         # set transforms and vehicle
-        self.speed_restriction = 30
-        self.speed_set = 20
+        self.speed_restriction = 0
+        self.speed_set = 0
         self.speed_ego_mps = 0
 
         # Reset the measurement
@@ -82,7 +82,7 @@ class PassatEnvironment:
         self.v_target = 0
         self.a_vehicle = 0
         self.a_target = 0
-        self.dx_rel = 0
+        self.dx_rel = 100
         self.vx_rel = 0
         return np.array([self.speed_set, self.speed_restriction, self.speed_ego_mps * self.MPS_TO_KPH, self.dx_rel, self.vx_rel])
 
@@ -369,22 +369,13 @@ class PassatEnvironment:
         # *****************************************
         print("=================================================================")
         print(round(time.time() - self.episode_start, 3))
-        print("TARGET SPEED      [kph]: ", self.v_target * self.MPS_TO_KPH)
+        print("TARGET SPEED      [kph]: ", self.vx_rel * self.MPS_TO_KPH)
         print("AGENT  SPEED      [kph]: ", self.v_vehicle * self.MPS_TO_KPH)
         print("SPEED RESTRICTION [kph]: ", self.speed_restriction)
         print("SPEED SETTING     [kph]: ", self.speed_set)
         print("HEADWAY           [ s ]: ", headway)
         print("REWARD                 : ", reward)
-
-
-        # *****************************************
-        # 8. CHECK ABORTIONS
-        # *****************************************
-        if self.episode_start + self.SECONDS_PER_EPISODE < time.time():
-            done = True
-
-        if self.dx_rel < 1:
-            done = True
+        print("ACCELERATION     [m/s2]: ", self.acceleration)
 
         # return the observation, reward, done 
-        return np.array([self.speed_set, self.speed_restriction, self.v_vehicle, self.dx_rel, self.vx_rel]), reward, done, None
+        return np.array([self.speed_set, self.speed_restriction, self.v_vehicle, self.dx_rel, self.vx_rel]), reward, False, None
