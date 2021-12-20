@@ -1,0 +1,24 @@
+{
+    "init_speed_target": 90,
+    "init_dx_target": 40,
+    "init_speed_ego": 90,
+    "init_speed_set": 90,
+    "init_speed_restriction": 120,
+    "target_behaviour_sequence":
+    [
+        {
+            "ID": 1,
+            "type": "RAMP_AX",
+            "start_speed": 90,
+            "end_speed": 60,
+            "start_time": 10,
+            "acceleration": -2
+        }
+    ],
+    "speed_restriction_sequence":
+    [
+    ],
+    "speed_set_sequence":
+    [
+    ]
+}

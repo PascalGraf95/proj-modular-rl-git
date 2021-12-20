@@ -119,7 +119,7 @@ dqn:
     TrainingInterval: 8
 sac:
     ActorNum: 1
-    BatchSize: 32
+    BatchSize: 60
     ClipGrad: 1.0
     ExplorationParameters:
         Epsilon: 0.4
@@ -152,7 +152,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingID: RL_ACC_TEST_v5_normalized_and_linearized_reward_control_speed_full_scenarios
+    TrainingID: RL_ACC_TEST_v14_accel_interface_normalized_and_linearized_positive_reward_control_speed_only_dense_batchsize_60_all_scenarios
     TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3

@@ -1,0 +1,21 @@
+{
+    "init_speed_target": 0,
+    "init_dx_target": 880,
+    "init_speed_ego": 0,
+    "init_speed_set": 70,
+    "init_speed_restriction": 50,
+    "target_behaviour_sequence":
+    [
+    ],
+    "speed_restriction_sequence":
+    [
+        {
+            "ID": 1,
+            "start_time": 15,
+            "speed_restriction": 100
+        }
+    ],
+    "speed_set_sequence":
+    [
+    ]
+}

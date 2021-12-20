@@ -116,7 +116,7 @@ if __name__ == "__main__":
         CarlaInterface.reset(env)
 
         # run the loop
-        action = 0.0
+        action = 0.1
         while True:
 
             # take a step in simulation

@@ -24,15 +24,10 @@ class CarlaEnvironment:
     DISTANCE_BUMPER_COMP = 4.8
     SECONDS_PER_EPISODE = 30
     ACTION_TYPE_FORM = "CONTINUOUS"
-
-    MAX_ACCEL = 2.5 #m/s²
-    MAX_DECEL = 4.5 #m/s²
-
     action_space = np.array([1])
     #observation_space = np.array([1, 2, 3, 4, 5]) # V1 - V7
-    #observation_space = np.array([1, 2, 3, 4]) # V8, V11
-    #observation_space = np.array([1, 2, 3, 4, 5]) # V9, V10
-    observation_space = np.array([1, 2, 3]) # V12
+    #observation_space = np.array([1, 2, 3, 4]) # V8
+    observation_space = np.array([1, 2, 3, 4, 5]) # V9
     DELTA_T = 0.100 #s
 
     # measurement variables
@@ -83,7 +78,7 @@ class CarlaEnvironment:
 
         # Load a scenario definition
         self.scenario_name = random.choice(self.scenario_list)
-        self.scenario_name = "31_10.json"
+        #self.scenario_name = "41_10.json"
         self.scenario_definition = self.read_scenario(self.SCENARIO_PATH + self.scenario_name)
 
         # set transforms and vehicle
@@ -111,26 +106,21 @@ class CarlaEnvironment:
 
         # Reset the measurement
         if len(self.MEASUREMENT_DICT["timestamps"]) > 0:
-            self.save_measurement(self.MEASUREMENT_DICT["scenarioname"][:-5] + "_measurement_" + "V14" + ".json")
+            self.save_measurement(self.MEASUREMENT_DICT["scenarioname"][:-5] + "_measurement_" + "V10" + ".json")
         self.MEASUREMENT_DICT = {"scenarioname": "", "timestamps": [], "setspeed": [], "speedrestriction": [], "targetspeed": [], "egospeed": [], "headway": []}
 
         # Wait for a certain time until the simulation is ready
-        time.sleep(3)
+        time.sleep(4)
         self.actor_vehicle.apply_control(carla.VehicleControl(throttle=0.0, brake=0.0, steer=0))
-
-        # apply initial speeds
-        self.actor_target.set_target_velocity(carla.Vector3D(self.scenario_definition['init_speed_target'] * self.KPH_TO_MPS, 0 , 0))
-        # since switch to accel interface, init speed zero is bad
-        if self.scenario_definition['init_speed_ego'] == 0:
-            self.actor_vehicle.set_target_velocity(carla.Vector3D(0.5, 0 , 0))
-        else:
-            self.actor_vehicle.set_target_velocity(carla.Vector3D(self.scenario_definition['init_speed_ego'] * self.KPH_TO_MPS, 0 , 0))
-        self.target_speed = self.scenario_definition['init_speed_target']
-        time.sleep(1)
 
         # Wait until cam is running
         while self.img_front_camera is None:
             time.sleep(0.01)
+
+        # apply initial speeds
+        self.actor_target.set_target_velocity(carla.Vector3D(self.scenario_definition['init_speed_target'] * self.KPH_TO_MPS, 0 , 0))
+        self.actor_vehicle.set_target_velocity(carla.Vector3D(self.scenario_definition['init_speed_ego'] * self.KPH_TO_MPS, 0 , 0))
+        self.target_speed = self.scenario_definition['init_speed_target']
 
         # check the episode start time
         self.episode_start = time.time()
@@ -140,18 +130,13 @@ class CarlaEnvironment:
         dx_rel = self.scenario_definition['init_dx_target'] - self.DISTANCE_BUMPER_COMP
         vx_rel = (self.scenario_definition['init_speed_ego'] - self.scenario_definition['init_speed_ego']) * self.MPS_TO_KPH
 
-        # V8, V11: MIN
+        # V8: MIN
         #controlspeed = min(self.speed_set, self.speed_restriction)
         #return np.array([controlspeed,\
         #     self.scenario_definition['init_speed_ego'] * self.MPS_TO_KPH, dx_rel, vx_rel])
 
-        # V8, V11: MIN
-        controlspeed = min(self.speed_set, self.speed_restriction)
-        return np.array([controlspeed,\
-             self.scenario_definition['init_speed_ego'] * self.MPS_TO_KPH, 99])
-
-        # V9, v10: back to 5 inputs
-        #return np.array([self.speed_set, self.speed_restriction, self.scenario_definition['init_speed_ego'] * self.MPS_TO_KPH, dx_rel, vx_rel])
+        # V9: back to 5 inputs
+        return np.array([self.speed_set, self.speed_restriction, self.scenario_definition['init_speed_ego'] * self.MPS_TO_KPH, dx_rel, vx_rel])
 
     # ---------------------------------------------------------------------------------------
     # PROCESS IMAGES
@@ -247,25 +232,16 @@ class CarlaEnvironment:
         # *****************************************
         done = False
 
+
         # *****************************************
         # 1. APPLY ACTION TO AGENT
         # *****************************************
         if action < 0:
-            # apply the control
-            speed = self.actor_vehicle.get_velocity().x
-            speed_set = speed + float(action) * self.MAX_DECEL * self.DELTA_T
-            print(speed_set)
-            self.actor_vehicle.set_target_velocity(carla.Vector3D(speed_set, 0 , 0))
+            self.actor_vehicle.apply_control(carla.VehicleControl(throttle=0.0, brake=float(abs(action)), steer=0))
             print("braking")
-
         elif action > 0:
-            # apply the control
-            speed = self.actor_vehicle.get_velocity().x
-            speed_set = speed + float(action) * self.MAX_ACCEL * self.DELTA_T
-            print(speed_set)
-            self.actor_vehicle.set_target_velocity(carla.Vector3D(speed_set, 0 , 0))
+            self.actor_vehicle.apply_control(carla.VehicleControl(throttle=float(abs(action)), brake=0.0, steer=0))
             print("accelerating")
-
         elif action == 0:
             print("nothing")
 
@@ -273,13 +249,10 @@ class CarlaEnvironment:
         # *****************************************
         # 2. SIMULATE FOR CERTAIN TIME
         # *****************************************
-        """
         runtime = time.time()-self.lastrun
         if runtime < self.DELTA_T:
             time.sleep(self.DELTA_T - runtime)
         self.lastrun = time.time()
-        """
-        time.sleep(self.DELTA_T)
 
 
         # *****************************************
@@ -593,7 +566,7 @@ class CarlaEnvironment:
             elif abs(v_vehicle * self.MPS_TO_KPH - control_speed) < 3:
                 reward_speed = 30
         
-        elif deviation_from_control_speed > 3 and v_vehicle * self.MPS_TO_KPH > 0:
+        elif deviation_from_control_speed > 3:
 
             # Reward in target zone
             # Reward structure:
@@ -629,10 +602,6 @@ class CarlaEnvironment:
                 else:
                     # Do nothing
                     pass
-        
-        # since accel interface: penalty for reversing
-        elif v_vehicle * self.MPS_TO_KPH < 0:
-            reward_speed = min_reward
 
         else:
             reward_speed = min_reward
@@ -649,9 +618,7 @@ class CarlaEnvironment:
         else:
 
             # if the target is in OK range and set speed is met, use it
-            # V13: determine OK range differently, border 1
-            # V14: border 3
-            if deviation_from_control_speed < 3 and headway > 1.9:
+            if reward_speed > 0 and headway > 1.9:
                 reward_motion = reward_speed
 
             # set speed is overshoot
@@ -767,13 +734,9 @@ class CarlaEnvironment:
             done = True
 
         # return the observation, reward, done 
-        # V8, V11: MIN
+        # V8: MIN
         #controlspeed = min(self.speed_set, self.speed_restriction)
         #return np.array([controlspeed, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, dx_rel, vx_rel]), reward, done, None
 
-        # V12: MIN, Headway
-        controlspeed = min(self.speed_set, self.speed_restriction)
-        return np.array([controlspeed, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, headway]), reward, done, None
-
-        # V9, V10: back to 5 inputs again
-        #return np.array([self.speed_set, self.speed_restriction, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, dx_rel, vx_rel]), reward, done, None
+        # V9: back to 5 inputs again
+        return np.array([self.speed_set, self.speed_restriction, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, dx_rel, vx_rel]), reward, done, None

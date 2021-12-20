@@ -32,8 +32,8 @@ def main():
 
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
-    mode = "training"
-    model_path = "" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211124_152201_RL_ACC_TEST_v4_normalized_reward_control_speed_full_scenarios/best/" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211117_001503_RL_ACC_TEST_v1/old/first/" 
+    mode = "testing"
+    model_path = "/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211218_210021_RL_ACC_TEST_v14_accel_interface_normalized_and_linearized_positive_reward_control_speed_only_dense_batchsize_60_all_scenarios/best/" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211126_154927_RL_ACC_TEST_v5_normalized_and_linearized_reward_control_speed_full_scenarios/best/" #"/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211117_001503_RL_ACC_TEST_v1/old/first/" 
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
@@ -64,6 +64,7 @@ def main():
 
     # Parse the trainer configuration (make sure to select the right key)
     trainer.parse_training_parameters("trainer_configs/trainer_config.yaml", "sac")
+    #trainer.parse_training_parameters("/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211202_000544_RL_ACC_TEST_v8_normalized_and_linearized_reward_control_speed_only_dense_batchsize_64_full_scenarios/training_parameters.yaml", "sac")
     # Instantiate the agent which consists of a learner and one or multiple actors
     trainer.async_instantiate_agent(mode, interface, preprocessing_algorithm, exploration_algorithm,
                                     environment_path, model_path, preprocessing_path)
