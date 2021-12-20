@@ -21,7 +21,8 @@ class PassatEnvironment:
     SECONDS_PER_EPISODE = 30
     ACTION_TYPE_FORM = "CONTINUOUS"
     action_space = np.array([1])
-    observation_space = np.array([1, 2, 3, 4, 5])
+    #observation_space = np.array([1, 2, 3, 4, 5]) # pre V12
+    observation_space = np.array([1, 2, 3]) # from V12
     DELTA_T = 0.100 #s
     MAX_ACCEL = 2.5 #m/s²
     MAX_DECEL = 4.5 #m/s²
@@ -84,7 +85,9 @@ class PassatEnvironment:
         self.a_target = 0
         self.dx_rel = 100
         self.vx_rel = 0
-        return np.array([self.speed_set, self.speed_restriction, self.speed_ego_mps * self.MPS_TO_KPH, self.dx_rel, self.vx_rel])
+        control_speed = min(self.speed_set, self.speed_restriction)
+        headway = 99
+        return np.array([control_speed, self.speed_ego_mps * self.MPS_TO_KPH, 99])
 
     # ---------------------------------------------------------------------------------------
     # SAVE MEASUREMENT
@@ -371,6 +374,7 @@ class PassatEnvironment:
         print(round(time.time() - self.episode_start, 3))
         print("TARGET SPEED      [kph]: ", self.vx_rel * self.MPS_TO_KPH)
         print("AGENT  SPEED      [kph]: ", self.v_vehicle * self.MPS_TO_KPH)
+        print("TARGET  DX        [kph]: ", self.dx_rel)
         print("SPEED RESTRICTION [kph]: ", self.speed_restriction)
         print("SPEED SETTING     [kph]: ", self.speed_set)
         print("HEADWAY           [ s ]: ", headway)
@@ -378,4 +382,9 @@ class PassatEnvironment:
         print("ACCELERATION     [m/s2]: ", self.acceleration)
 
         # return the observation, reward, done 
-        return np.array([self.speed_set, self.speed_restriction, self.v_vehicle, self.dx_rel, self.vx_rel]), reward, False, None
+        #return np.array([self.speed_set, self.speed_restriction, self.v_vehicle, self.dx_rel, self.vx_rel]), reward, False, None
+
+        #V12
+        None
+        control_speed = min(self.speed_set, self.speed_restriction)
+        return np.array([control_speed, self.v_vehicle * self.MPS_TO_KPH, headway]), reward, False, None
