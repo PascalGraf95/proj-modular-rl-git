@@ -7,9 +7,13 @@ import collections
 import numpy as np
 
 
-MEASUREMENT_PATH = ""
+MEASUREMENT_PATH = "/home/ai-admin/Measurements/V2/"
 
-def PlotMeasurement(inputData):
+
+# ---------------------------------------------------------------------------------------
+# Plot the measurement V1 -- headway and speeds
+# ---------------------------------------------------------------------------------------
+def PlotMeasurementV1(inputData):
 
     # Get the first stuff
     firstData = inputData[list(inputData.keys())[0]]
@@ -79,6 +83,97 @@ def PlotMeasurement(inputData):
 
 
 # ---------------------------------------------------------------------------------------
+# Plot the measurement V2 -- headway, speeds and accelerartions
+# ---------------------------------------------------------------------------------------
+def PlotMeasurementV2(inputData):
+
+    # Get the first stuff
+    firstData = inputData[list(inputData.keys())[0]]
+
+    # Set up the axes and the figure
+    fig, (ax1, ax2, ax3) = plt.subplots(3,1)
+    fig.set_size_inches(18.5, 10.5)
+    fig.suptitle(firstData["scenarioname"], fontsize=16)
+
+    # Configure the velocity axis
+    ax1.set_title("Behaviour by velocity")
+    ax1.set_ylabel("velocity [kph]")
+    ax1.set_xlabel("time [s]")
+    ax1.set_ylim(0, 120)
+    ax1.set_yticks(np.arange(0, 120, step=10))
+    ax1.plot(firstData["timestamps"], firstData["speedrestriction"], "r--", label="Speed Restriction [kph]")
+    ax1.plot(firstData["timestamps"], firstData["setspeed"], "g--", label="Speed Setting [kph]")
+    ax1.plot(firstData["timestamps"], firstData["targetspeed"], "k.-", label="Speed Target [kph]")
+    
+    # loop over all and print them
+    for key in inputData.keys():
+        ax1.plot(inputData[key]["timestamps"], inputData[key]["egospeed"], label="Speed Ego [kph] - " + str(key))
+
+    # Legend and grid
+    ax1.legend()
+    ax1.grid()
+    
+    # Configure the headway axis
+    ax2.set_title("Behaviour by headway")
+    ax2.set_ylabel("headway [s]")
+    ax2.set_xlabel("time [s]")
+    ax2.set_ylim(0, 4)
+    patches = []
+    targetUpperThreshold = 2.1
+    targetLowerThreshold = 1.9
+    toleranceUpperThreshold = 2.25
+    toleranceLowerThreshold = 1.75
+    targetRangeUpper = [targetUpperThreshold for x in firstData["timestamps"]]
+    targetRangeLower = [targetLowerThreshold for x in firstData["timestamps"]]
+    toleranceRangeUpper = [toleranceUpperThreshold for x in firstData["timestamps"]]
+    toleranceRangeLower = [toleranceLowerThreshold for x in firstData["timestamps"]]
+
+    # loop over all and print them
+    for key in inputData.keys():
+        ax2.plot(inputData[key]["timestamps"], inputData[key]["headway"], label="Headway [s] - " + str(key))
+    
+    # Plot the rest
+    ax2.plot(firstData["timestamps"], targetRangeUpper, "g:")
+    ax2.plot(firstData["timestamps"], targetRangeLower, "g:")
+    ax2.plot(firstData["timestamps"], toleranceRangeUpper, "y:")
+    ax2.plot(firstData["timestamps"], toleranceRangeLower, "y:")
+    boxTolerance = mpatches.FancyBboxPatch(
+        (firstData["timestamps"][0], toleranceLowerThreshold), firstData["timestamps"][-1] - firstData["timestamps"][0], toleranceUpperThreshold-toleranceLowerThreshold, mpatches.BoxStyle("Round", pad=0.0))
+    patches.append(boxTolerance)
+    boxTarget = mpatches.FancyBboxPatch(
+        (firstData["timestamps"][0], targetLowerThreshold), firstData["timestamps"][-1] - firstData["timestamps"][0], targetUpperThreshold-targetLowerThreshold, mpatches.BoxStyle("Round", pad=0.0))
+    patches.append(boxTarget)
+    collection = PatchCollection(patches, facecolor=["y", "g"], alpha=0.4)
+    ax2.add_collection(collection)
+    ax2.legend()
+    ax2.grid()
+
+    # Configure the acceleration axis
+    ax3.set_title("Behaviour by accelerations")
+    ax3.set_ylabel("acceleration [m/s²]")
+    ax3.set_xlabel("time [s]")
+    ax3.set_ylim(-3, 3)
+    ax3.set_yticks(np.arange(-3, 3, step=0.5))
+    
+    # loop over all and print them
+    for key in inputData.keys():
+        #ax3.plot(inputData[key]["timestamps"], inputData[key]["acc_requested"], label="Requested Acceleration [m/s²] - " + str(key))
+        #ax3.plot(inputData[key]["timestamps"], inputData[key]["acc_measured"], label="Measured Acceleration [m/s²] - " + str(key))
+        ax3.plot(inputData[key]["timestamps"], inputData[key]["headway"], label="Headway [s] - " + str(key))
+
+    # Legend and grid
+    ax3.legend()
+    ax3.grid()
+
+    # Set the figure attributes and save
+    fig.tight_layout()
+    fig.savefig(firstData["scenarioname"] + ".png")
+    plt.clf()
+    plt.cla()
+    fig = None
+
+
+# ---------------------------------------------------------------------------------------
 # SAVE MEASUREMENT
 # ---------------------------------------------------------------------------------------
 def save_measurement(jsonMeasurement, name):
@@ -108,7 +203,7 @@ if __name__ == "__main__":
     scenariodict = {}
 
     # Loop in the folder
-    for file in os.listdir():
+    for file in os.listdir(MEASUREMENT_PATH):
 
         # Check if the file is in fact a measurement
         if file.endswith(".json") and "measurement" in file: 
@@ -127,13 +222,16 @@ if __name__ == "__main__":
                 scenariodict[scenario] = [version]
 
     # Print the dict
-    print(scenariodict)
+    #print(scenariodict)
 
     # Determine complete scenarios
-    versions = ["V4","V5", "V6", "V8", "V9"]
-    versions = ["V6", "V8", "V9"]
-    versions = ["V8","V9", "V10"]
+    #versions = ["V4", "V5", "V6", "V8", "V9"]
+    #versions = ["V6", "V8", "V9"]
+    #versions = ["V8", "V9", "V10"]
     #versions = ["V8"]
+    versions = ["V15"]
+
+    # Determine the complete scenarios
     completeScenarios = []
     for key in scenariodict.keys():
 
@@ -150,11 +248,14 @@ if __name__ == "__main__":
         # Check if really all are there
         if AllVersionsThere:
             completeScenarios.append(key)
+    
+    # Print the dict of complete scenarios
     print(completeScenarios)
 
+    # Loop over the complete scenarios and plot each of them
     for scenario in completeScenarios:
 
-        data = {name: read_json(scenario + "_measurement_" + name + ".json") for name in versions}
+        data = {name: read_json(MEASUREMENT_PATH + scenario + "_measurement_" + name + ".json") for name in versions}
 
         # Plot the measurements
-        PlotMeasurement(data)
+        PlotMeasurementV2(data)

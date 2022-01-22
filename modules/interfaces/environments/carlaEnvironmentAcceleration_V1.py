@@ -16,7 +16,7 @@ class CarlaEnvironment:
     
     # assign static variables
     SHOW_CAM = False
-    MEASUREMENT_ACTIVE = False
+    MEASUREMENT_ACTIVE = True
     IM_WIDTH = 640
     IM_HEIGHT = 480
     MPS_TO_KPH = 3.6
@@ -25,30 +25,22 @@ class CarlaEnvironment:
     SECONDS_PER_EPISODE = 30
     ACTION_TYPE_FORM = "CONTINUOUS"
 
-    # Up to V14 (including 14)
-    #MAX_ACCEL = 2.5 #m/s²
-    #MAX_DECEL = 4.5 #m/s²
-
-    # from V15 on
     MAX_ACCEL = 2.5 #m/s²
-    MAX_DECEL = 2.5 #m/s²
-
+    MAX_DECEL = 4.5 #m/s²
 
     action_space = np.array([1])
     #observation_space = np.array([1, 2, 3, 4, 5]) # V1 - V7
     #observation_space = np.array([1, 2, 3, 4]) # V8, V11
     #observation_space = np.array([1, 2, 3, 4, 5]) # V9, V10
-    #observation_space = np.array(["controlspeed_kph", "egospeed_kph", "headway"]) # V12 - V14
-    observation_space = np.array(["controlspeed_kph", "egospeed_kph", "dx_m", "vx_rel_kph"]) # V15
+    observation_space = np.array([1, 2, 3]) # V12
     DELTA_T = 0.100 #s
 
     # measurement variables
-    MEASUREMENT_DICT = {"scenarioname": "", "timestamps": [], "setspeed": [], "speedrestriction": [], "targetspeed": [], "egospeed": [], "headway": [], "acc_requested":[], "acc_measured":[]}
-    SW_VERSION = "V15"
-    OUTPUT_PATH = "/home/ai-admin/Measurements/V2/"
+    MEASUREMENT_DICT = {"scenarioname": "", "timestamps": [], "setspeed": [], "speedrestriction": [], "targetspeed": [], "egospeed": [], "headway": []}
+    OUTPUT_DIRECTORY = "/home/ai-admin/proj-modular-reinforcement-learning/training/summaries/211122_011414_RL_ACC_TEST_v2_normalized_reward/best/"
 
     # Scenario variables
-    SCENARIO_PATH = "/home/ai-admin/proj-modular-reinforcement-learning/scenarios/V2/scenarios/"
+    SCENARIO_PATH = "/home/ai-admin/proj-modular-reinforcement-learning/scenarios/"
 
     # assign image
     img_front_camera = None
@@ -77,10 +69,7 @@ class CarlaEnvironment:
         self.target =  random.choice(self.blueprint_library.filter('model3'))
 
         # Get all scenarios
-        self.scenario_list_cat1 = os.listdir(self.SCENARIO_PATH + "/CAT1/")
-        self.scenario_list_cat2 = os.listdir(self.SCENARIO_PATH + "/CAT2/")
-        self.scenario_list_cat3 = os.listdir(self.SCENARIO_PATH + "/CAT3/")
-        self.scenario_list_cat4 = os.listdir(self.SCENARIO_PATH + "/CAT4/")
+        self.scenario_list = os.listdir(self.SCENARIO_PATH)
 
     # ---------------------------------------------------------------------------------------
     # RESET METHOD
@@ -93,29 +82,9 @@ class CarlaEnvironment:
         self.actor_list = []
 
         # Load a scenario definition
-        # Select a category first
-        # - CAT4 two times in list to balance 50:50 between controlspeed scenarios and target follow scenarios)
-        # - CAT1: 50:50 (controlspeed:follow)
-        # - CAT2: follow
-        # - CAT3: follow
-        # - CAT4: controlspeed
-        category = random.choice(["CAT1", "CAT2", "CAT3", "CAT4", "CAT4"])
-
-        # Select a scenario name of the category
-        if category == "CAT1":
-            self.scenario_name = random.choice(self.scenario_list_cat1)
-        elif category == "CAT2":
-            self.scenario_name = random.choice(self.scenario_list_cat2)
-        elif category == "CAT3":
-            self.scenario_name = random.choice(self.scenario_list_cat3)
-        elif category == "CAT4":
-            self.scenario_name = random.choice(self.scenario_list_cat4)
-        
-        # Optionally override
-        #self.scenario_name = "31_10.json"
-
-        # Read the scenario
-        self.scenario_definition = self.read_scenario(self.SCENARIO_PATH + category + "/" + self.scenario_name)
+        self.scenario_name = random.choice(self.scenario_list)
+        self.scenario_name = "31_10.json"
+        self.scenario_definition = self.read_scenario(self.SCENARIO_PATH + self.scenario_name)
 
         # set transforms and vehicle
         # spawn the actor
@@ -142,8 +111,8 @@ class CarlaEnvironment:
 
         # Reset the measurement
         if len(self.MEASUREMENT_DICT["timestamps"]) > 0:
-            self.save_measurement(self.MEASUREMENT_DICT["scenarioname"][:-5] + "_measurement_" + self.SW_VERSION + ".json")
-        self.MEASUREMENT_DICT = {"scenarioname": "", "timestamps": [], "setspeed": [], "speedrestriction": [], "targetspeed": [], "egospeed": [], "headway": [], "acc_requested":[], "acc_measured":[]}
+            self.save_measurement(self.MEASUREMENT_DICT["scenarioname"][:-5] + "_measurement_" + "V14" + ".json")
+        self.MEASUREMENT_DICT = {"scenarioname": "", "timestamps": [], "setspeed": [], "speedrestriction": [], "targetspeed": [], "egospeed": [], "headway": []}
 
         # Wait for a certain time until the simulation is ready
         time.sleep(3)
@@ -171,12 +140,12 @@ class CarlaEnvironment:
         dx_rel = self.scenario_definition['init_dx_target'] - self.DISTANCE_BUMPER_COMP
         vx_rel = (self.scenario_definition['init_speed_ego'] - self.scenario_definition['init_speed_ego']) * self.MPS_TO_KPH
 
-        # V8, V11, V15: MIN
-        controlspeed = min(self.speed_set, self.speed_restriction)
-        return np.array([controlspeed,\
-             self.scenario_definition['init_speed_ego'] * self.MPS_TO_KPH, dx_rel, vx_rel])
+        # V8, V11: MIN
+        #controlspeed = min(self.speed_set, self.speed_restriction)
+        #return np.array([controlspeed,\
+        #     self.scenario_definition['init_speed_ego'] * self.MPS_TO_KPH, dx_rel, vx_rel])
 
-        # V12: MIN, headway
+        # V8, V11: MIN
         controlspeed = min(self.speed_set, self.speed_restriction)
         return np.array([controlspeed,\
              self.scenario_definition['init_speed_ego'] * self.MPS_TO_KPH, 99])
@@ -217,7 +186,7 @@ class CarlaEnvironment:
     def save_measurement(self, name):
         
         # Dump the measurement dict as a json file
-        with open(self.OUTPUT_PATH + name, 'w') as f:
+        with open(name, 'w') as f:
             json.dump(self.MEASUREMENT_DICT, f)
 
     
@@ -586,8 +555,7 @@ class CarlaEnvironment:
 
         """
 
-        """
-        # V10 - V14
+        # V10
 
         # Defintions
         max_reward = 50
@@ -668,88 +636,6 @@ class CarlaEnvironment:
 
         else:
             reward_speed = min_reward
-        """
-
-        
-        #V15 Reward (back to V9 reward)
-
-        # Defintions
-        max_reward = 50
-        min_reward = -50
-        max_reward_outside_target_range = -10
-        min_reward_inside_target_range = 10
-        target_range_max_deviation = 3
-        outside_range_max_deviation = 130
-
-        # Determine the deviation
-        deviation_from_control_speed = abs(v_vehicle * self.MPS_TO_KPH - control_speed)
-        
-        # Check if the reward is in the target zone
-        if deviation_from_control_speed <= 3:
-            
-            # Reward in target zone
-            # Reward structure:
-            #
-            # | 50                      -----
-            # |                        |
-            # | 25               -------
-            # |                  |
-            # | 10         -------
-            # |            |
-            # | 0 ---------|-----|-----|-----|
-            #  deviation   3     2     1     0
-
-            # Check if the ego speed is in range
-            if abs(v_vehicle * self.MPS_TO_KPH - control_speed) < 1:
-                reward_speed = 50
-
-            elif abs(v_vehicle * self.MPS_TO_KPH - control_speed) < 2:
-                reward_speed = 25
-
-            elif abs(v_vehicle * self.MPS_TO_KPH - control_speed) < 3:
-                reward_speed = 10
-        
-        elif deviation_from_control_speed > 3:
-
-            # Reward in target zone
-            # Reward structure:
-            #
-            #  deviation 
-            #   130                           3     0
-            # | 0 ----------------------------|-----|
-            # |                             /
-            # |                          /
-            # |                       /
-            # |                    /
-            # |                 /
-            # |              /
-            # |           /
-            # |        /
-            # | -50 /
-
-            # Determine the reward
-            slope = (max_reward_outside_target_range - min_reward) / (outside_range_max_deviation - target_range_max_deviation)
-            reward_speed = max_reward_outside_target_range - slope * (deviation_from_control_speed - target_range_max_deviation)
-
-            # Offset the reward based on if the acceleration points to the correct way
-            if v_vehicle * self.MPS_TO_KPH < control_speed:
-                if a_vehicle > 0.2:
-                    reward_speed += 10
-                else:
-                    # Do nothing
-                    pass
-
-            elif v_vehicle * self.MPS_TO_KPH > control_speed:
-                if a_vehicle < -0.2:
-                    reward_speed += 10
-                else:
-                    # Do nothing
-                    pass
-
-        else:
-            reward_speed = min_reward
-
-        
 
 
         # 4.3 Aggregate Rewards
@@ -851,12 +737,6 @@ class CarlaEnvironment:
             self.MEASUREMENT_DICT["targetspeed"].append(v_target * self.MPS_TO_KPH)
             self.MEASUREMENT_DICT["egospeed"].append(v_vehicle * self.MPS_TO_KPH)
             self.MEASUREMENT_DICT["headway"].append(headway)
-            self.MEASUREMENT_DICT["acc_requested"].append(a_vehicle)
-            if action < 0:
-                acc_requested = float(action) * self.MAX_DECEL
-            else:
-                acc_requested = float(action) * self.MAX_ACCEL
-            self.MEASUREMENT_DICT["acc_requested"].append(acc_requested)
 
 
         # *****************************************
@@ -887,13 +767,13 @@ class CarlaEnvironment:
             done = True
 
         # return the observation, reward, done 
-        # V8, V11, V15: MIN
-        controlspeed = min(self.speed_set, self.speed_restriction)
-        return np.array([controlspeed, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, dx_rel, vx_rel]), reward, done, None
-
-        # V12 - 14: MIN, Headway
+        # V8, V11: MIN
         #controlspeed = min(self.speed_set, self.speed_restriction)
-        #return np.array([controlspeed, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, headway]), reward, done, None
+        #return np.array([controlspeed, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, dx_rel, vx_rel]), reward, done, None
+
+        # V12: MIN, Headway
+        controlspeed = min(self.speed_set, self.speed_restriction)
+        return np.array([controlspeed, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, headway]), reward, done, None
 
         # V9, V10: back to 5 inputs again
         #return np.array([self.speed_set, self.speed_restriction, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, dx_rel, vx_rel]), reward, done, None
