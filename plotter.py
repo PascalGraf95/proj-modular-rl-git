@@ -85,7 +85,7 @@ def PlotMeasurementV1(inputData):
 # ---------------------------------------------------------------------------------------
 # Plot the measurement V2 -- headway, speeds and accelerartions
 # ---------------------------------------------------------------------------------------
-def PlotMeasurementV2(inputData):
+def PlotMeasurementV2(path, inputData):
 
     # Get the first stuff
     firstData = inputData[list(inputData.keys())[0]]
@@ -157,9 +157,10 @@ def PlotMeasurementV2(inputData):
     
     # loop over all and print them
     for key in inputData.keys():
-        #ax3.plot(inputData[key]["timestamps"], inputData[key]["acc_requested"], label="Requested Acceleration [m/s²] - " + str(key))
+        ax3.plot(inputData[key]["timestamps"], inputData[key]["acc_requested"], label="Requested Acceleration [m/s²] - " + str(key))
         #ax3.plot(inputData[key]["timestamps"], inputData[key]["acc_measured"], label="Measured Acceleration [m/s²] - " + str(key))
-        ax3.plot(inputData[key]["timestamps"], inputData[key]["headway"], label="Headway [s] - " + str(key))
+        ax3.plot(inputData[key]["timestamps"], inputData[key]["acc_calc"], label="Measured calculated Acceleration [m/s²] - " + str(key))
+        #ax3.plot(inputData[key]["timestamps"], inputData[key]["headway"], label="Headway [s] - " + str(key))
 
     # Legend and grid
     ax3.legend()
@@ -167,7 +168,7 @@ def PlotMeasurementV2(inputData):
 
     # Set the figure attributes and save
     fig.tight_layout()
-    fig.savefig(firstData["scenarioname"] + ".png")
+    fig.savefig(path + firstData["scenarioname"] + ".png")
     plt.clf()
     plt.cla()
     fig = None
@@ -258,4 +259,4 @@ if __name__ == "__main__":
         data = {name: read_json(MEASUREMENT_PATH + scenario + "_measurement_" + name + ".json") for name in versions}
 
         # Plot the measurements
-        PlotMeasurementV2(data)
+        PlotMeasurementV2(MEASUREMENT_PATH, data)

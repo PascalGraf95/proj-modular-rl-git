@@ -16,7 +16,6 @@ class CarlaEnvironment:
     
     # assign static variables
     SHOW_CAM = False
-    MEASUREMENT_ACTIVE = False
     IM_WIDTH = 640
     IM_HEIGHT = 480
     MPS_TO_KPH = 3.6
@@ -33,24 +32,25 @@ class CarlaEnvironment:
     MAX_ACCEL = 2.5 #m/s²
     MAX_DECEL = 2.5 #m/s²
 
-
     action_space = np.array([1])
     #observation_space = np.array([1, 2, 3, 4, 5]) # V1 - V7
     #observation_space = np.array([1, 2, 3, 4]) # V8, V11
     #observation_space = np.array([1, 2, 3, 4, 5]) # V9, V10
     #observation_space = np.array(["controlspeed_kph", "egospeed_kph", "headway"]) # V12 - V14
     observation_space = np.array(["controlspeed_kph", "egospeed_kph", "dx_m", "vx_rel_kph"]) # V15
+    observation_space = np.array(["controlspeed_kph", "egospeed_kph", "dx_m", "vx_rel_kph", "previous_requ_acc"]) # V16
     DELTA_T = 0.100 #s
 
     # measurement variables
-    MEASUREMENT_DICT = {"scenarioname": "", "timestamps": [], "setspeed": [], "speedrestriction": [], "targetspeed": [], "egospeed": [], "headway": [], "acc_requested":[], "acc_measured":[]}
+    MEASUREMENT_DICT = {"scenarioname": "", "timestamps": [], "setspeed": [], "speedrestriction": [], "targetspeed": [], "egospeed": [], "headway": [], "acc_requested":[], "acc_measured":[], "acc_calc": []}
+    MEASUREMENT_ACTIVE = True
     SW_VERSION = "V15"
     OUTPUT_PATH = "/home/ai-admin/Measurements/V2/"
 
     # Scenario variables
     SCENARIO_PATH = "/home/ai-admin/proj-modular-reinforcement-learning/scenarios/V2/scenarios/"
 
-    # assign image
+    # Assign image
     img_front_camera = None
 
 
@@ -143,7 +143,7 @@ class CarlaEnvironment:
         # Reset the measurement
         if len(self.MEASUREMENT_DICT["timestamps"]) > 0:
             self.save_measurement(self.MEASUREMENT_DICT["scenarioname"][:-5] + "_measurement_" + self.SW_VERSION + ".json")
-        self.MEASUREMENT_DICT = {"scenarioname": "", "timestamps": [], "setspeed": [], "speedrestriction": [], "targetspeed": [], "egospeed": [], "headway": [], "acc_requested":[], "acc_measured":[]}
+        self.MEASUREMENT_DICT = {"scenarioname": "", "timestamps": [], "setspeed": [], "speedrestriction": [], "targetspeed": [], "egospeed": [], "headway": [], "acc_requested":[], "acc_measured":[], "acc_calc": []}
 
         # Wait for a certain time until the simulation is ready
         time.sleep(3)
@@ -170,6 +170,12 @@ class CarlaEnvironment:
         # Return the observation
         dx_rel = self.scenario_definition['init_dx_target'] - self.DISTANCE_BUMPER_COMP
         vx_rel = (self.scenario_definition['init_speed_ego'] - self.scenario_definition['init_speed_ego']) * self.MPS_TO_KPH
+        self.previous_action_acc = 0.0
+
+        # V16
+        controlspeed = min(self.speed_set, self.speed_restriction)
+        return np.array([controlspeed,\
+             self.scenario_definition['init_speed_ego'] * self.MPS_TO_KPH, dx_rel, vx_rel, self.previous_action_acc])
 
         # V8, V11, V15: MIN
         controlspeed = min(self.speed_set, self.speed_restriction)
@@ -284,20 +290,21 @@ class CarlaEnvironment:
         if action < 0:
             # apply the control
             speed = self.actor_vehicle.get_velocity().x
+            action_acc = float(action) * self.MAX_DECEL * self.DELTA_T
             speed_set = speed + float(action) * self.MAX_DECEL * self.DELTA_T
-            print(speed_set)
             self.actor_vehicle.set_target_velocity(carla.Vector3D(speed_set, 0 , 0))
             print("braking")
 
         elif action > 0:
             # apply the control
             speed = self.actor_vehicle.get_velocity().x
+            action_acc = float(action) * self.MAX_ACCEL * self.DELTA_T
             speed_set = speed + float(action) * self.MAX_ACCEL * self.DELTA_T
-            print(speed_set)
             self.actor_vehicle.set_target_velocity(carla.Vector3D(speed_set, 0 , 0))
             print("accelerating")
 
         elif action == 0:
+            action_acc = 0.0
             print("nothing")
 
 
@@ -316,12 +323,13 @@ class CarlaEnvironment:
         # *****************************************
         # 3. GET THE OBSERVATIONS
         # *****************************************
+        a_vehicle = self.actor_vehicle.get_acceleration().x
+        a_vehicle_calc = (self.actor_vehicle.get_velocity().x- speed) / self.DELTA_T
+        a_target = self.actor_target.get_acceleration().x
         x_vehicle = self.actor_vehicle.get_location().x
         x_target = self.actor_target.get_location().x
         v_vehicle = self.actor_vehicle.get_velocity().x
         v_target = self.actor_target.get_velocity().x
-        a_vehicle = self.actor_vehicle.get_acceleration().x
-        a_target = self.actor_target.get_acceleration().x
         dx_rel = x_target - x_vehicle - self.DISTANCE_BUMPER_COMP
         vx_rel = v_target * self.MPS_TO_KPH - v_vehicle * self.MPS_TO_KPH
 
@@ -361,7 +369,8 @@ class CarlaEnvironment:
             reward_headway = 0.5
         """
 
-        # V1 - V5 Reward
+        """
+        # V4 - V15 Reward
 
         # Definitions
         max_headway_to_be_rewarded = 5
@@ -388,6 +397,61 @@ class CarlaEnvironment:
             reward_headway = 1
         elif headway > max_headway_to_be_rewarded:
             reward_headway = 0.5
+        """
+
+        # V16 Reward
+
+        # Definitions
+        max_headway_to_be_rewarded = 5
+
+        # Check if the vehicle is still driving
+        if v_vehicle > 1:
+            
+            # Determine Headway
+            headway = (x_target - x_vehicle - self.DISTANCE_BUMPER_COMP) / v_vehicle
+
+            # apply suggested reward function
+            if headway < 0.5:
+                reward_headway = -1000
+                #done = True
+            elif headway < 1.75:
+                reward_headway = -25
+            elif headway < 1.9:
+                reward_headway = 10
+            elif headway < 2.1:
+                reward_headway = 50
+            elif headway < 2.25:
+                reward_headway = 10
+            elif headway < max_headway_to_be_rewarded:
+                reward_headway = 1
+            elif headway > max_headway_to_be_rewarded:
+                reward_headway = 0.5
+
+        else:
+            # Set headway by assuming 1m/s, effectively turning it into stopping distance
+            headway = headway = (x_target - x_vehicle - self.DISTANCE_BUMPER_COMP) / 1.0
+
+            # Check if the target is also standing
+            if abs(v_target) < 1:
+                
+                # apply suggested reward function
+                if headway < 1.5:
+                    reward_headway = -1000
+                elif headway < 1.9:
+                    reward_headway = 10
+                elif headway < 2.1:
+                    reward_headway = 50
+                elif headway < 2.25:
+                    reward_headway = 10
+                elif headway < max_headway_to_be_rewarded:
+                    reward_headway = 1
+                elif headway > max_headway_to_be_rewarded:
+                    reward_headway = 0.5
+
+            else:
+                # Target is not in standstill
+                reward_headway = -25
+        
 
         # 4.2 Reward based on the current control speed
         # ==========================================
@@ -670,7 +734,7 @@ class CarlaEnvironment:
             reward_speed = min_reward
         """
 
-        
+        """
         #V15 Reward (back to V9 reward)
 
         # Defintions
@@ -749,7 +813,93 @@ class CarlaEnvironment:
         else:
             reward_speed = min_reward
 
+        """
+
+        #V16 Reward
+
+        # Defintions
+        max_reward = 50
+        min_reward = -50
+        max_reward_outside_target_range = -10
+        min_reward_inside_target_range = 10
+        target_range_max_deviation = 3
+        outside_range_max_deviation = 130
+
+        # Determine the deviation
+        deviation_from_control_speed = abs(v_vehicle * self.MPS_TO_KPH - control_speed)
         
+        # Check if the reward is in the target zone
+        if deviation_from_control_speed <= 3:
+            
+            # Reward in target zone
+            # Reward structure:
+            #
+            # | 50                      -----
+            # |                        |
+            # | 25               -------
+            # |                  |
+            # | 10         -------
+            # |            |
+            # | 0 ---------|-----|-----|-----|
+            #  deviation   3     2     1     0
+
+            # Check if the ego speed is in range
+            if abs(v_vehicle * self.MPS_TO_KPH - control_speed) < 1:
+                reward_speed = 50
+
+            elif abs(v_vehicle * self.MPS_TO_KPH - control_speed) < 2:
+                reward_speed = 25
+
+            elif abs(v_vehicle * self.MPS_TO_KPH - control_speed) < 3:
+                reward_speed = 10
+        
+        elif deviation_from_control_speed > 3:
+
+            # Reward in target zone
+            # Reward structure:
+            #
+            #  deviation 
+            #   130                           3     0
+            # | 0 ----------------------------|-----|
+            # |                             /
+            # |                          /
+            # |                       /
+            # |                    /
+            # |                 /
+            # |              /
+            # |           /
+            # |        /
+            # | -50 /
+
+            # Determine the reward
+            slope = (max_reward_outside_target_range - min_reward) / (outside_range_max_deviation - target_range_max_deviation)
+            reward_speed = max_reward_outside_target_range - slope * (deviation_from_control_speed - target_range_max_deviation)
+
+            # Offset the reward based on if the acceleration points to the correct way
+            if v_vehicle * self.MPS_TO_KPH < control_speed:
+                if a_vehicle_calc > 0.2:
+                    reward_speed += 10
+                else:
+                    # Do nothing
+                    pass
+
+            elif v_vehicle * self.MPS_TO_KPH > control_speed:
+                if a_vehicle_calc < -0.2:
+                    reward_speed += 10
+                else:
+                    # Do nothing
+                    pass
+
+        else:
+            reward_speed = min_reward
+
+
+        # 4.3 Reward based on JERK (from V16 on)
+        # ==========================================
+        max_jerk = self.MAX_ACCEL + self.MAX_DECEL
+        jerk = abs(action_acc - self.previous_action_acc)
+        self.previous_action_acc = action_acc
+        reward_jerk = -50 * jerk/max_jerk
 
 
         # 4.3 Aggregate Rewards
@@ -779,7 +929,8 @@ class CarlaEnvironment:
                 reward_motion = reward_headway
 
         # aggregate the final reward
-        reward = reward_motion
+        # from V16: add reward jerk (which is negative)
+        reward = reward_motion + reward_jerk
 
         # normalize reward
         reward /= 50
@@ -851,7 +1002,8 @@ class CarlaEnvironment:
             self.MEASUREMENT_DICT["targetspeed"].append(v_target * self.MPS_TO_KPH)
             self.MEASUREMENT_DICT["egospeed"].append(v_vehicle * self.MPS_TO_KPH)
             self.MEASUREMENT_DICT["headway"].append(headway)
-            self.MEASUREMENT_DICT["acc_requested"].append(a_vehicle)
+            self.MEASUREMENT_DICT["acc_measured"].append(a_vehicle)
+            self.MEASUREMENT_DICT["acc_calc"].append(a_vehicle_calc)
             if action < 0:
                 acc_requested = float(action) * self.MAX_DECEL
             else:
@@ -886,7 +1038,11 @@ class CarlaEnvironment:
         if dx_rel < 1:
             done = True
 
-        # return the observation, reward, done 
+        # return the observation, reward, done
+        # V16
+        controlspeed = min(self.speed_set, self.speed_restriction)
+        return np.array([controlspeed, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, dx_rel, vx_rel, self.previous_action_acc]), reward, done, None
+
         # V8, V11, V15: MIN
         controlspeed = min(self.speed_set, self.speed_restriction)
         return np.array([controlspeed, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, dx_rel, vx_rel]), reward, done, None
