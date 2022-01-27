@@ -22,13 +22,10 @@ class PassatEnvironment:
     ACTION_TYPE_FORM = "CONTINUOUS"
     action_space = np.array([1])
     #observation_space = np.array([1, 2, 3, 4, 5]) # pre V12
-    #observation_space = np.array([1, 2, 3]) # from V12
-    #observation_space = np.array(["controlspeed_kph", "egospeed_kph", "dx_m", "vx_rel_kph"]) # V15
-    observation_space = np.array(["controlspeed_kph", "egospeed_kph", "dx_m", "vx_rel_kph", "previous_action_acc"]) # V16
-
+    observation_space = np.array([1, 2, 3]) # from V12
     DELTA_T = 0.100 #s
     MAX_ACCEL = 2.5 #m/s²
-    MAX_DECEL = 2.5 #m/s²
+    MAX_DECEL = 4.5 #m/s²
     acceleration = 0
 
     # measurement variables
@@ -88,31 +85,9 @@ class PassatEnvironment:
         self.a_target = 0
         self.dx_rel = 100
         self.vx_rel = 0
-        self.previous_action_acc = 0.0
         control_speed = min(self.speed_set, self.speed_restriction)
         headway = 99
-
-        """
-        # V12
         return np.array([control_speed, self.speed_ego_mps * self.MPS_TO_KPH, 99])
-        
-
-        # V8, V11, V15: MIN
-        controlspeed = min(self.speed_set, self.speed_restriction)
-        return np.array([controlspeed,\
-             self.scenario_definition['init_speed_ego'] * self.MPS_TO_KPH, dx_rel, vx_rel])
-
-        # V12: MIN, headway
-        controlspeed = min(self.speed_set, self.speed_restriction)
-        return np.array([controlspeed,\
-             self.scenario_definition['init_speed_ego'] * self.MPS_TO_KPH, 99])
-        """
-
-        # V16
-        controlspeed = min(self.speed_set, self.speed_restriction)
-        return np.array([controlspeed,\
-             self.scenario_definition['init_speed_ego'] * self.MPS_TO_KPH, dx_rel, vx_rel, self.previous_action_acc])
-
 
     # ---------------------------------------------------------------------------------------
     # SAVE MEASUREMENT
@@ -140,17 +115,11 @@ class PassatEnvironment:
         # *****************************************
         if action < 0:
             self.acceleration = float(action) * self.MAX_DECEL
-            self.previous_action_acc = self.acceleration
             print("braking")
-
         elif action > 0:
             self.acceleration = float(action) * self.MAX_ACCEL
-            self.previous_action_acc = self.acceleration
             print("accelerating")
-            
         elif action == 0:
-            self.acceleration = 0.0
-            self.previous_action_acc = 0.0
             print("nothing")
 
         """
@@ -413,20 +382,9 @@ class PassatEnvironment:
         print("ACCELERATION     [m/s2]: ", self.acceleration)
 
         # return the observation, reward, done 
-        """
-        # Prior to V12
-        return np.array([self.speed_set, self.speed_restriction, self.v_vehicle, self.dx_rel, self.vx_rel]), reward, False, None
+        #return np.array([self.speed_set, self.speed_restriction, self.v_vehicle, self.dx_rel, self.vx_rel]), reward, False, None
 
         #V12
         None
         control_speed = min(self.speed_set, self.speed_restriction)
         return np.array([control_speed, self.v_vehicle * self.MPS_TO_KPH, headway]), reward, False, None
-
-        # V8, V11, V15: MIN
-        controlspeed = min(self.speed_set, self.speed_restriction)
-        return np.array([controlspeed, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, dx_rel, vx_rel]), reward, done, None
-        """
-
-        # V16
-        controlspeed = min(self.speed_set, self.speed_restriction)
-        return np.array([controlspeed, self.actor_vehicle.get_velocity().x * self.MPS_TO_KPH, dx_rel, vx_rel * self.MPS_TO_KPH, self.previous_action_acc]), reward, done, None
