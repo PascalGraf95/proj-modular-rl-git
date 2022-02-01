@@ -35,7 +35,7 @@ class SACActor(Actor):
         super().__init__(port, mode, interface, preprocessing_algorithm, preprocessing_path,
                          exploration_algorithm, environment_path, device)
 
-    def act(self, states, agent_ids=None, mode="training"):
+    def act(self, states, agent_ids=None, mode="training", clone=False):
         # Check if any agent in the environment is not in a terminal state
         active_agent_number = len(agent_ids)
         if not active_agent_number:
@@ -43,15 +43,21 @@ class SACActor(Actor):
         with tf.device(self.device):
             if self.recurrent:
                 # Set the initial LSTM states correctly according to the number of active agents
-                self.set_lstm_states(agent_ids)
+                self.set_lstm_states(agent_ids, clone=clone)
                 # In case of a recurrent network, the state input needs an additional time dimension
                 states = [tf.expand_dims(state, axis=1) for state in states]
-                (mean, log_std), hidden_state, cell_state = self.actor_network(states)
+                if clone:
+                    (mean, log_std), hidden_state, cell_state = self.clone_actor_network(states)
+                else:
+                    (mean, log_std), hidden_state, cell_state = self.actor_network(states)
                 # Update the LSTM states according to the latest network prediction
-                self.update_lstm_states(agent_ids, [hidden_state.numpy(), cell_state.numpy()])
+                self.update_lstm_states(agent_ids, [hidden_state.numpy(), cell_state.numpy()], clone=clone)
             else:
-                mean, log_std = self.actor_network(states)
-            if mode == "training":
+                if clone:
+                    mean, log_std = self.clone_actor_network(states)
+                else:
+                    mean, log_std = self.actor_network(states)
+            if mode == "training" and not clone:
                 normal = tfd.Normal(mean, tf.exp(log_std))
                 actions = tf.tanh(normal.sample())
             else:
@@ -95,13 +101,17 @@ class SACActor(Actor):
                 sample_errors = eta*np.max(sample_errors, axis=1) + (1-eta)*np.mean(sample_errors, axis=1)
         return sample_errors
 
-    def update_actor_network(self, network_weights):
+    def update_actor_network(self, network_weights, total_episodes=0):
         if not len(network_weights):
             return
         self.actor_network.set_weights(network_weights[0])
         self.critic_network.set_weights(network_weights[1])
         if self.recurrent:
             self.actor_prediction_network.set_weights(network_weights[0])
+        if (self.is_clone_network_update_requested(total_episodes)) and self.behavior_clone_name:
+            self.clone_actor_network.set_weights(network_weights[0])
+            print("Clone Network has been updated")
+            self.steps_taken_since_clone_network_update = 0
         self.steps_taken_since_network_update = 0
 
     def build_network(self, network_parameters, environment_parameters, idx):
@@ -148,6 +158,10 @@ class SACActor(Actor):
         with tf.device(self.device):
             self.actor_network = construct_network(network_parameters[0], plot_network_model=True)
             self.critic_network = construct_network(network_parameters[1])
+            if self.behavior_clone_name:
+                network_parameters.append(network_parameters[0].copy())
+                network_parameters[3]['NetworkType'] = 'ActorCloneCopy{}'.format(idx)
+                self.clone_actor_network = construct_network(network_parameters[3], plot_network_model=True)
             if self.recurrent:
                 self.actor_prediction_network = construct_network(network_parameters[2])
                 self.get_lstm_layers()

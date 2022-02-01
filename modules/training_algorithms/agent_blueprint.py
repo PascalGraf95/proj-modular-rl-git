@@ -21,11 +21,14 @@ class Actor:
                  device: str = '/cpu:0'):
         # Network
         self.actor_network = None
+        self.clone_actor_network = None
         self.critic_network = None
         self.actor_prediction_network = None
         self.network_update_requested = False
         self.steps_taken_since_network_update = 0
+        self.steps_taken_since_clone_network_update = 0
         self.network_update_frequency = 1000
+        self.clone_network_update_frequency = 1000
 
         # Environment
         self.environment = None
@@ -42,6 +45,8 @@ class Actor:
         self.lstm = None
         self.lstm_units = None
         self.lstm_state = None
+        self.clone_lstm = None
+        self.clone_lstm_state = None
 
         # Local Logger
         self.local_logger = None
@@ -51,10 +56,14 @@ class Actor:
 
         # Behavior Parameters
         self.behavior_name = None
+        self.behavior_clone_name = None
         self.action_shape = None
         self.action_type = None
         self.observation_shapes = None
         self.agent_number = None
+        self.agent_id_offset = None
+        self.clone_agent_id_offset = None
+        self.last_clone_update_step = -1
 
         # Exploration Algorithm
         self.exploration_configuration = None
@@ -112,6 +121,17 @@ class Actor:
     def is_network_update_requested(self):
         return self.steps_taken_since_network_update >= self.network_update_frequency
 
+    def is_clone_network_update_requested(self, total_episodes):
+        if total_episodes != self.last_clone_update_step:
+            if total_episodes == 0:
+                self.last_clone_update_step = total_episodes
+                return True
+            elif self.clone_network_update_frequency:
+                if total_episodes % self.clone_network_update_frequency == 0:
+                    self.last_clone_update_step = total_episodes
+                    return True
+        return False
+
     def get_target_task_level(self):
         return self.target_task_level
 
@@ -130,13 +150,15 @@ class Actor:
         return self.environment_configuration
 
     def read_environment_configuration(self):
-        self.behavior_name = AgentInterface.get_behavior_name(self.environment)
-        self.action_shape = AgentInterface.get_action_shape(self.environment)
+        self.behavior_name, self.behavior_clone_name = AgentInterface.get_behavior_name(self.environment)
         self.action_type = AgentInterface.get_action_type(self.environment)
+        self.action_shape = AgentInterface.get_action_shape(self.environment, self.action_type)
         self.observation_shapes = AgentInterface.get_observation_shapes(self.environment)
-        self.agent_number = AgentInterface.get_agent_number(self.environment, self.behavior_name)
-
+        self.agent_number, self.agent_id_offset = AgentInterface.get_agent_number(self.environment, self.behavior_name)
+        if self.behavior_clone_name:
+            _, self.clone_agent_id_offset = AgentInterface.get_agent_number(self.environment, self.behavior_clone_name)
         self.environment_configuration = {"BehaviorName": self.behavior_name,
+                                          "BehaviorCloneName": self.behavior_clone_name,
                                           "ActionShape": self.action_shape,
                                           "ActionType": self.action_type,
                                           "ObservationShapes": self.observation_shapes,
@@ -209,6 +231,7 @@ class Actor:
                                                 n_steps=trainer_configuration.get("NSteps"),
                                                 gamma=trainer_configuration.get("Gamma"))
         self.network_update_frequency = trainer_configuration.get("NetworkUpdateFrequency")
+        self.clone_network_update_frequency = trainer_configuration.get("SelfPlayNetworkUpdateFrequency")
 
     def update_sequence_length(self, trainer_configuration):
         self.sequence_length = trainer_configuration.get("SequenceLength")
@@ -236,6 +259,7 @@ class Actor:
 
         self.local_logger = LocalLogger(agent_num=self.agent_number)
         self.instantiate_local_buffer(trainer_configuration)
+        return self.environment_configuration
     # endregion
 
     # region Network Construction and Updates
@@ -247,8 +271,12 @@ class Actor:
         self.lstm_units = self.lstm.units
         self.lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                            np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
+        if self.behavior_clone_name:
+            self.clone_lstm = self.clone_actor_network.get_layer("lstm_2")
+            self.clone_lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
+                                     np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
 
-    def update_actor_network(self, network_weights):
+    def update_actor_network(self, network_weights, forced=False):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
     def reset_actor_state(self):
@@ -256,33 +284,60 @@ class Actor:
         for layer in self.actor_network.layers:
             if "lstm" in layer.name:
                 layer.reset_states()
+        if self.behavior_clone_name:
+            for layer in self.clone_actor_network.layers:
+                if "lstm" in layer.name:
+                    layer.reset_states()
 
-    def register_terminal_agents(self, terminal_ids):
+    def register_terminal_agents(self, terminal_ids, clone=False):
         if not self.recurrent:
             return
         # Reset the hidden and cell state for agents that are in a terminal episode state
-        for agent_id in terminal_ids:
-            self.lstm_state[0][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
-            self.lstm_state[1][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
 
-    def set_lstm_states(self, agent_ids):
+        if clone:
+            for agent_id in terminal_ids:
+                self.clone_lstm_state[0][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
+                self.clone_lstm_state[1][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
+        else:
+            for agent_id in terminal_ids:
+                self.lstm_state[0][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
+                self.lstm_state[1][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
+
+    def set_lstm_states(self, agent_ids, clone=False):
         active_agent_number = len(agent_ids)
-        lstm_state = [np.zeros((active_agent_number, self.lstm_units), dtype=np.float32),
-                      np.zeros((active_agent_number, self.lstm_units), dtype=np.float32)]
-        for idx, agent_id in enumerate(agent_ids):
-            lstm_state[0][idx] = self.lstm_state[0][agent_id]
-            lstm_state[1][idx] = self.lstm_state[1][agent_id]
-
-        self.initial_state = [tf.convert_to_tensor(lstm_state[0]), tf.convert_to_tensor(lstm_state[1])]
-        self.lstm.get_initial_state = self.get_initial_state
+        if clone:
+            clone_lstm_state = [np.zeros((active_agent_number, self.lstm_units), dtype=np.float32),
+                                np.zeros((active_agent_number, self.lstm_units), dtype=np.float32)]
+            for idx, agent_id in enumerate(agent_ids):
+                clone_lstm_state[0][idx] = self.clone_lstm_state[0][agent_id]
+                clone_lstm_state[1][idx] = self.clone_lstm_state[1][agent_id]
+            self.clone_initial_state = [tf.convert_to_tensor(clone_lstm_state[0]),
+                                        tf.convert_to_tensor(clone_lstm_state[1])]
+            self.clone_lstm.get_initial_state = self.get_initial_clone_state
+        else:
+            lstm_state = [np.zeros((active_agent_number, self.lstm_units), dtype=np.float32),
+                          np.zeros((active_agent_number, self.lstm_units), dtype=np.float32)]
+            for idx, agent_id in enumerate(agent_ids):
+                lstm_state[0][idx] = self.lstm_state[0][agent_id]
+                lstm_state[1][idx] = self.lstm_state[1][agent_id]
+            self.initial_state = [tf.convert_to_tensor(lstm_state[0]), tf.convert_to_tensor(lstm_state[1])]
+            self.lstm.get_initial_state = self.get_initial_state
 
     def get_initial_state(self, inputs):
         return self.initial_state
 
-    def update_lstm_states(self, agent_ids, lstm_state):
-        for idx, agent_id in enumerate(agent_ids):
-            self.lstm_state[0][agent_id] = lstm_state[0][idx]
-            self.lstm_state[1][agent_id] = lstm_state[1][idx]
+    def get_initial_clone_state(self, inputs):
+        return self.clone_initial_state
+
+    def update_lstm_states(self, agent_ids, lstm_state, clone=False):
+        if not clone:
+            for idx, agent_id in enumerate(agent_ids):
+                self.lstm_state[0][agent_id] = lstm_state[0][idx]
+                self.lstm_state[1][agent_id] = lstm_state[1][idx]
+        else:
+            for idx, agent_id in enumerate(agent_ids):
+                self.clone_lstm_state[0][agent_id] = lstm_state[0][idx]
+                self.clone_lstm_state[1][agent_id] = lstm_state[1][idx]
 
     # endregion
 
@@ -290,34 +345,56 @@ class Actor:
     def play_one_step(self):
         # Step acquisition (steps contain states, done_flags and rewards)
         decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
-        # Preprocess steps if an respective algorithm has been activated
+        # Preprocess steps if a respective algorithm has been activated
         decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
                                                                                               terminal_steps)
         # Register terminal agents, so the hidden LSTM state is reset
-        self.register_terminal_agents(terminal_steps.agent_id)
+        self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
         # Choose the next action either by exploring or exploiting
         actions = self.exploration_algorithm.act(decision_steps, self.index)
         if actions is None:
-            actions = self.act(decision_steps.obs, agent_ids=decision_steps.agent_id, mode=self.mode)
+            actions = self.act(decision_steps.obs,
+                               agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                               mode=self.mode)
+        # Do the same for the clone behavior if active
+        if self.behavior_clone_name:
+            # Step acquisition (steps contain states, done_flags and rewards)
+            clone_decision_steps, clone_terminal_steps = AgentInterface.get_steps(self.environment,
+                                                                                  self.behavior_clone_name)
+            # Preprocess steps if a respective algorithm has been activated
+            clone_decision_steps, clone_terminal_steps = self.preprocessing_algorithm.preprocess_observations(
+                clone_decision_steps,
+                clone_terminal_steps)
+            # Register terminal agents, so the hidden LSTM state is reset
+            self.register_terminal_agents([a_id - self.clone_agent_id_offset for a_id in clone_terminal_steps.agent_id],
+                                          clone=True)
+            # Choose the next action either by exploring or exploiting
+            clone_actions = self.act(clone_decision_steps.obs,
+                                     agent_ids=[a_id - self.clone_agent_id_offset for a_id in clone_decision_steps.agent_id],
+                                     mode=self.mode, clone=True)
+            self.steps_taken_since_clone_network_update += len(clone_decision_steps)
+        else:
+            clone_actions = None
 
         # Append steps and actions to the local replay buffer
         self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
-                                        terminal_steps.agent_id,
+                                        [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
                                         step_type="terminal")
         self.local_buffer.add_new_steps(decision_steps.obs, decision_steps.reward,
-                                        decision_steps.agent_id,
+                                        [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                         actions=actions, step_type="decision")
 
         # Track the rewards in a local logger
-        self.local_logger.track_episode(terminal_steps.reward, terminal_steps.agent_id,
+        self.local_logger.track_episode(terminal_steps.reward,
+                                        [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
                                         step_type="terminal")
 
-        self.local_logger.track_episode(decision_steps.reward, decision_steps.agent_id,
+        self.local_logger.track_episode(decision_steps.reward,
+                                        [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                         step_type="decision")
 
         # If enough steps have been taken, mark agent ready for updated network
         self.steps_taken_since_network_update += len(decision_steps)
-
         # If all agents are in a terminal state reset the environment
         if self.local_buffer.check_reset_condition():
             AgentInterface.reset(self.environment)
@@ -326,12 +403,13 @@ class Actor:
         # Otherwise take a step in the environment according to the chosen action
         else:
             try:
-                AgentInterface.step_action(self.environment, self.behavior_name, actions)
+                AgentInterface.step_action(self.environment, self.action_type,
+                                           self.behavior_name, actions, self.behavior_clone_name, clone_actions)
             except RuntimeError:
                 print("RUNTIME ERROR")
         return True
 
-    def act(self, states, agent_ids=None, mode="training"):
+    def act(self, states, agent_ids=None, mode="training", clone=False):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
     # endregion
 

@@ -68,7 +68,8 @@ class GlobalLogger:
                  tensorboard=True,
                  actor_num=1,
                  checkpoint_saving=True,
-                 running_average_episodes=100):
+                 running_average_episodes=100,
+                 behavior_clone_name=None):
         # Summary file path and logger creation time
         self.log_dir = log_dir
         self.creation_time = datetime.now()
@@ -88,6 +89,8 @@ class GlobalLogger:
         self.best_actor = 0
         self.average_rewards = [-10000 for i in range(self.actor_num)]
         self.new_episodes = 0
+        self.behavior_clone_name = behavior_clone_name
+        print("CLONE NAME", behavior_clone_name)
 
         # The best running average over 30 episodes
         self.best_running_average_reward = -10000
@@ -131,10 +134,15 @@ class GlobalLogger:
                                self.episode_length_deque[actor_idx][-1]}, total_number_of_episodes, 1)
 
     def get_episode_stats(self):
+        self.total_episodes_played = np.sum(self.episodes_played_per_actor)
+
+        for reward in self.episode_reward_deque:
+            if not len(reward):
+                return 0, 0, self.total_episodes_played
+
         self.average_rewards = [np.mean(list(rewards)[-self.running_average_episodes:]) for rewards in self.episode_reward_deque]
         mean_reward = np.mean(self.average_rewards)
         mean_length = np.mean([np.mean(list(lengths)[-self.running_average_episodes:]) for lengths in self.episode_length_deque])
-        self.total_episodes_played = np.sum(self.episodes_played_per_actor)
         self.new_episodes = 0
 
         return mean_length, mean_reward, self.total_episodes_played
@@ -174,6 +182,10 @@ class GlobalLogger:
                     self.best_running_average_reward = max_average_reward
                     self.last_save_time_step = self.total_episodes_played
                     return True
+                elif self.behavior_clone_name and self.total_episodes_played - 1000 >= self.last_save_time_step:
+                    self.last_save_time_step = self.total_episodes_played
+                    print("Periodical weight saving!")
+                    return True
         return False
 
     def register_level_change(self, task_level_condition):
@@ -209,3 +221,4 @@ class GlobalLogger:
     def log_scalar(self, tag, value, step):
         with self.tensorboard_writer.as_default():
             tf.summary.scalar(tag, value, step)
+            self.tensorboard_writer.flush()

@@ -2,6 +2,7 @@
 
 from ..misc.replay_buffer import FIFOBuffer, PrioritizedBuffer
 from ..misc.logger import GlobalLogger
+from ..misc.utility import getsize
 
 import os
 import numpy as np
@@ -224,7 +225,8 @@ class Trainer:
             datetime.strftime(datetime.now(), '%y%m%d_%H%M%S_') + self.trainer_configuration['TrainingID']
         self.global_logger = GlobalLogger.remote(os.path.join("training/summaries", self.logging_name),
                                                  actor_num=self.trainer_configuration["ActorNum"],
-                                                 tensorboard=(mode == 'training'))
+                                                 tensorboard=(mode == 'training'),
+                                                 behavior_clone_name=self.environment_configuration.get("BehaviorCloneName"))
         if mode == 'training':
             if not os.path.isdir(os.path.join("./training/summaries", self.logging_name)):
                 os.makedirs(os.path.join("./training/summaries", self.logging_name))
@@ -283,7 +285,8 @@ class Trainer:
         self.global_curriculum_strategy.update_task_properties.remote(unity_responded, task_properties)
 
         # Synchronize all actor networks with the learner networks
-        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True))
+        total_episodes=0
+        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True), total_episodes)
          for actor in self.actors]
         # endregion
 
@@ -323,7 +326,7 @@ class Trainer:
 
             # Update the actor networks if requested
             [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
-                actor.is_network_update_requested.remote()))
+                actor.is_network_update_requested.remote()), total_episodes)
                 for actor in self.actors]
             # Update the prioritized experience replay buffer with the td-errors
             self.global_buffer.update.remote(indices, sample_errors)
@@ -373,7 +376,7 @@ class Trainer:
         :return:
         """
         # Synchronise all actor networks with the learner networks
-        [actor.update_actor_network.remote(ray.get(self.learner.get_actor_network_weights.remote(True)))
+        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True), 0)
          for actor in self.actors]
 
         while True:

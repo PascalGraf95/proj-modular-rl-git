@@ -124,45 +124,46 @@ sac:
     SequenceLength: 15
     Overlap: 5
     ActorNum: 10
-    BatchSize: 32
+    BatchSize: 64
     ClipGrad: 10.0
     ExplorationParameters:
         FeatureSpaceSize: 10
         LearningRate: 1.0e-3
         CuriosityScalingFactor: 0.3
-        Epsilon: 0.3
+        Epsilon: 0.25
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
         StepDown: false
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -4.0
+    LogAlpha: -0.0
     NSteps: 4
     AdaptiveExploration: false
-    NetworkUpdateFrequency: 30
+    NetworkUpdateFrequency: 50
+    SelfPlayNetworkUpdateFrequency: 1000
     NetworkParameters:
-    -   Filters: 32
-        Units: 32
+    -   Filters: 64
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 32
-        Units: 32
+    -   Filters: 64
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    -   Filters: 32
-        Units: 32
+    -   Filters: 64
+        Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: true
     PriorityAlpha: 0.8
     RewardNormalization: false
     ReplayCapacity: 300000
-    ReplayMinSize: 100
+    ReplayMinSize: 1000
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_AirHockey_ShotOnGoal_New
+    TrainingID: SAC_3DAirHockey_UntilGoalOrBackwall_RandomHumanPosition_FromScratch
     TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3

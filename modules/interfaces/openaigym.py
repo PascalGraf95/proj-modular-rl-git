@@ -67,7 +67,7 @@ class OpenAIGymInterface:
 
     @staticmethod
     def get_agent_number(env: gym.Env, behavior_name: str):
-        return 1
+        return 1, 0
 
     @staticmethod
     def get_steps(env: gym.Env, behavior_name: str):
@@ -86,7 +86,11 @@ class OpenAIGymInterface:
         OpenAIGymInterface.reward, OpenAIGymInterface.done = 0, False
 
     @staticmethod
-    def step_action(env: gym.Env, behavior_name: str, actions):
+    def step_action(env: gym.Env, action_type: str,
+                    behavior_name: str,
+                    actions,
+                    behavior_clone_name=None,
+                    actions_clone=None):
         if OpenAIGymInterface.action_space == "DISCRETE":
             OpenAIGymInterface.observation, OpenAIGymInterface.reward, \
                 OpenAIGymInterface.done, OpenAIGymInterface.info = env.step(actions[0][0])
