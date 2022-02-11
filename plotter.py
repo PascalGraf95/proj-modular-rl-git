@@ -7,8 +7,6 @@ import collections
 import numpy as np
 
 
-MEASUREMENT_PATH = "/home/ai-admin/Measurements/V2/"
-
 
 # ---------------------------------------------------------------------------------------
 # Plot the measurement V1 -- headway and speeds
@@ -159,7 +157,7 @@ def PlotMeasurementV2(path, inputData):
     for key in inputData.keys():
         ax3.plot(inputData[key]["timestamps"], inputData[key]["acc_requested"], label="Requested Acceleration [m/s²] - " + str(key))
         #ax3.plot(inputData[key]["timestamps"], inputData[key]["acc_measured"], label="Measured Acceleration [m/s²] - " + str(key))
-        ax3.plot(inputData[key]["timestamps"], inputData[key]["acc_calc"], label="Measured calculated Acceleration [m/s²] - " + str(key))
+        #ax3.plot(inputData[key]["timestamps"], inputData[key]["acc_calc"], label="Measured calculated Acceleration [m/s²] - " + str(key))
         #ax3.plot(inputData[key]["timestamps"], inputData[key]["headway"], label="Headway [s] - " + str(key))
 
     # Legend and grid
@@ -198,6 +196,8 @@ def read_json(path):
     return data
 
 
+MEASUREMENT_PATH = "/home/ai-admin/Measurements/V3/"
+
 # main loop
 if __name__ == "__main__":
 
@@ -223,14 +223,16 @@ if __name__ == "__main__":
                 scenariodict[scenario] = [version]
 
     # Print the dict
-    #print(scenariodict)
+    print(scenariodict)
 
     # Determine complete scenarios
     #versions = ["V4", "V5", "V6", "V8", "V9"]
     #versions = ["V6", "V8", "V9"]
     #versions = ["V8", "V9", "V10"]
     #versions = ["V8"]
-    versions = ["V15"]
+    versions = ["V16-TRY1-CONT"]
+    versions = ["V16-TRY2"]
+    versions = ["V17"]
 
     # Determine the complete scenarios
     completeScenarios = []
