@@ -19,27 +19,36 @@ class Actor:
                  exploration_algorithm: str,
                  environment_path: str = "",
                  device: str = '/cpu:0'):
-        # Network
+        # - Networks and Network Parameters -
+        # Depending on the chosen algorithm an actor utilizes the actor or critic network to determine its next action.
         self.actor_network = None
-        self.clone_actor_network = None
         self.critic_network = None
+        # It also may have a prior version of the actor network stored for self play purposes.
+        self.clone_actor_network = None
+        # Lastly, if the actor is working in a recurrent fashion another copy of the actor network exists.
         self.actor_prediction_network = None
+        # The following parameters keep track of the network's update status, i.e. if a new version of the networks is
+        # requested from the learner and how long it's been since the last update
         self.network_update_requested = False
         self.steps_taken_since_network_update = 0
         self.steps_taken_since_clone_network_update = 0
         self.network_update_frequency = 1000
         self.clone_network_update_frequency = 1000
 
-        # Environment
+        # - Environment -
         self.environment = None
         self.environment_configuration = None
         self.environment_path = environment_path
 
-        # Local Buffer
+        # - Local Buffer -
+        # The local buffer stores experiences from previously played episodes until these are transferred to the global
+        # buffer.
         self.local_buffer = None
         self.minimum_capacity_reached = False
 
-        # Recurrent Properties
+        # - Recurrent Properties -
+        # Acting and learning utilizing a recurrent neural network introduces a new set of parameters and challenges.
+        # Among these, is the need to store and reset the hidden states of the LSTM-layers.
         self.recurrent = None
         self.sequence_length = None
         self.lstm = None
@@ -48,10 +57,14 @@ class Actor:
         self.clone_lstm = None
         self.clone_lstm_state = None
 
-        # Local Logger
+        # - Local Logger -
+        # Just as the local buffer, the local logger stores episode lengths and rewards from previously played episodes
+        # until these are transferred to the global logger.
         self.local_logger = None
 
-        # Tensorflow Device
+        # - Tensorflow Device -
+        # Working in an async fashion using ray makes it necessary to actively distribute processes among the CPU and
+        # GPUs available. Each actor is usually 
         self.device = device
 
         # Behavior Parameters
@@ -293,7 +306,6 @@ class Actor:
         if not self.recurrent:
             return
         # Reset the hidden and cell state for agents that are in a terminal episode state
-
         if clone:
             for agent_id in terminal_ids:
                 self.clone_lstm_state[0][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
@@ -502,7 +514,6 @@ class Learner:
         self.training_step = 0
         self.steps_since_actor_update = 0
         self.set_gpu_growth()  # Important step to avoid tensorflow OOM errors when running multiprocessing!
-
     # endregion
 
     # region Network Construction and Transfer

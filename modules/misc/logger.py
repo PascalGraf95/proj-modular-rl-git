@@ -158,19 +158,25 @@ class GlobalLogger:
         return max_agent_average_length, max_agent_average_reward, self.total_episodes_played
 
     def get_new_sequence_length(self, sequence_length, training_step):
+        # Only check for an updated sequence length every 100 training steps
         if training_step % 100 or not training_step:
             return None
         length_list = []
-        # Append all episode lengths into one list
+        # Append all episode lengths for all actors into one list
         for episode_lengths in self.episode_length_deque:
             length_list += list(episode_lengths)[-100:]
-        # Sort the list from low to high and look at the length of the lower 30%
+        # Sort the list from low to high and look at the length of the lower 20%. This means that 80% percent of the
+        # recorded episodes are long enough to be sampled from for training. The others will be discarded.
         length_list.sort()
-        new_sequence_length = length_list[int(0.3*len(length_list))]
+        new_sequence_length = length_list[int(0.25*len(length_list))]
+        # Clamp the new sequence length between a minimum of 5 and a maximum of 80
         new_sequence_length = np.clip(new_sequence_length, 5, 80)
+        # Only if the new sequence length differs more than 10 from the old recommend changing it.
         if np.abs(new_sequence_length - sequence_length) >= 10:
             print("New sequence length recommended!")
-            print("Old sequence length: {}, new recommendation: {}".format(sequence_length, new_sequence_length))
+            print("Old sequence length: {}, new recommendation: {}, training step: {}".format(sequence_length,
+                                                                                              new_sequence_length,
+                                                                                              training_step))
             return new_sequence_length
         return None
 

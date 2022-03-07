@@ -197,44 +197,18 @@ class FIFOBuffer:
     each actor in a deque. The sampling is uniform.
     """
     def __init__(self,
-                 capacity: int,
-                 agent_num: int = 1,
-                 n_steps: int = 1,
-                 gamma: float = 1,
-                 store_trajectories: bool = False):
-
+                 capacity: int):
         # Initialize actual buffer with defined capacity
         self.buffer = deque(maxlen=capacity)
         self.capacity = capacity
         # Flag to indicate if training threshold has been reached
         self.min_size_reached = False
-        # n-Step reward sum
-        self.n_steps = n_steps
         # Keep track of which agent's episodes have ended in the simulation (relevant if multiple)
         self.done_agents = set()
-        self.agent_num = agent_num
-        # If set to true, only whole trajectories are written into the buffer, otherwise they are written step-by-step
-        # which results in arbitrary order for multiple agents in one environment.
-        self.store_trajectories = store_trajectories
-
         # New sample and trajectory counters
         self.new_training_samples = 0
         self.collected_trajectories = 0
         self.steps_without_training = 0
-
-        self.sampled_indices = None
-
-        # Deque to enable n-step reward calculation
-        self.state_deque = [deque(maxlen=n_steps+1) for x in range(self.agent_num)]
-        self.action_deque = [deque(maxlen=n_steps+1) for x in range(self.agent_num)]
-        self.reward_deque = [deque(maxlen=n_steps) for x in range(self.agent_num)]
-
-        # Temporal buffer for storing trajectories
-        self.temp_agent_buffer = [[] for x in range(self.agent_num)]
-
-        # Discount factor
-        self.gamma = gamma
-        self.gamma_list = [gamma ** n for n in range(n_steps)]
 
     def __len__(self):
         return len(self.buffer)
@@ -243,17 +217,12 @@ class FIFOBuffer:
         self.buffer = deque(maxlen=self.capacity)
 
     def check_training_condition(self, trainer_configuration):
-        if not self.store_trajectories:
-            if len(self.buffer) > trainer_configuration['ReplayMinSize']:
-                self.min_size_reached = True
-            self.steps_without_training += 1
-            #if self.new_training_samples >= trainer_configuration['TrainingInterval'] and self.min_size_reached:
-            if self.steps_without_training >= trainer_configuration['TrainingInterval'] and self.min_size_reached:
-                self.steps_without_training = 0
-                return True
-        else:
-            if self.collected_trajectories >= trainer_configuration['TrajectoryNum']:
-                return True
+        if len(self.buffer) > trainer_configuration['ReplayMinSize']:
+            self.min_size_reached = True
+        self.steps_without_training += 1
+        if self.steps_without_training >= trainer_configuration['TrainingInterval'] and self.min_size_reached:
+            self.steps_without_training = 0
+            return True
         return False
 
     def check_reset_condition(self):
@@ -289,9 +258,6 @@ class FIFOBuffer:
                 replay_batch = [self.buffer[-self.new_training_samples+idx] for idx in range(self.new_training_samples)]
         if reset_buffer:
             self.buffer.clear()
-            self.state_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
-            self.action_deque = [deque(maxlen=self.n_steps+1) for x in range(self.agent_num)]
-            self.reward_deque = [deque(maxlen=self.n_steps) for x in range(self.agent_num)]
 
         self.collected_trajectories = 0
         self.new_training_samples = 0

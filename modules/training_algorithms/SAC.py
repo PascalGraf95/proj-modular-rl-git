@@ -1,25 +1,17 @@
 #!/usr/bin/env python
-
 import numpy as np
-from tensorflow.keras.optimizers import Adam, SGD, RMSprop
-import tensorflow.keras.backend as K
+from tensorflow.keras.optimizers import Adam
+from tensorflow import keras
 from .agent_blueprint import Actor, Learner
 from tensorflow.keras.models import load_model
 from ..misc.network_constructor import construct_network
-from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
-from ..sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
-from ..misc.replay_buffer import FIFOBuffer
-from ..misc.logger import LocalLogger
 import tensorflow as tf
-from tensorflow.keras import losses
 from tensorflow.keras.models import clone_model
 import tensorflow_probability as tfp
 import os
 import ray
 import time
-import math
 tfd = tfp.distributions
-import matplotlib.pyplot as plt
 global AgentInterface
 
 
@@ -205,18 +197,20 @@ class SACLearner(Learner):
         super().__init__(trainer_configuration, environment_configuration)
 
         # Networks
-        self.actor_network = None
-        self.critic1, self.critic_target1 = None, None
-        self.critic2, self.critic_target2 = None, None
+        self.actor_network: keras.Model
+        self.critic1: keras.Model
+        self.critic_target1: keras.Model
+        self.critic2: keras.Model
+        self.critic_target2: keras.Model
         self.epsilon = 1.0e-6
 
         # Optimizer
-        self.actor_optimizer = None
-        self.alpha_optimizer = None
+        self.actor_optimizer: keras.optimizers.Optimizer
+        self.alpha_optimizer: keras.optimizers.Optimizer
 
         # Temperature Parameter
-        self.log_alpha = None
-        self.target_entropy = None
+        self.log_alpha: tf.Variable
+        self.target_entropy: tf.Variable
 
         # Construct or load the required neural networks based on the trainer configuration and environment information
         if mode == 'training':
