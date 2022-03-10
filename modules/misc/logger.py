@@ -150,28 +150,36 @@ class GlobalLogger:
             max_agent_average_length = np.mean(list(self.episode_length_deque[self.best_actor])[-average_num:])
         return max_agent_average_length, max_agent_average_reward, self.total_episodes_played
 
-    def get_new_sequence_length(self, sequence_length, training_step):
+    @ray.method(num_returns=2)
+    def get_new_sequence_length(self, sequence_length, burn_in, training_step):
         # Only check for an updated sequence length every 100 training steps
         if training_step % 100 or not training_step:
-            return None
+            return None, None
         length_list = []
         # Append all episode lengths for all actors into one list
         for episode_lengths in self.episode_length_deque:
             length_list += list(episode_lengths)[-100:]
-        # Sort the list from low to high and look at the length of the lower 20%. This means that 80% percent of the
+        # Sort the list from low to high and look at the length of the lower 20%. This means that 80% of the
         # recorded episodes are long enough to be sampled from for training. The others will be discarded.
         length_list.sort()
-        new_sequence_length = length_list[int(0.25*len(length_list))]
+        new_sequence_length = length_list[int(0.20*len(length_list))]
         # Clamp the new sequence length between a minimum of 5 and a maximum of 80
         new_sequence_length = np.clip(new_sequence_length, 5, 80)
         # Only if the new sequence length differs more than 10 from the old recommend changing it.
         if np.abs(new_sequence_length - sequence_length) >= 10:
+            new_burn_in = 0
+            if burn_in:
+                if new_sequence_length > 15:
+                    new_burn_in = new_sequence_length // 4
             print("New sequence length recommended!")
-            print("Old sequence length: {}, new recommendation: {}, training step: {}".format(sequence_length,
-                                                                                              new_sequence_length,
-                                                                                              training_step))
-            return new_sequence_length
-        return None
+            print("Old sequence length: {}, new recommendation: {}, "
+                  "Old burn in: {}, new burn in: {}, training step: {}".format(sequence_length,
+                                                                               new_sequence_length,
+                                                                               burn_in,
+                                                                               new_burn_in,
+                                                                               training_step))
+            return new_sequence_length, new_burn_in
+        return None, None
 
     def check_checkpoint_condition(self):
         # Returns true if the conditions for a new checkpoint are met.

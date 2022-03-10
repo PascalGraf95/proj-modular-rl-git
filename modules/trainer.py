@@ -274,6 +274,7 @@ class Trainer:
             # is processed and stored in a local replay buffer for each actor.
             actors_ready = [actor.play_one_step.remote() for actor in self.actors]
             # endregion
+
             # region --- Global Buffer and Logger ---
             # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
             # In case of Prioritized Experience Replay let the actor calculate an initial priority first.
@@ -294,6 +295,7 @@ class Trainer:
                 # to the global logger which will write them to the tensorboard.
                 self.global_logger.append.remote(*actor.get_new_stats.remote(), actor_idx=idx)
             # endregion
+
             # region --- Training Process ---
             # This code section is responsible for the actual training process of the involved neural networks.
 
@@ -318,6 +320,7 @@ class Trainer:
             # respective option is enabled, this function automatically adapts the sequence length.
             self.async_adapt_sequence_length(training_step)
             # endregion
+
             # region --- Network Update and Checkpoint Saving ---
             # Check if the actor networks request to be updated with the latest network weights from the learner.
             [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
@@ -327,6 +330,7 @@ class Trainer:
             # Check if a new best reward has been achieved, if so save the models
             self.async_save_agent_models(training_step)
             # endregion
+
             # region --- Tensorboard Logging ---
             # Every logging_frequency steps (usually set to 100 so the event file doesn't get to big for long trainings)
             # log the training metrics to the tensorboard.
@@ -337,6 +341,7 @@ class Trainer:
                 self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(), training_step,
                                                    self.logging_frequency)
             # endregion
+
             # region --- Waiting ---
             # When asynchronous ray processes don't finish in time they are added to a queue while the next loop starts.
             # This leads to a memory leak filling up the RAM and after that even taking up hard drive storage. To
@@ -378,11 +383,13 @@ class Trainer:
         # Only applies if the network is recurrent and the respective flag is set to true
         if self.trainer_configuration["Recurrent"] and self.trainer_configuration["AdaptiveSequenceLength"]:
             # Check if a new sequence length is recommended.
-            new_sequence_length = ray.get(self.global_logger.get_new_sequence_length.remote(
-                self.trainer_configuration["SequenceLength"], training_step))
+            new_sequence_length, new_burn_in = ray.get(self.global_logger.get_new_sequence_length.remote(
+                self.trainer_configuration["SequenceLength"], self.trainer_configuration["BurnIn"],
+                training_step))
             # If so, update the trainer configuration, the actors and the learner. Also, reset the global buffer.
             if new_sequence_length:
                 self.trainer_configuration["SequenceLength"] = new_sequence_length
+                self.trainer_configuration["BurnIn"] = new_burn_in
                 [actor.update_sequence_length.remote(self.trainer_configuration) for actor in self.actors]
                 self.learner.update_sequence_length.remote(self.trainer_configuration)
                 self.global_buffer.reset.remote()
@@ -496,14 +503,7 @@ class Trainer:
                                                    self.logging_frequency)
 
             # In case of recurrent training, check if the sequence length should be adapted
-            if self.trainer_configuration["Recurrent"] and self.trainer_configuration["AdaptiveSequenceLength"]:
-                new_sequence_length = self.global_logger.get_new_sequence_length.remote(
-                    self.trainer_configuration["SequenceLength"], training_step)
-                if ray.get(new_sequence_length):
-                    self.trainer_configuration["SequenceLength"] = ray.get(new_sequence_length)
-                    [actor.update_sequence_length.remote(self.trainer_configuration) for actor in self.actors]
-                    self.learner.update_sequence_length.remote(self.trainer_configuration)
-                    self.global_buffer.reset.remote()
+            self.async_adapt_sequence_length(training_step)
 
             # Wait for the actors to finish their environment steps and learner to finish the learning step
             ray.wait(actors_ready)

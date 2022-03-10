@@ -52,7 +52,7 @@ dqn:
     TrainingID: DQNScheduleFirstTest
     TrainingInterval: 8
 sac:
-    Recurrent: true
+    Recurrent: false
     BurnIn: 0
     AdaptiveSequenceLength: false
     SequenceLength: 10

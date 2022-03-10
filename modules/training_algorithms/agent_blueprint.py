@@ -539,12 +539,16 @@ class Learner:
 
     @tf.autograph.experimental.do_not_convert
     def burn_in_mse_loss(self, y_true, y_pred):
-        return tf.reduce_mean(tf.square(y_true - y_pred), axis=-1)[:, self.burn_in:]
+        if self.recurrent:
+            return tf.reduce_mean(tf.square(y_true - y_pred), axis=-1)[:, self.burn_in:]
+        else:
+            return tf.reduce_mean(tf.square(y_true - y_pred), axis=-1)
     # endregion
 
     # region Misc
     def update_sequence_length(self, trainer_configuration):
         self.sequence_length = trainer_configuration.get("SequenceLength")
+        self.burn_in = trainer_configuration.get("BurnIn")
 
     def boost_exploration(self):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
@@ -623,34 +627,6 @@ class Learner:
                 reward_batch[idx_seq][idx_trans] = transition['reward']
                 done_batch[idx_seq][idx_trans] = transition['done']
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch
-
-    @staticmethod
-    def separate_burn_in_batch(state_batch, action_batch, reward_batch, next_state_batch, done_batch, burn_in):
-        # State and Next State Batches are lists of numpy-arrays
-        state_batch_new = []
-        state_batch_burn = []
-        next_state_batch_new = []
-        next_state_batch_burn = []
-        # Append an array with the correct shape for each part of the observation
-        for state_component, next_state_component in zip(state_batch, next_state_batch):
-            state_batch_new.append(state_component[:, burn_in:])
-            state_batch_burn.append(state_component[:, :burn_in])
-            next_state_batch_new.append(next_state_component[:, burn_in:])
-            next_state_batch_burn.append(next_state_component[:, :burn_in])
-        # Actions
-        action_batch_burn = action_batch[:, :burn_in]
-        action_batch = action_batch[:, burn_in:]
-
-        # Rewards
-        reward_batch_burn = reward_batch[:, :burn_in]
-        reward_batch = reward_batch[:, burn_in:]
-
-        # Done
-        done_batch_burn = done_batch[:, :burn_in]
-        done_batch = done_batch[:, burn_in:]
-
-        return state_batch_new, action_batch, reward_batch, next_state_batch_new, done_batch, \
-               state_batch_burn, action_batch_burn, reward_batch_burn, next_state_batch_burn, done_batch_burn
     # endregion
 
     # region Parameter Validation

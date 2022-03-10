@@ -75,20 +75,20 @@ class DQNActor(Actor):
 
         return sample_errors
 
-    def update_actor_network(self, network_weights):
+    def update_actor_network(self, network_weights, total_episodes=0):
         self.critic_network.set_weights(network_weights)
         if self.recurrent:
             self.critic_prediction_network.set_weights(network_weights)
         self.network_update_requested = False
         self.steps_taken_since_network_update = 0
 
-    def build_network(self, network_parameters, environment_parameters, idx):
+    def build_network(self, network_parameters, environment_parameters):
         # Critic
         network_parameters[0]['Input'] = environment_parameters.get('ObservationShapes')
         network_parameters[0]['Output'] = [environment_parameters.get('ActionShape')]
         network_parameters[0]['OutputActivation'] = [None]
         network_parameters[0]['TargetNetwork'] = False
-        network_parameters[0]['NetworkType'] = 'ModelCopy{}'.format(idx)
+        network_parameters[0]['NetworkType'] = 'ModelCopy{}'.format(self.index)
         # Recurrent Parameters
         network_parameters[0]['Recurrent'] = self.recurrent
         network_parameters[0]['ReturnSequences'] = False
@@ -132,7 +132,7 @@ class DQNLearner(Learner):
         # Construct or load the required neural networks based on the trainer configuration and environment information
         if mode == 'training':
             # Network Construction
-            self.build_network(network_parameters, environment_configuration)
+            self.build_network(trainer_configuration["NetworkParameters"], environment_configuration)
             # Load Pretrained Models
             if model_path:
                 self.load_checkpoint(model_path)
@@ -146,7 +146,7 @@ class DQNLearner(Learner):
             assert model_path, "No model path entered."
             self.load_checkpoint(model_path)
 
-    def get_actor_network_weights(self):
+    def get_actor_network_weights(self, update_requested):
         return [self.model.get_weights()]
 
     def build_network(self, network_parameters, environment_parameters):
