@@ -114,24 +114,11 @@ class DQNActor(Actor):
 @ray.remote(num_gpus=1)
 class DQNLearner(Learner):
     # region ParameterSpace
-    TrainingParameterSpace = Learner.TrainingParameterSpace.copy()
-    DQNParameterSpace = {
-        'LearningRate': float,
-        'DoubleLearning': bool
-    }
-    TrainingParameterSpace = {**TrainingParameterSpace, **DQNParameterSpace}
-    NetworkParameterSpace = [{
-        'VisualNetworkArchitecture': str,
-        'VectorNetworkArchitecture': str,
-        'Units': int,
-        'Filters': int,
-    }]
     ActionType = ['DISCRETE']
     NetworkTypes = ['QNetwork']
-    Metrics = ['ValueLoss']
     # endregion
 
-    def __init__(self, mode, trainer_configuration, environment_configuration, network_parameters, model_path=None):
+    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None):
         super().__init__(trainer_configuration, environment_configuration)
         # Networks
         self.model, self.model_target = None, None

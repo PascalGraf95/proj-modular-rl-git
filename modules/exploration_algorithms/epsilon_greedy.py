@@ -19,7 +19,7 @@ class EpsilonGreedy(ExplorationAlgorithm):
         'StepDown': int
     }
 
-    def __init__(self, action_shape, state_shape, action_space, parameters, trainer_configuration):
+    def __init__(self, action_shape, state_shape, action_space, parameters, trainer_configuration, idx):
         self.action_shape = action_shape
         self.action_space = action_space
         self.epsilon = parameters["Epsilon"]*parameters["ExplorationDegree"]
@@ -27,13 +27,14 @@ class EpsilonGreedy(ExplorationAlgorithm):
         self.epsilon_min = parameters["EpsilonMin"]
         self.step_down = parameters["StepDown"]
         self.training_step = 0
+        self.index = idx
 
     @staticmethod
     def get_config():
         config_dict = EpsilonGreedy.__dict__
         return ExplorationAlgorithm.get_config(config_dict)
 
-    def act(self, decision_steps, index=None):
+    def act(self, decision_steps):
         if len(decision_steps.agent_id):
             if np.random.rand() <= self.epsilon:
                 if self.action_space == "DISCRETE":
@@ -45,14 +46,14 @@ class EpsilonGreedy(ExplorationAlgorithm):
     def boost_exploration(self):
         self.epsilon += 0.2
 
-    def get_logs(self, idx):
-        return {"Exploration/Agent{:03d}Epsilon".format(idx): self.epsilon}
+    def get_logs(self):
+        return {"Exploration/Agent{:03d}Epsilon".format(self.index): self.epsilon}
 
     def get_intrinsic_reward(self, replay_batch):
         return replay_batch
 
     def prevent_checkpoint(self):
-        if self.epsilon > self.epsilon_min * 5:
+        if self.epsilon > self.epsilon_min * 10:
             return True
         return False
 

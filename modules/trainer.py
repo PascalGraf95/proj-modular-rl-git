@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import logging
 
 from modules.misc.replay_buffer import FIFOBuffer, PrioritizedBuffer
 from modules.misc.logger import GlobalLogger
@@ -11,6 +12,8 @@ import time
 
 import yaml
 import ray
+
+from pynput.keyboard import Key, Listener
 
 
 class Trainer:
@@ -74,6 +77,7 @@ class Trainer:
         # - Misc -
         self.save_all_models = False
         self.remove_old_checkpoints = False
+        self.interface = None
 
     # region Algorithm Choice
     def select_training_algorithm(self, training_algorithm):
@@ -121,7 +125,7 @@ class Trainer:
     # endregion
 
     # region Instantiation
-    def async_instantiate_agent(self, mode, interface: str, preprocessing_algorithm: str, exploration_algorithm: str,
+    def async_instantiate_agent(self, mode: str, preprocessing_algorithm: str, exploration_algorithm: str,
                                 environment_path: str = None, model_path: str = None,
                                 preprocessing_path: str = None):
         """ Instantiate the agent consisting of learner and actor(s) and their respective submodules in an asynchronous
@@ -149,8 +153,8 @@ class Trainer:
         # environment, exploration algorithm and preprocessing algorithm instances. The actors are distributed along
         # the cpu cores and threads, which means their number in the trainer configuration should not extend the maximum
         # number of cpu threads - 2.
-        self.actors = [Actor.remote(5004 + idx, mode,
-                                    interface,
+        self.actors = [Actor.remote(idx, 5004 + idx, mode,
+                                    self.interface,
                                     preprocessing_algorithm,
                                     preprocessing_path,
                                     exploration_algorithm,
@@ -158,7 +162,7 @@ class Trainer:
                                     '/cpu:0') for idx in range(actor_num)]
 
         # Instantiate one environment for each actor and connect them to one another.
-        if interface == "MLAgentsV18":
+        if self.interface == "MLAgentsV18":
             [actor.connect_to_unity_environment.remote() for actor in self.actors]
         else:
             [actor.connect_to_gym_environment.remote() for actor in self.actors]
@@ -167,7 +171,7 @@ class Trainer:
         for i, actor in enumerate(self.actors):
             actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree[i])
             # In case of Unity Environments set the rendering and simulation parameters.
-            if interface == "MLAgentsV18":
+            if self.interface == "MLAgentsV18":
                 if mode == "training":
                     actor.set_unity_parameters.remote(time_scale=1000,
                                                       width=10, height=10,
@@ -192,15 +196,13 @@ class Trainer:
         # experiences. If a model path is given, the respective networks will continue to learn from this checkpoint.
         self.learner = Learner.remote(mode, self.trainer_configuration,
                                       self.environment_configuration,
-                                      self.trainer_configuration.get("NetworkParameters"),
                                       model_path)
 
         # Initialize the actor network for each actor
         network_ready = [actor.build_network.remote(self.trainer_configuration.get("NetworkParameters"),
-                                                    self.environment_configuration, idx)
+                                                    self.environment_configuration)
                          for idx, actor in enumerate(self.actors)]
-        # TODO: CHECK IF NECESSARY
-        # Wait for the networks to be build
+        # Wait for the networks to be built
         ray.wait(network_ready)
 
         # - Global Buffer -
@@ -223,8 +225,7 @@ class Trainer:
             datetime.strftime(datetime.now(), '%y%m%d_%H%M%S_') + self.trainer_configuration['TrainingID']
         self.global_logger = GlobalLogger.remote(os.path.join("training/summaries", self.logging_name),
                                                  actor_num=self.trainer_configuration["ActorNum"],
-                                                 tensorboard=(mode == 'training'),
-                                                 behavior_clone_name=self.environment_configuration.get("BehaviorCloneName"))
+                                                 tensorboard=(mode == 'training'))
         # If training mode is enabled all configs are stored into a yaml file in the summaries folder
         if mode == 'training':
             if not os.path.isdir(os.path.join("./training/summaries", self.logging_name)):
@@ -242,7 +243,8 @@ class Trainer:
         self.learner.save_checkpoint.remote(os.path.join("training/summaries", self.logging_name),
                                             self.global_logger.get_best_running_average.remote(),
                                             training_step, self.save_all_models, checkpoint_condition)
-        self.global_logger.remove_old_checkpoints.remote(self.remove_old_checkpoints)
+        if self.remove_old_checkpoints:
+            self.global_logger.remove_old_checkpoints.remote()
 
     def parse_training_parameters(self, parameter_path, parameter_dict=None):
         """"""
@@ -272,7 +274,6 @@ class Trainer:
             # is processed and stored in a local replay buffer for each actor.
             actors_ready = [actor.play_one_step.remote() for actor in self.actors]
             # endregion
-
             # region --- Global Buffer and Logger ---
             # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
             # In case of Prioritized Experience Replay let the actor calculate an initial priority first.
@@ -293,7 +294,6 @@ class Trainer:
                 # to the global logger which will write them to the tensorboard.
                 self.global_logger.append.remote(*actor.get_new_stats.remote(), actor_idx=idx)
             # endregion
-
             # region --- Training Process ---
             # This code section is responsible for the actual training process of the involved neural networks.
 
@@ -311,10 +311,6 @@ class Trainer:
 
             # In case of a PER update the buffer priorities with the temporal difference errors
             self.global_buffer.update.remote(indices, sample_errors)
-            # Train the actors exploration algorithm with the same batch
-            # TODO: For ICM and RND this step only has to be done for the first actor. More importantly, only the first
-            #       actor even needs the networks responsible.
-            [actor.exploration_learning_step.remote(samples) for actor in self.actors]
 
             # If the training algorithm is constructed to act and learn by utilizing a recurrent neural network a
             # sequence length is chosen in the training parameters. However, as training progresses, the episode length
@@ -322,7 +318,6 @@ class Trainer:
             # respective option is enabled, this function automatically adapts the sequence length.
             self.async_adapt_sequence_length(training_step)
             # endregion
-
             # region --- Network Update and Checkpoint Saving ---
             # Check if the actor networks request to be updated with the latest network weights from the learner.
             [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
@@ -332,7 +327,6 @@ class Trainer:
             # Check if a new best reward has been achieved, if so save the models
             self.async_save_agent_models(training_step)
             # endregion
-
             # region --- Tensorboard Logging ---
             # Every logging_frequency steps (usually set to 100 so the event file doesn't get to big for long trainings)
             # log the training metrics to the tensorboard.
@@ -340,10 +334,9 @@ class Trainer:
             # Some exploration algorithms also return metrics that represent their training or decay state. These shall
             # be logged in the same interval.
             for idx, actor in enumerate(self.actors):
-                self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(idx), training_step,
+                self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(), training_step,
                                                    self.logging_frequency)
             # endregion
-
             # region --- Waiting ---
             # When asynchronous ray processes don't finish in time they are added to a queue while the next loop starts.
             # This leads to a memory leak filling up the RAM and after that even taking up hard drive storage. To
@@ -353,6 +346,32 @@ class Trainer:
             ray.wait([training_metrics])
             ray.wait(sample_error_list)
             # endregion
+
+            # TODO: Add an option to affect the training process with keyboard events.
+            #       E.g. Skip Level, Boost Exploration, Render Test Episode
+
+    def on_press(self, key):
+        try:
+            x = key.char
+        except AttributeError:
+            return
+
+        if key.char == "t":
+            print("Testing Mode")
+            if self.interface == "MLAgentsV18":
+                self.actors[0].set_unity_parameters.remote(time_scale=1,
+                                                           width=500, height=500,
+                                                           quality_level=5,
+                                                           target_frame_rate=60,
+                                                           capture_frame_rate=60)
+        elif key.char == "z":
+            print("Training Mode")
+            if self.interface == "MLAgentsV18":
+                self.actors[0].set_unity_parameters.remote(time_scale=1000,
+                                                           width=10, height=10,
+                                                           quality_level=1,
+                                                           target_frame_rate=-1,
+                                                           capture_frame_rate=60)
 
     def async_adapt_sequence_length(self, training_step):
         """"""

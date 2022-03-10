@@ -9,7 +9,7 @@ class ExplorationAlgorithm:
 
     ParameterSpace = {}
 
-    def __init__(self, action_shape, observation_shape, action_space, parameters, trainer_configuration):
+    def __init__(self, action_shape, observation_shape, action_space, parameters, trainer_configuration, idx):
         self.action_space = action_space
         self.action_shape = action_shape
 
@@ -24,13 +24,13 @@ class ExplorationAlgorithm:
                        }
         return config_dict
 
-    def act(self, decision_steps, index=None):
+    def act(self, decision_steps):
         return
 
     def boost_exploration(self):
         return
 
-    def get_logs(self, idx):
+    def get_logs(self):
         return {}
 
     def get_intrinsic_reward(self, replay_batch):

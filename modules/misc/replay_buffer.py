@@ -97,8 +97,7 @@ class PrioritizedBuffer:
     """
 
     def __init__(self, capacity: int, priority_alpha=0.6):
-
-        # Initialize sum tree
+        # Initialize sum tree with the respective capacity
         self.tree = SumTree(capacity)
         self.capacity = capacity
 
@@ -107,13 +106,14 @@ class PrioritizedBuffer:
 
         # New sample and trajectory counters
         self.new_training_samples = 0
-        self.collected_trajectories = 0
         self.steps_without_training = 0
 
-        # Priority Alpha
+        # Determines the preference of samples with high priority over other samples.
         self.per_a = priority_alpha
-        self.per_e = 0.001  # Avoid samples to have 0 probability of being taken
-        self.per_beta = 0.4  # importance-sampling, from initial value increasing to 1
+        # Avoid samples to have 0 probability of being taken
+        self.per_e = 0.001
+        # NOT IN USE: Sample gradient weighting inverse proportional to their priorities
+        self.per_beta = 0.4
         self.per_beta_increment_per_sampling = 0.001
 
     def __len__(self):
@@ -131,53 +131,45 @@ class PrioritizedBuffer:
             return True
         return False
 
-    def _getPriority(self, error):
+    def _get_priority(self, error):
         return (error + self.per_e) ** self.per_a
 
     def append_list(self, samples, errors):
+        # Append experiences from the local buffer to the global buffer along with the inition priorities
         if np.any(errors is None):
             return
         for sample, error in zip(samples, errors):
-            priority = self._getPriority(error)
+            priority = self._get_priority(error)
             self.tree.add(priority, sample)
         self.new_training_samples += len(samples)
-        # print("LENGTH", self.__len__())
 
     @ray.method(num_returns=2)
     def sample(self, trainer_configuration, batch_size: int):
+        # Sample a batch of experiences according to their priorities. Also return their indices in the sum tree.
         if not self.check_training_condition(trainer_configuration):
             return None, None
         batch = []
         batch_indices = np.empty((batch_size,), dtype=np.int32)
 
-        # Priority segment = total priority / number of samples
         priority_segment = self.tree.total_priority() / batch_size
-        # priorities = []
-        self.per_beta = np.min([1., self.per_beta + self.per_beta_increment_per_sampling])
+        # self.per_beta = np.min([1., self.per_beta + self.per_beta_increment_per_sampling])
 
         for i in range(batch_size):
             # A value is uniformly sampled from each range
             a, b = priority_segment * i, priority_segment * (i+1)
-            try:
-                value = np.random.uniform(a, b)
-            except OverflowError:
-                print("OVERFLOW")
-                print(a, b)
-                time.sleep(1000)
-                raise OverflowError
+            value = np.random.uniform(a, b)
             index, priority, data = self.tree.get(value)
             # priorities.append(priority)
             batch.append(data)
             batch_indices[i] = index
 
         # sampling_probabilities = priorities / self.tree.total_priority()
-        # is_weight = np.power(self.tree.n_entries * sampling_probabilities, -self.beta)
+        # is_weight = np.power(self.tree.n_entries * sampling_probabilities, -self.per_beta)
         # is_weight /= is_weight.max()
         # TODO: Implement Importance Sampling
-
-        self.collected_trajectories = 0
+        # Reset the number of training samples since last sampling.
         self.new_training_samples = 0
-
+        # Deepcopy the batch so a potential change to the batch does not affect the actual buffer.
         copy_by_val_replay_batch = deepcopy(batch)
         return copy_by_val_replay_batch, batch_indices  # , is_weight
 
@@ -186,7 +178,7 @@ class PrioritizedBuffer:
             return
 
         for idx, error in zip(indices, errors):
-            priority = self._getPriority(error)
+            priority = self._get_priority(error)
             self.tree.update(idx, priority)
 
 
@@ -502,7 +494,7 @@ class LocalRecurrentBuffer:
                       step_type='decision'):
         # Iterate through all available agents
         for idx, agent_id in enumerate(ids):
-            # Don't add experiences of agents whose episode already ended or which are manually excluded
+            # Don't add experiences of agents whose episode already ended
             if agent_id in self.done_agents:
                 continue
             # Combine all observations of one agent in one list
@@ -558,7 +550,6 @@ class LocalRecurrentBuffer:
 
                 # Clear the temporal buffers
                 self.temp_agent_buffer[agent_id] = [[]]
-                # [[[]] for x in range(self.agent_num)]
 
                 if self.agent_num == 1:
                     self.done_agents.add(agent_id)

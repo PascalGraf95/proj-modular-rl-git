@@ -30,7 +30,7 @@ def main():
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
-    interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
+    trainer.interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
     # If you want to run multiple Unity actors in parallel you need to specify the path to the Environment '.exe' here.
     # In case of "OpenAIGym" enter the desired env name here instead, e.g. "LunarLanderContinuous-v2"
     environment_path = None
@@ -47,7 +47,7 @@ def main():
     # The exploration algorithm helps the RL Agent to explore the environment by occasionally choosing suboptimal
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
     # Choose from "None", "EpsilonGreedy", "ICM" and "RND"
-    exploration_algorithm = "EpsilonGreedy"
+    exploration_algorithm = "None"
 
     # - Curriculum Strategy -
     # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for
@@ -77,7 +77,7 @@ def main():
     # Parse the trainer configuration (make sure to select the right key)
     trainer.parse_training_parameters("trainer_configs/trainer_config.yaml", "sac")
     # Instantiate the agent which consists of a learner and one or multiple actors
-    trainer.async_instantiate_agent(mode, interface, preprocessing_algorithm, exploration_algorithm,
+    trainer.async_instantiate_agent(mode, preprocessing_algorithm, exploration_algorithm,
                                     environment_path, model_path, preprocessing_path)
     # If you are trying to understand this project, the next place to continue exploring it would be the trainer file
     # in the respective directory (./modules/trainer.py)

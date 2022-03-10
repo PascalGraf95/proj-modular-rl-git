@@ -12,7 +12,7 @@ import ray
 
 
 class Actor:
-    def __init__(self, port: int, mode: str,
+    def __init__(self, idx: int, port: int, mode: str,
                  interface: str,
                  preprocessing_algorithm: str,
                  preprocessing_path: str,
@@ -34,6 +34,7 @@ class Actor:
         self.steps_taken_since_clone_network_update = 0
         self.network_update_frequency = 1000
         self.clone_network_update_frequency = 1000
+        self.last_clone_update_step = -1
 
         # - Environment -
         self.environment = None
@@ -64,10 +65,11 @@ class Actor:
 
         # - Tensorflow Device -
         # Working in an async fashion using ray makes it necessary to actively distribute processes among the CPU and
-        # GPUs available. Each actor is usually 
+        # GPUs available. Each actor is usually placed on an individual CPU core/thread.
         self.device = device
 
-        # Behavior Parameters
+        # - Behavior Parameters -
+        # Information read from the environment.
         self.behavior_name = None
         self.behavior_clone_name = None
         self.action_shape = None
@@ -76,24 +78,25 @@ class Actor:
         self.agent_number = None
         self.agent_id_offset = None
         self.clone_agent_id_offset = None
-        self.last_clone_update_step = -1
 
-        # Exploration Algorithm
+        # - Exploration Algorithm -
         self.exploration_configuration = None
         self.exploration_algorithm = None
         self.adaptive_exploration = False
 
-        # Curriculum Learning Strategy & Engine Side Channel
+        # - Curriculum Learning Strategy & Engine Side Channel -
         self.engine_configuration_channel = None
         self.curriculum_communicator = None
         self.curriculum_side_channel = None
         self.target_task_level = 0
 
-        # Preprocessing Algorithm
+        # - Preprocessing Algorithm -
         self.preprocessing_algorithm = None
         self.preprocessing_path = preprocessing_path
 
-        # Algorithm Selection
+        # - Algorithm Selection -
+        # This section imports the relevant modules corresponding to the chosen interface, exploration algorithm and
+        # preprocessing algorithm.
         self.select_agent_interface(interface)
         self.select_exploration_algorithm(exploration_algorithm)
         self.select_preprocessing_algorithm(preprocessing_algorithm)
@@ -101,16 +104,13 @@ class Actor:
         # Prediction Parameters
         self.gamma = None
         self.n_steps = None
-        self.index = None
 
-        # Mode
+        # - Misc -
         self.mode = mode
         self.port = port
+        self.index = idx
 
     # region Environment Connection
-    def connect(self):
-        return
-
     def connect_to_unity_environment(self):
         self.engine_configuration_channel = EngineConfigurationChannel()
         self.curriculum_side_channel = CurriculumSideChannelTaskInfo()
@@ -156,8 +156,8 @@ class Actor:
         else:
             return None, None
 
-    def get_exploration_logs(self, idx):
-        return self.exploration_algorithm.get_logs(idx)
+    def get_exploration_logs(self):
+        return self.exploration_algorithm.get_logs()
 
     def get_environment_configuration(self):
         return self.environment_configuration
@@ -191,11 +191,9 @@ class Actor:
 
         if interface == "MLAgentsV18":
             from ..interfaces.mlagents_v18 import MlAgentsV18Interface as AgentInterface
-            self.connect = self.connect_to_unity_environment
 
         elif interface == "OpenAIGym":
             from ..interfaces.openaigym import OpenAIGymInterface as AgentInterface
-            self.connect = self.connect_to_gym_environment
         else:
             raise ValueError("An interface for {} is not (yet) supported by this trainer. "
                              "You can implement an interface yourself by utilizing the interface blueprint class "
@@ -251,32 +249,47 @@ class Actor:
         self.local_buffer.reset(self.sequence_length)
 
     def instantiate_modules(self, trainer_configuration, exploration_degree):
+        # region --- Trainer Configuration ---
+        # Read relevant information from the trainer configuration file.
+        # Recurrent Parameters
         self.recurrent = trainer_configuration["Recurrent"]
         self.sequence_length = trainer_configuration.get("SequenceLength")
+        # General Learning Parameters
         self.gamma = trainer_configuration["Gamma"]
         self.n_steps = trainer_configuration["NSteps"]
-        self.read_environment_configuration()
+        # Exploration Parameters
         self.adaptive_exploration = trainer_configuration.get("AdaptiveExploration")
         trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
+        # endregion
+
+        # Request the Environment Parameters and store relevant information
+        self.read_environment_configuration()
+
+        # Instantiate the Exploration Algorithm according to the environment and training configuration.
         self.exploration_algorithm = ExplorationAlgorithm(self.environment_configuration["ActionShape"],
                                                           self.environment_configuration["ObservationShapes"],
                                                           self.environment_configuration["ActionType"],
                                                           trainer_configuration["ExplorationParameters"],
-                                                          trainer_configuration)
+                                                          trainer_configuration,
+                                                          self.index)
+        # Instantiate the Curriculum Side Channel.
         self.curriculum_communicator = CurriculumCommunicator(self.curriculum_side_channel)
 
+        # Instantiate the Preprocessing algorithm and if necessary update the observation shapes for network
+        # construction.
         self.preprocessing_algorithm = PreprocessingAlgorithm(self.preprocessing_path)
         modified_output_shapes = self.preprocessing_algorithm.get_output_shapes(self.environment_configuration)
         self.environment_configuration["ObservationShapes"] = modified_output_shapes
         self.observation_shapes = modified_output_shapes
 
+        # Instantiate a local logger and buffer.
         self.local_logger = LocalLogger(agent_num=self.agent_number)
         self.instantiate_local_buffer(trainer_configuration)
-        return self.environment_configuration
+        return
     # endregion
 
     # region Network Construction and Updates
-    def build_network(self, network_parameters, environment_parameters, idx):
+    def build_network(self, network_parameters, environment_parameters):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
     def get_lstm_layers(self):
@@ -363,7 +376,7 @@ class Actor:
         # Register terminal agents, so the hidden LSTM state is reset
         self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
         # Choose the next action either by exploring or exploiting
-        actions = self.exploration_algorithm.act(decision_steps, self.index)
+        actions = self.exploration_algorithm.act(decision_steps)
         if actions is None:
             actions = self.act(decision_steps.obs,
                                agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
@@ -387,7 +400,6 @@ class Actor:
             self.steps_taken_since_clone_network_update += len(clone_decision_steps)
         else:
             clone_actions = None
-
         # Append steps and actions to the local replay buffer
         self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
                                         [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
@@ -466,28 +478,8 @@ class Actor:
 
 class Learner:
     # region ParameterSpace
-    TrainingParameterSpace = {
-        'ActorNum': int,
-        'NetworkUpdateFrequency': int,
-        'TrainingID': str,
-        'BatchSize': int,
-        'Gamma': float,
-        'TrainingInterval': int,
-        'NetworkParameters': list,
-        'ExplorationParameters': dict,
-        'ReplayMinSize': int,
-        'ReplayCapacity': int,
-        'NSteps': int,
-        'SyncMode': str,
-        'SyncSteps': int,
-        'Tau': float,
-        'ClipGrad': float,
-        'PrioritizedReplay': bool,
-        'AdaptiveExploration': bool
-    }
     ActionType = []
     NetworkTypes = []
-    Metrics = []
 
     def __init__(self, trainer_configuration, environment_configuration):
         # Environment Configuration
@@ -544,6 +536,10 @@ class Learner:
     # region Learning
     def learn(self, replay_batch):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    @tf.autograph.experimental.do_not_convert
+    def burn_in_mse_loss(self, y_true, y_pred):
+        return tf.reduce_mean(tf.square(y_true - y_pred), axis=-1)[:, self.burn_in:]
     # endregion
 
     # region Misc
@@ -722,14 +718,3 @@ class Learner:
                                  and key not in obsolete]
         return wrong_type_parameters
     # endregion
-
-
-
-
-
-
-
-
-
-
-

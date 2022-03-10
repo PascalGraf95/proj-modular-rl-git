@@ -7,6 +7,7 @@ from tensorflow.keras.models import load_model
 from ..misc.network_constructor import construct_network
 import tensorflow as tf
 from tensorflow.keras.models import clone_model
+from tensorflow.keras import losses
 import tensorflow_probability as tfp
 import os
 import ray
@@ -17,14 +18,14 @@ global AgentInterface
 
 @ray.remote
 class SACActor(Actor):
-    def __init__(self, port: int, mode: str,
+    def __init__(self, idx: int, port: int, mode: str,
                  interface: str,
                  preprocessing_algorithm: str,
                  preprocessing_path: str,
                  exploration_algorithm: str,
                  environment_path: str = "",
                  device: str = '/cpu:0'):
-        super().__init__(port, mode, interface, preprocessing_algorithm, preprocessing_path,
+        super().__init__(idx, port, mode, interface, preprocessing_algorithm, preprocessing_path,
                          exploration_algorithm, environment_path, device)
 
     def act(self, states, agent_ids=None, mode="training", clone=False):
@@ -106,38 +107,61 @@ class SACActor(Actor):
             self.steps_taken_since_clone_network_update = 0
         self.steps_taken_since_network_update = 0
 
-    def build_network(self, network_parameters, environment_parameters, idx):
-        self.index = idx
-        # Actor
+    def build_network(self, network_settings, environment_parameters):
+        # Create a list of dictionaries with 4 entries, one for each network
+        network_parameters = [{}, {}, {}, {}]
+        # region --- Actor ---
+        # - Network Name -
+        network_parameters[0]['NetworkName'] = 'SAC_ActorCopy{}'.format(self.index)
+        # - Network Architecture-
+        network_parameters[0]['VectorNetworkArchitecture'] = network_settings["ActorVectorNetworkArchitecture"]
+        network_parameters[0]['VisualNetworkArchitecture'] = network_settings["ActorVisualNetworkArchitecture"]
+        network_parameters[0]['Filters'] = network_settings["Filters"]
+        network_parameters[0]['Units'] = network_settings["Units"]
+        # - Input / Output / Initialization -
         network_parameters[0]['Input'] = environment_parameters.get('ObservationShapes')
         network_parameters[0]['Output'] = [environment_parameters.get('ActionShape'),
                                            environment_parameters.get('ActionShape')]
         network_parameters[0]['OutputActivation'] = [None, None]
-        network_parameters[0]['NetworkType'] = 'ActorCopy{}'.format(idx)
         network_parameters[0]['KernelInitializer'] = "RandomUniform"
-        # Recurrent Parameters
+        # - Recurrent Parameters -
         network_parameters[0]['Recurrent'] = self.recurrent
+        # For action calculation the recurrent actor only needs to return one output.
         network_parameters[0]['ReturnSequences'] = False
-        network_parameters[0]['ReturnStates'] = True
+        # The network is not stateful because the batch size constantly changes. Therefor, the states need to be
+        # returned and modified. The batch size thus is irrelevant.
         network_parameters[0]['Stateful'] = False
-        network_parameters[0]['BatchSize'] = None  # self.agent_number
+        network_parameters[0]['ReturnStates'] = True
+        network_parameters[0]['BatchSize'] = None
+        # endregion
 
-        # Actor for Error Prediction
+        # region --- Error Prediction Actor for PER ---
+        # The error prediction network is needed to calculate initial priorities for the prioritized experience replay
+        # buffer.
         network_parameters[2] = network_parameters[0].copy()
-        network_parameters[2]['NetworkType'] = 'ActorErrorPrediction{}'.format(idx)
+        network_parameters[2]['NetworkType'] = 'SAC_ActorErrorPredictionCopy{}'.format(self.index)
         network_parameters[2]['ReturnSequences'] = True
         network_parameters[2]['ReturnStates'] = False
         network_parameters[2]['Stateful'] = False
         network_parameters[2]['BatchSize'] = None
+        # endregion
 
-        # Critic1
+        # region  --- Critic ---
+        # The critic network is needed to calculate initial priorities for the prioritized experience replay
+        # buffer.
+        # - Network Name -
+        network_parameters[1]['NetworkName'] = "SAC_CriticCopy{}".format(self.index)
+        # - Network Architecture-
+        network_parameters[1]['VectorNetworkArchitecture'] = network_settings["CriticVectorNetworkArchitecture"]
+        network_parameters[1]['VisualNetworkArchitecture'] = network_settings["CriticVisualNetworkArchitecture"]
+        network_parameters[1]['Filters'] = network_settings["Filters"]
+        network_parameters[1]['Units'] = network_settings["Units"]
+        network_parameters[1]['TargetNetwork'] = False
+        # - Input / Output / Initialization -
         network_parameters[1]['Input'] = [*environment_parameters.get('ObservationShapes'),
                                           environment_parameters.get('ActionShape')]
         network_parameters[1]['Output'] = [1]
         network_parameters[1]['OutputActivation'] = [None]
-        network_parameters[1]['NetworkType'] = 'CriticCopy{}'.format(idx)
-        network_parameters[1]['TargetNetwork'] = False
-        network_parameters[1]['Vec2Img'] = False
         network_parameters[1]['KernelInitializer'] = "RandomUniform"
         # Recurrent Parameters
         network_parameters[1]['Recurrent'] = self.recurrent
@@ -145,95 +169,56 @@ class SACActor(Actor):
         network_parameters[1]['Stateful'] = False
         network_parameters[1]['BatchSize'] = None
         network_parameters[1]['ReturnStates'] = False
+        # endregion
 
-        # Build
+        # region --- Build ---
         with tf.device(self.device):
             self.actor_network = construct_network(network_parameters[0], plot_network_model=True)
+            # TODO: only construct this if PER
             self.critic_network = construct_network(network_parameters[1])
-            if self.behavior_clone_name:
-                network_parameters.append(network_parameters[0].copy())
-                network_parameters[3]['NetworkType'] = 'ActorCloneCopy{}'.format(idx)
-                self.clone_actor_network = construct_network(network_parameters[3], plot_network_model=True)
             if self.recurrent:
                 self.actor_prediction_network = construct_network(network_parameters[2])
+                # In case of recurrent neural networks, the lstm layers need to be accessible so that the hidden and
+                # cell states can be modified manually.
                 self.get_lstm_layers()
+            # If there is a clone agent in the environment, instantiate another actor network for self-play.
+            if self.behavior_clone_name:
+                network_parameters.append(network_parameters[0].copy())
+                network_parameters[3]['NetworkType'] = 'ActorCloneCopy{}'.format(self.index)
+                self.clone_actor_network = construct_network(network_parameters[3], plot_network_model=True)
+        # endregion
         return True
 
 
 @ray.remote(num_gpus=1)
 class SACLearner(Learner):
-    # region ParameterSpace
-    TrainingParameterSpace = Learner.TrainingParameterSpace.copy()
-    SACParameterSpace = {
-        'LearningRateActor': float,
-        'LearningRateCritic': float,
-        'LogAlpha': float
-    }
-    TrainingParameterSpace = {**TrainingParameterSpace, **SACParameterSpace}
-    NetworkParameterSpace = [{
-        'VisualNetworkArchitecture': str,
-        'VectorNetworkArchitecture': str,
-        'Units': int,
-        'Filters': int,
-    },
-        {
-        'VisualNetworkArchitecture': str,
-        'VectorNetworkArchitecture': str,
-        'Units': int,
-        'Filters': int,
-    },
-        {
-        'VisualNetworkArchitecture': str,
-        'VectorNetworkArchitecture': str,
-        'Units': int,
-        'Filters': int,
-    }]
     ActionType = ['CONTINUOUS']
     NetworkTypes = ['Actor', 'Critic1', 'Critic2']
-    Metrics = ['PolicyLoss', 'ValueLoss', 'AlphaLoss']
-    # endregion
 
-    def __init__(self, mode, trainer_configuration, environment_configuration, network_parameters, model_path=None):
+    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None):
         super().__init__(trainer_configuration, environment_configuration)
 
-        # Networks
+        # - Neural Networks -
+        # The Soft Actor-Critic algorithm utilizes 5 neural networks. One actor and two critics with one target network
+        # each. The actor takes in the current state and outputs an action vector which consists of a mean and standard
+        # deviation for each action component. This is the only network needed for acting after training.
+        # Each critic takes in the current state as well as an action and predicts its Q-Value.
         self.actor_network: keras.Model
         self.critic1: keras.Model
         self.critic_target1: keras.Model
         self.critic2: keras.Model
         self.critic_target2: keras.Model
+        # A small parameter epsilon prevents math errors when log probabilities are 0.
         self.epsilon = 1.0e-6
 
-        # Optimizer
+        # - Optimizer -
         self.actor_optimizer: keras.optimizers.Optimizer
         self.alpha_optimizer: keras.optimizers.Optimizer
 
-        # Temperature Parameter
-        self.log_alpha: tf.Variable
-        self.target_entropy: tf.Variable
-
-        # Construct or load the required neural networks based on the trainer configuration and environment information
-        if mode == 'training':
-            # Network Construction
-            self.build_network(network_parameters, environment_configuration)
-            # Load Pretrained Models
-            if model_path:
-                self.load_checkpoint(model_path)
-
-            # Compile Networks
-            self.critic1.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRateCritic'),
-                                                clipvalue=self.clip_grad), loss="mse")
-            self.critic2.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRateCritic'),
-                                                clipvalue=self.clip_grad), loss="mse")
-            self.actor_optimizer = Adam(learning_rate=trainer_configuration.get('LearningRateActor'),
-                                        clipvalue=self.clip_grad)
-
-        # Load trained Models
-        elif mode == 'testing':
-            assert model_path, "No model path entered."
-            self.load_checkpoint(model_path)
-
-        # Temperature Parameter Configuration
+        # - Temperature Parameter Alpha -
+        # The alpha parameter similar to the epsilon in epsilon-greedy promotes exploring the environment by keeping
+        # the standard deviation for each action as high as possible while still performing the task. However, in
+        # contrast to epsilon, alpha is a learnable parameter and adjusts automatically.
         self.log_alpha = tf.Variable(tf.ones(1)*trainer_configuration.get('LogAlpha'),
                                      constraint=lambda x: tf.clip_by_value(x, -20, 20), trainable=True)
         self.target_entropy = -tf.reduce_sum(tf.ones(self.action_shape))
@@ -242,59 +227,115 @@ class SACLearner(Learner):
                                                         clipvalue=self.clip_grad)
         self.alpha = tf.exp(self.log_alpha).numpy()
 
+        # Construct or load the required neural networks based on the trainer configuration and environment information
+        if mode == 'training':
+            # Network Construction
+            self.build_network(trainer_configuration.get("NetworkParameters"), environment_configuration)
+            # Load Pretrained Models
+            if model_path:
+                self.load_checkpoint(model_path)
+
+            # Compile Networks
+            self.critic1.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRateCritic'),
+                                                clipvalue=self.clip_grad), loss=self.burn_in_mse_loss)
+            self.critic2.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRateCritic'),
+                                                clipvalue=self.clip_grad), loss=self.burn_in_mse_loss)
+            self.actor_optimizer = Adam(learning_rate=trainer_configuration.get('LearningRateActor'),
+                                        clipvalue=self.clip_grad)
+
+        # Load trained Models
+        elif mode == 'testing':
+            assert model_path, "No model path entered."
+            self.load_checkpoint(model_path)
+
     def get_actor_network_weights(self, update_requested):
         if not update_requested:
             return []
         return [self.actor_network.get_weights(), self.critic1.get_weights()]
 
-    def build_network(self, network_parameters, environment_parameters):
-        # Actor
+    def build_network(self, network_settings, environment_parameters):
+        # Create a list of dictionaries with 3 entries, one for each network
+        network_parameters = [{}, {}, {}]
+        # region --- Actor ---
+        # - Network Name -
+        network_parameters[0]['NetworkName'] = "SAC_" + self.NetworkTypes[0]
+        # - Network Architecture-
+        network_parameters[0]['VectorNetworkArchitecture'] = network_settings["ActorVectorNetworkArchitecture"]
+        network_parameters[0]['VisualNetworkArchitecture'] = network_settings["ActorVisualNetworkArchitecture"]
+        network_parameters[0]['Filters'] = network_settings["Filters"]
+        network_parameters[0]['Units'] = network_settings["Units"]
+        # - Input / Output / Initialization -
         network_parameters[0]['Input'] = environment_parameters.get('ObservationShapes')
         network_parameters[0]['Output'] = [environment_parameters.get('ActionShape'),
                                            environment_parameters.get('ActionShape')]
         network_parameters[0]['OutputActivation'] = [None, None]
-        network_parameters[0]['NetworkType'] = self.NetworkTypes[0]
         network_parameters[0]['KernelInitializer'] = "RandomUniform"
-        # Recurrent Parameters
+        # - Recurrent Parameters -
         network_parameters[0]['Recurrent'] = self.recurrent
+        # For loss calculation the recurrent actor needs to return one output per sample in the training sequence.
         network_parameters[0]['ReturnSequences'] = True
-        network_parameters[0]['Stateful'] = True
+        # The actor no longer needs to be stateful due to new training process. This means the hidden and cell states
+        # are reset after every prediction. Batch size thus also does not need to be predefined.
+        network_parameters[0]['Stateful'] = False
+        network_parameters[0]['BatchSize'] = None
+        # The hidden network states are not relevant.
         network_parameters[0]['ReturnStates'] = False
-        network_parameters[0]['BatchSize'] = self.batch_size
+        # endregion
 
-        # Critic1
+        # region --- Critic1 ---
+        # - Network Name -
+        network_parameters[1]['NetworkName'] = "SAC_" + self.NetworkTypes[1]
+        # - Network Architecture-
+        network_parameters[1]['VectorNetworkArchitecture'] = network_settings["CriticVectorNetworkArchitecture"]
+        network_parameters[1]['VisualNetworkArchitecture'] = network_settings["CriticVisualNetworkArchitecture"]
+        network_parameters[1]['Filters'] = network_settings["Filters"]
+        network_parameters[1]['Units'] = network_settings["Units"]
+        network_parameters[1]['TargetNetwork'] = True
+        # - Input / Output / Initialization -
         network_parameters[1]['Input'] = [*environment_parameters.get('ObservationShapes'),
                                           environment_parameters.get('ActionShape')]
         network_parameters[1]['Output'] = [1]
         network_parameters[1]['OutputActivation'] = [None]
-        network_parameters[1]['NetworkType'] = self.NetworkTypes[1]
-        network_parameters[1]['TargetNetwork'] = True
-        network_parameters[1]['Vec2Img'] = False
         network_parameters[1]['KernelInitializer'] = "RandomUniform"
-        # Recurrent Parameters
+        # For image-based environments, the critic receives a mixture of images and vectors as input. If the following
+        # option is true, the vector inputs will be repeated and stacked into the form of an image.
+        network_parameters[1]['Vec2Img'] = False
+
+        # - Recurrent Parameters -
         network_parameters[1]['Recurrent'] = self.recurrent
+        # For loss calculation the recurrent critic needs to return one output per sample in the training sequence.
         network_parameters[1]['ReturnSequences'] = True
-        network_parameters[1]['Stateful'] = True
+        # The critic no longer needs to be stateful due to new training process. This means the hidden and cell states
+        # are reset after every prediction. Batch size thus also does not need to be predefined.
+        network_parameters[1]['Stateful'] = False
+        network_parameters[1]['BatchSize'] = None
+        # The hidden network states are not relevant.
         network_parameters[1]['ReturnStates'] = False
-        network_parameters[1]['BatchSize'] = self.batch_size
+        # endregion
 
-        # Critic2
+        # region --- Critic2 ---
+        # The second critic is an exact copy of the first one
         network_parameters[2] = network_parameters[1].copy()
-        network_parameters[2]['NetworkType'] = self.NetworkTypes[2]
+        network_parameters[2]['NetworkType'] = "SAC_" + self.NetworkTypes[2]
+        # endregion
 
-        # Build
+        # region --- Building ---
+        # Build the networks from the network parameters
         self.actor_network = construct_network(network_parameters[0])
         self.critic1, self.critic_target1 = construct_network(network_parameters[1])
         self.critic2, self.critic_target2 = construct_network(network_parameters[2])
+        # endregion
 
     def forward(self, states):
+        # Calculate the actors output and clip the logarithmic standard deviation values
         mean, log_std = self.actor_network(states)
         log_std = tf.clip_by_value(log_std, -20, 3)
+        # Construct a normal function with mean and std and sample an action
         normal = tfd.Normal(mean, tf.exp(log_std))
-
         z = normal.sample()
         action = tf.tanh(z)
 
+        # Calculate the logarithmic probability of z being sampled from the normal distribution.
         log_prob = normal.log_prob(z)
         log_prob_normalizer = tf.math.log(1 - action**2 + self.epsilon)
         log_prob -= log_prob_normalizer
@@ -310,7 +351,86 @@ class SACLearner(Learner):
         if not replay_batch:
             return None, None, self.training_step
 
-        # region --- REPLAY BATCH PREPROCESSING
+        # region --- REPLAY BATCH PREPROCESSING ---
+        # In case of recurrent neural networks the batches have to be processed differently
+        if self.recurrent:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
+                                                                         self.action_shape, self.sequence_length)
+        else:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = self.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, self.action_shape)
+        if np.any(action_batch is None):
+            return None, None, self.training_step
+        # endregion
+
+        # region --- CRITIC TRAINING ---
+        next_actions, next_log_prob = self.forward(next_state_batch)
+
+        # Critic Target Predictions
+        critic_target_prediction1 = self.critic_target1([*next_state_batch, next_actions])
+        critic_target_prediction2 = self.critic_target2([*next_state_batch, next_actions])
+        critic_target_prediction = tf.minimum(critic_target_prediction1, critic_target_prediction2)
+
+        # Possible Reward DeNormalization
+        if self.reward_normalization:
+            critic_target_prediction = self.inverse_value_function_rescaling(critic_target_prediction)
+
+        # Training Target Calculation with standard TD-Error + Temperature Parameter
+        critic_target = (critic_target_prediction - self.alpha * next_log_prob)*(1-done_batch)
+        y = reward_batch + (self.gamma**self.n_steps) * critic_target
+
+        # Possible Reward Normalization
+        if self.reward_normalization:
+            y = self.value_function_rescaling(y)
+
+        # Calculate Sample Errors to update priorities in Prioritized Experience Replay
+        sample_errors = np.abs(y - self.critic1([*state_batch, action_batch]))[:, self.burn_in:]
+        if self.recurrent:
+            eta = 0.9
+            sample_errors = eta*np.max(sample_errors, axis=1) + (1-eta)*np.mean(sample_errors, axis=1)
+
+        # Calculate Critic 1 Loss
+        value_loss1 = self.critic1.train_on_batch([*state_batch, action_batch], y)
+        value_loss2 = self.critic2.train_on_batch([*state_batch, action_batch], y)
+        value_loss = (value_loss1 + value_loss2)/2
+        # endregion
+
+        # region --- ACTOR TRAINING ---
+        with tf.GradientTape() as tape:
+            new_actions, log_prob = self.forward(state_batch)
+            critic_prediction1 = self.critic1([*state_batch, new_actions])
+            critic_prediction2 = self.critic2([*state_batch, new_actions])
+            critic_prediction = tf.minimum(critic_prediction1, critic_prediction2)
+            policy_loss = tf.reduce_mean(self.alpha*log_prob[:, self.burn_in:] - critic_prediction[:, self.burn_in:])
+
+        actor_grads = tape.gradient(policy_loss, self.actor_network.trainable_variables)
+        self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor_network.trainable_variables))
+        # endregion
+
+        # region --- TEMPERATURE PARAMETER TRAINING ---
+        with tf.GradientTape() as tape:
+            alpha_loss = tf.reduce_mean(self.log_alpha * (-log_prob - self.target_entropy))
+
+        alpha_grads = tape.gradient(alpha_loss, [self.log_alpha])
+        self.alpha_optimizer.apply_gradients(zip(alpha_grads, [self.log_alpha]))
+        self.alpha = tf.exp(self.log_alpha).numpy()
+        # endregion
+
+        self.training_step += 1
+        self.steps_since_actor_update += 1
+        self.sync_models()
+
+        return {'Losses/Loss': policy_loss+value_loss, 'Losses/PolicyLoss': policy_loss,
+                'Losses/ValueLoss': value_loss, 'Losses/AlphaLoss': alpha_loss,
+                'Losses/Alpha': tf.reduce_mean(self.alpha).numpy()}, sample_errors, self.training_step
+
+    @ray.method(num_returns=3)
+    def learn_deprecated(self, replay_batch):
+        if not replay_batch:
+            return None, None, self.training_step
+
+        # region --- REPLAY BATCH PREPROCESSING ---
         if self.recurrent:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
@@ -424,6 +544,7 @@ class SACLearner(Learner):
         self.training_step += 1
         self.steps_since_actor_update += 1
         self.sync_models()
+
         return {'Losses/Loss': policy_loss+value_loss, 'Losses/PolicyLoss': policy_loss,
                 'Losses/ValueLoss': value_loss, 'Losses/AlphaLoss': alpha_loss,
                 'Losses/Alpha': tf.reduce_mean(self.alpha).numpy()}, sample_errors, self.training_step
@@ -488,11 +609,6 @@ class SACLearner(Learner):
         self.log_alpha = tf.Variable(tf.ones(1)*-0.7,
                                      constraint=lambda x: tf.clip_by_value(x, -10, 20), trainable=True)
         return True
-
-    @staticmethod
-    def get_config():
-        config_dict = SACLearner.__dict__
-        return Learner.get_config(config_dict)
 
 
 

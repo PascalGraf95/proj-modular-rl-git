@@ -22,6 +22,7 @@ NormalDense = Dense
 ImageShapeLength = 4
 VectorShapeLength = 2
 
+
 class NetworkArchitecture(Enum):
     NONE = "None"
     SMALL_DENSE = "SmallDense"
@@ -34,7 +35,6 @@ class NetworkArchitecture(Enum):
     CNN_BATCHNORM = "CNNBatchnorm"
     DEEP_CNN_BATCHNORM = "DeepCNNBatchnorm"
     CNN_ICM = "ICMCNN"
-    RESNET12 = "ResNet12"
 
 
 """
@@ -44,51 +44,53 @@ or filters as well as the desired input and output shapes.
 
 
 def construct_network(network_parameters, plot_network_model=False):
-    """Constructs a neural network for Reinforcement Learning with arbitrary input and output shapes and a defined
-    type of network body (see NetworkArchitecture enum above)."""
+    """Constructs a neural network for any Reinforcement Learning algorithm with arbitrary input and output shapes
+    and a defined type of network body (see NetworkArchitecture enum above)."""
 
-    # Distinguish Dense vs. NoisyDense Layer (Only for DQN)
+    # Distinguish Dense from NoisyDense Layer (Only for DQN)
     global Dense
     if network_parameters.get("NoisyNetworks"):
         Dense = NoisyDense
     else:
         Dense = NormalDense
 
-    # Construct one input layer per observation
+    # region --- Input ---
+    # Construct one input layer per input component.
     network_input = build_network_input(network_parameters.get('Input'), network_parameters)
-    # Opportunity to resize image inputs to a specified size
-    if network_parameters.get("InputResize"):
-        network_branches = []
-        for net_input in network_input:
-            if len(net_input.shape) == ImageShapeLength:
-                x = Resizing(*network_parameters["InputResize"])(net_input)
-                network_branches.append(x)
-            else:
-                network_branches.append(net_input)
-    else:
-        network_branches = network_input
+    network_branches = network_input
 
-    # Depending on the number and types of the inputs either keep them separate or connect them right here.
+    # Depending on the number and types of the inputs either keep them separate or connect them here.
+    # Multiple image inputs will be stacked, multiple vector inputs will be concatenated, a mixture of vector
+    # and image inputs will be processed with separate network bodies and connected afterwards.
     x = connect_branches(network_branches, network_parameters)
+    # endregion
 
+    # region --- Body ---
     # Construct the network body/bodies
     network_body, hidden_state, cell_state = build_network_body(x, network_parameters)
+    # endregion
 
+    # region --- Output ---
     # Construct the network output
     network_output = build_network_output(network_body, network_parameters)
+    # endregion
 
-    # Create the final model and plot it
+    # region --- Model Construction ---
     if network_parameters.get("Recurrent") and network_parameters.get("ReturnStates"):
         model = Model(inputs=network_input, outputs=[network_output, hidden_state, cell_state],
-                      name=network_parameters.get("NetworkType"))
+                      name=network_parameters.get("NetworkName"))
     else:
-        model = Model(inputs=network_input, outputs=network_output, name=network_parameters.get("NetworkType"))
+        model = Model(inputs=network_input, outputs=network_output, name=network_parameters.get("NetworkName"))
+    # endregion
+
+    # region --- Model Plot ---
     if plot_network_model:
         model.summary()
         try:
-            plot_model(model, "plots/"+network_parameters.get("NetworkType") + ".png", show_shapes=True)
+            plot_model(model, "plots/"+network_parameters.get("NetworkName") + ".png", show_shapes=True)
         except ImportError:
             print("Could not create a model plot for {}.".format(network_parameters.get("NetworkType")))
+    # endregion
 
     if network_parameters.get('TargetNetwork'):
         target_model = clone_model(model)
@@ -99,11 +101,14 @@ def construct_network(network_parameters, plot_network_model=False):
 def build_network_input(network_input_shapes, network_parameters):
     """ Builds the input layers for an arbitrary number of inputs with arbitrary shape."""
     network_input = []
-
+    # Iterate through all input components
     for input_shapes in network_input_shapes:
+        # In case of a recurrent neural network, the input shape of vector observation changes from 2 to 3,
+        # for an image component from 4 to 5.
         if network_parameters["Recurrent"]:
             if type(input_shapes) == int:
                 input_shapes = (input_shapes,)
+            # For stateful recurrent neural networks the batch size needs to be predefined and constant.
             x = Input((None, *input_shapes), batch_size=network_parameters["BatchSize"])
             global ImageShapeLength
             global VectorShapeLength
@@ -119,63 +124,51 @@ def connect_branches(network_input, network_parameters):
     """Connects multiple vector XOR image branches via Concatenate layers"""
     branch_shape_lengths = [len(x.shape) for x in network_input]
     input_types = None
+    # Check if there is more than one input branch
     if len(branch_shape_lengths) > 1:
+        # Do all input branches have the same shape, i.e. are they all images or all vectors.
         if len(set(branch_shape_lengths)) == 1:
-            if branch_shape_lengths[0] == ImageShapeLength:
-                input_types = "images"
-            elif branch_shape_lengths[0] == VectorShapeLength:
-                input_types = "vectors"
+            # If all inputs are images or vectors, just Concatenate them
+            if branch_shape_lengths[0] == ImageShapeLength or branch_shape_lengths[0] == VectorShapeLength:
+                return [Concatenate(axis=-1)(network_input)]
+        # Otherwise, the inputs are mixed between images and vectors
         else:
-            input_types = "mixed"
+            # If the Vec2Img-option is enabled, Vectors will be reshaped into images and resized to enable
+            # concatenation
             if network_parameters.get("Vec2Img"):
-                input_types = "forced_images"
+                # Vector Branches will be reshaped and resized
+                image_branches = []
+                for net_input in [x for x in network_input if len(x.shape) == VectorShapeLength]:
+                    x = Reshape((1, 1, net_input.shape[-1]))(net_input)
+                    x = UpSampling2D(size=(84, 84))(x)
+                    image_branches.append(x)
+                # Image Branches
+                for net_input in [x for x in network_input if len(x.shape) == ImageShapeLength]:
+                    image_branches.append(net_input)
+                if len(image_branches) > 1:
+                    return [Concatenate(axis=-1)(image_branches)]
+            else:
+                # Vector Branches will be concatenated
+                vector_branches = []
+                for net_input in [x for x in network_input if len(x.shape) == VectorShapeLength]:
+                    vector_branches.append(net_input)
+                if len(vector_branches) > 1:
+                    vector_branches = Concatenate(axis=-1)(vector_branches)
+                else:
+                    vector_branches = vector_branches[0]
+                # Image Branches will be concatenated
+                image_branches = []
+                for net_input in [x for x in network_input if len(x.shape) == ImageShapeLength]:
+                    image_branches.append(net_input)
+                if len(image_branches) > 1:
+                    image_branches = Concatenate(axis=-1)(image_branches)
+                else:
+                    image_branches = image_branches[0]
+                # Image and Vector branches returned separately
+                return [image_branches, vector_branches]
     else:
+        # If there is only one branch, return
         return network_input
-
-    # Case only images just concatenate the input layers.
-    if input_types == "images":
-        return [Concatenate(axis=-1)(network_input)]
-
-    # Case only vectors append Dense Layer to each Input and concatenate.
-    if input_types == "vectors":
-        network_branches = []
-        for net_input in network_input:
-            network_branches.append(net_input)
-        return [Concatenate(axis=-1)(network_branches)]
-
-    # Case mixed inputs append Dense Layer to Vector inputs and concatenate images and vectors respectively.
-    elif input_types == "mixed":
-        # Vector Branches
-        vector_branches = []
-        for net_input in [x for x in network_input if len(x.shape) == VectorShapeLength]:
-            vector_branches.append(net_input)
-        if len(vector_branches) > 1:
-            vector_branches = Concatenate(axis=-1)(vector_branches)
-        else:
-            vector_branches = vector_branches[0]
-        # Image Branches
-        image_branches = []
-        for net_input in [x for x in network_input if len(x.shape) == ImageShapeLength]:
-            image_branches.append(net_input)
-        if len(image_branches) > 1:
-            image_branches = Concatenate(axis=-1)(image_branches)
-        else:
-            image_branches = image_branches[0]
-        return [image_branches, vector_branches]
-
-    # Gives the opportunity to convert vector inputs to images and append them to the image input
-    elif input_types == "forced_images":
-        # Vector Branches
-        image_branches = []
-        for net_input in [x for x in network_input if len(x.shape) == VectorShapeLength]:
-            x = Reshape((1, 1, net_input.shape[-1]))(net_input)
-            x = UpSampling2D(size=(84, 84))(x)
-            image_branches.append(x)
-        # Image Branches
-        for net_input in [x for x in network_input if len(x.shape) == ImageShapeLength]:
-            image_branches.append(net_input)
-        if len(image_branches) > 1:
-            return [Concatenate(axis=-1)(image_branches)]
 
 
 def build_network_body(network_input, network_parameters):
@@ -185,14 +178,19 @@ def build_network_body(network_input, network_parameters):
     network_branches = []
     units, filters = 0, 0
     hidden_state, cell_state = None, None
+    # Construct one network body for each network branch
     for net_input in network_input:
+        # In case of Vector input utilize the vector architecture and units
         if len(net_input.shape) == VectorShapeLength:
             net_architecture = network_parameters.get("VectorNetworkArchitecture")
             units = network_parameters.get("Units")
         else:
+            # In case of Image input utilize the visual architecture and filters
             net_architecture = network_parameters.get("VisualNetworkArchitecture")
             filters = network_parameters.get("Filters")
 
+        # Distinguish between Recurrent and Feed Forward neural networks.
+        # Recurrent network bodies return the hidden and cell state additionally to the last layer output x
         if network_parameters.get("Recurrent") and network_parameters.get("ReturnStates"):
             network_branch, hidden_state, cell_state = get_network_component(net_input, net_architecture,
                                                                              network_parameters,
@@ -201,7 +199,10 @@ def build_network_body(network_input, network_parameters):
             network_branch = get_network_component(net_input, net_architecture,
                                                    network_parameters, units=units, filters=filters)
         network_branches.append(network_branch)
+    # If there are multiple branches, connect them to one.
     network_body = connect_branches(network_branches, network_parameters)
+    # If there have been multiple branches before, add one Dense layer to the end where all information are processed
+    # together.
     if len(network_branches) > 1:
         network_body = [get_network_component(network_body[0], "SingleDense",
                                               network_parameters, units=network_parameters.get("Units")*5)]
@@ -211,12 +212,13 @@ def build_network_body(network_input, network_parameters):
 def build_network_output(net_in, network_parameters):
     """Builds one or multiple network outputs. Supports dueling networks and special kernel initialization."""
     network_output = []
+    # Iterate through all outputs in the parameters dictionary
     for net_out_shape, net_out_act in zip(network_parameters.get('Output'),
                                           network_parameters.get('OutputActivation')):
         if net_out_shape:
             if type(net_out_shape) == tuple:
                 net_out_shape = net_out_shape[0]
-
+            # Dueling Networks (only for DQN) have a special kind of output configuration.
             if network_parameters.get('DuelingNetworks'):
                 y = Dense(network_parameters.get('Units'), activation="selu")(net_in)
                 z = Dense(network_parameters.get('Units'), activation="selu")(net_in)
@@ -227,6 +229,8 @@ def build_network_output(net_in, network_parameters):
                 net_out = Add()([y, z])
                 net_out = Subtract(name="action")([net_out, z_mean])
             else:
+                # Otherwise, just construct one Dense layer with the specified number of units and activation.
+                # Some algorithms perform better with a special kind of kernel initializer.
                 if network_parameters.get('KernelInitializer') == "RandomUniform":
                     net_out = Dense(net_out_shape, activation=net_out_act,
                                     kernel_initializer=RandomUniform(minval=-3e-3, maxval=3e-3),
@@ -342,9 +346,6 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
 
         else:
             x = Dense(512, activation="selu")(x)
-
-    elif net_architecture == NetworkArchitecture.RESNET12.value:
-        x = create_res_net12(net_inp, filters)
 
     elif net_architecture == NetworkArchitecture.SHALLOW_CNN.value:
         pass

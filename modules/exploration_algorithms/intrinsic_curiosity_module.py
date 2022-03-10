@@ -15,6 +15,7 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
     """
     Basic implementation of the Intrinsic Curiosity Module (ICM)
     """
+    # TODO: FIX and UPDATE
     Name = "IntrinsicCuriosityModule"
     ActionAltering = False
     IntrinsicReward = True
@@ -26,26 +27,26 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
         "LearningRate": float,
     }
 
-    def __init__(self, action_shape, observation_shapes, action_space, parameters):
+    def __init__(self, action_shape, observation_shapes, action_space, parameters, idx):
         self.action_space = action_space
         self.action_shape = action_shape
         self.observation_shapes = observation_shapes
-
-        self.feature_space_size = parameters["FeatureSpaceSize"]
-        self.reward_scaling_factor = parameters["CuriosityScalingFactor"]*parameters["ExplorationDegree"]
-        self.forward_loss_weight = parameters["ForwardLossWeight"]
-        self.mse = MeanSquaredError()
-        self.optimizer = Adam(parameters["LearningRate"])
 
         self.inverse_loss = 0
         self.forward_loss = 0
         self.max_intrinsic_reward = 0
         self.loss = 0
+        self.index = idx
 
-        self.forward_model, self.inverse_model, self.feature_extractor = self.build_network()
+        if self.index == 0:
+            self.feature_space_size = parameters["FeatureSpaceSize"]
+            self.reward_scaling_factor = parameters["CuriosityScalingFactor"]*parameters["ExplorationDegree"]
+            self.forward_loss_weight = parameters["ForwardLossWeight"]
+            self.mse = MeanSquaredError()
+            self.optimizer = Adam(parameters["LearningRate"])
+            self.forward_model, self.inverse_model, self.feature_extractor = self.build_network()
 
     def build_network(self):
-        network_parameters = [{}, {}, {}]
         # Feature Extractor: Extracts relevant state features
         if len(self.observation_shapes) == 1:
             feature_input = Input(self.observation_shapes[0])
@@ -84,37 +85,38 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
         return forward_model, inverse_model, feature_extractor
 
     def learning_step(self, replay_batch):
-        state_batch, action_batch, \
-         reward_batch, next_state_batch, \
-         done_batch = Learner.get_training_batch_from_replay_batch(replay_batch,
-                                                                   self.observation_shapes,
-                                                                   self.action_shape)
+        if self.index == 0:
+            state_batch, action_batch, \
+             reward_batch, next_state_batch, \
+             done_batch = Learner.get_training_batch_from_replay_batch(replay_batch,
+                                                                       self.observation_shapes,
+                                                                       self.action_shape)
 
-        # Calculate Loss
-        with tf.GradientTape() as tape:
-            # Feature Extraction
-            state_features = self.feature_extractor(state_batch)
-            next_state_features = self.feature_extractor(next_state_batch)
+            # Calculate Loss
+            with tf.GradientTape() as tape:
+                # Feature Extraction
+                state_features = self.feature_extractor(state_batch)
+                next_state_features = self.feature_extractor(next_state_batch)
 
-            # Forward Loss
-            next_state_prediction = self.forward_model([state_features, action_batch])
-            self.forward_loss = self.mse(next_state_features, next_state_prediction)
+                # Forward Loss
+                next_state_prediction = self.forward_model([state_features, action_batch])
+                self.forward_loss = self.mse(next_state_features, next_state_prediction)
 
-            # Inverse Loss
-            action_prediction = self.inverse_model([state_features, next_state_features])
-            self.inverse_loss = self.mse(action_batch, action_prediction)
+                # Inverse Loss
+                action_prediction = self.inverse_model([state_features, next_state_features])
+                self.inverse_loss = self.mse(action_batch, action_prediction)
 
-            # Combined Loss
-            self.loss = self.forward_loss*self.forward_loss_weight + self.inverse_loss*(1-self.forward_loss_weight)
+                # Combined Loss
+                self.loss = self.forward_loss*self.forward_loss_weight + self.inverse_loss*(1-self.forward_loss_weight)
 
-        # Calculate Gradients
-        grad = tape.gradient(self.loss, [self.forward_model.trainable_weights,
-                                         self.inverse_model.trainable_weights,
-                                         self.feature_extractor.trainable_weights])
-        # Apply Gradients to all models
-        self.optimizer.apply_gradients(zip(grad[0], self.forward_model.trainable_weights))
-        self.optimizer.apply_gradients(zip(grad[1], self.inverse_model.trainable_weights))
-        self.optimizer.apply_gradients(zip(grad[2], self.feature_extractor.trainable_weights))
+            # Calculate Gradients
+            grad = tape.gradient(self.loss, [self.forward_model.trainable_weights,
+                                             self.inverse_model.trainable_weights,
+                                             self.feature_extractor.trainable_weights])
+            # Apply Gradients to all models
+            self.optimizer.apply_gradients(zip(grad[0], self.forward_model.trainable_weights))
+            self.optimizer.apply_gradients(zip(grad[1], self.inverse_model.trainable_weights))
+            self.optimizer.apply_gradients(zip(grad[2], self.feature_extractor.trainable_weights))
         return
 
     def get_intrinsic_reward(self, replay_batch):
@@ -150,9 +152,12 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
         return
 
     def get_logs(self):
-        return {"Exploration/InverseLoss": self.inverse_loss,
-                "Exploration/ForwardLoss": self.forward_loss,
-                "Exploration/MaxIntrinsicReward": self.max_intrinsic_reward}
+        if self.index == 0:
+            return {"Exploration/InverseLoss": self.inverse_loss,
+                    "Exploration/ForwardLoss": self.forward_loss,
+                    "Exploration/MaxIntrinsicReward": self.max_intrinsic_reward}
+        else:
+            return {}
 
     def prevent_checkpoint(self):
         return False

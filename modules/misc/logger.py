@@ -18,8 +18,8 @@ class LocalLogger:
     def __init__(self, agent_num=1):
         # Count of episodes played in total
         self.total_episodes_played = 0
-
-        # Number of agents in the environment + list of rewards over the current episode
+        # Number of agents in the environment + list of rewards over the current episode, each agent in the environment
+        # gets its own list
         self.agent_num = agent_num
         self.agent_reward_list = [[] for x in range(self.agent_num)]
         # Lists for rewards and episode lengths since last readout
@@ -29,22 +29,26 @@ class LocalLogger:
     def track_episode(self, rewards, agent_ids, step_type='decision'):
         # For each agent in the environment, track the rewards of the current episode
         for idx, agent_id in enumerate(agent_ids):
+            # Append the respective reward to the respective agent in the nested list
             self.agent_reward_list[agent_id].append(rewards[idx])
-            # If the current state is terminal add the summed rewards of the current agent to the buffer and reset
+            # If the current state is terminal add the summed rewards as well as the length of the current agent's
+            # episode to the buffer and reset its list.
             if step_type == 'terminal':
                 self.new_episode_rewards.append(np.sum(self.agent_reward_list[agent_id]))
                 self.new_episode_lengths.append(len(self.agent_reward_list[agent_id]))
                 self.agent_reward_list[agent_id].clear()
 
     def clear_buffer(self):
+        # Reset the buffer for all agents.
         self.agent_reward_list = [[] for x in range(self.agent_num)]
         self.new_episode_lengths.clear()
         self.new_episode_rewards.clear()
 
     def get_episode_stats(self):
-        rewards, lengths = None, None
+        # Return the latest stats to the global logger.
         # If new episodes have been played return their lengths and rewards as well as the total number of episodes
         # played and the number of new episode since last readout
+        rewards, lengths = None, None
         if len(self.new_episode_rewards):
             rewards = self.new_episode_rewards.copy()
             lengths = self.new_episode_lengths.copy()
@@ -67,35 +71,33 @@ class GlobalLogger:
     def __init__(self, log_dir="./summaries",
                  tensorboard=True,
                  actor_num=1,
-                 checkpoint_saving=True,
-                 running_average_episodes=100,
-                 behavior_clone_name=None):
+                 running_average_episodes=100):
         # Summary file path and logger creation time
         self.log_dir = log_dir
         self.creation_time = datetime.now()
-
-        # Checkpoints
-        self.checkpoint_saving = checkpoint_saving
 
         # Number of parallel actors
         self.actor_num = actor_num
         self.tensorboard = tensorboard
 
-        # Memory of past rewards and the count of episodes played
+        # Memory of the past 1000 rewards and episode lengths
         self.episode_reward_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
         self.episode_length_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
+        # The count of episodes each actor played as well as the total number of episodes played.
         self.episodes_played_per_actor = [0 for i in range(self.actor_num)]
         self.total_episodes_played = 0
-        self.best_actor = 0
-        self.average_rewards = [-10000 for i in range(self.actor_num)]
+        # Number of episodes played since the stats have been read out last.
         self.new_episodes = 0
-        self.behavior_clone_name = behavior_clone_name
-        print("CLONE NAME", behavior_clone_name)
 
-        # The best running average over 30 episodes
+        # Index of the actor with the highest running average reward
+        self.best_actor = 0
+        # Running average rewards of all actors
+        self.average_rewards = [-10000 for i in range(self.actor_num)]
+        # The best running average over "running_average_episodes" episodes
         self.best_running_average_reward = -10000
-        self.last_save_time_step = 0
         self.running_average_episodes = running_average_episodes
+        # Total episode number at which the network weights have been saved last.
+        self.last_save_time_step = 0
 
         # Tensorboard Writer
         if self.tensorboard:
@@ -103,6 +105,7 @@ class GlobalLogger:
             self.logger_dict = {}
 
     def get_elapsed_time(self):
+        # Returns the elapsed time since creation of this logger at the beginning of the training process.
         elapsed_time = datetime.now() - self.creation_time
         days, remainder = divmod(elapsed_time.seconds, 86400)
         hours, remainder = divmod(remainder, 3600)
@@ -110,9 +113,11 @@ class GlobalLogger:
         return days, hours, minutes, seconds
 
     def get_best_running_average(self):
+        # Returns the best running average which will be updated on each call of the checkpoint condition function.
         return self.best_running_average_reward
 
     def append(self, episode_lengths, episode_rewards, total_number_of_episodes, actor_idx=0):
+        # Append episodes from the local buffers to this global buffer.
         if not episode_lengths:
             return
         # Append new episode rewards and lengths
@@ -133,23 +138,11 @@ class GlobalLogger:
                            "EpisodeLength/Agent{:03d}EpisodeLength".format(actor_idx):
                                self.episode_length_deque[actor_idx][-1]}, total_number_of_episodes, 1)
 
-    def get_episode_stats(self):
-        self.total_episodes_played = np.sum(self.episodes_played_per_actor)
-
-        for reward in self.episode_reward_deque:
-            if not len(reward):
-                return 0, 0, self.total_episodes_played
-
-        self.average_rewards = [np.mean(list(rewards)[-self.running_average_episodes:]) for rewards in self.episode_reward_deque]
-        mean_reward = np.mean(self.average_rewards)
-        mean_length = np.mean([np.mean(list(lengths)[-self.running_average_episodes:]) for lengths in self.episode_length_deque])
-        self.new_episodes = 0
-
-        return mean_length, mean_reward, self.total_episodes_played
-
     @ray.method(num_returns=3)
     def get_current_max_stats(self, average_num):
-        max_agent_average_reward = np.max(self.average_rewards)
+        # Returns the running average stats (episode length & reward) of the best actor and the total number of
+        # episodes played.
+        max_agent_average_reward = self.average_rewards[self.best_actor]
         length_list = list(self.episode_length_deque[self.best_actor])
         if len(length_list) < average_num:
             max_agent_average_length = 0
@@ -181,20 +174,18 @@ class GlobalLogger:
         return None
 
     def check_checkpoint_condition(self):
-        if self.checkpoint_saving:
-            if self.total_episodes_played - self.last_save_time_step > self.running_average_episodes:
-                max_average_reward = np.max(self.average_rewards)
-                if max_average_reward > self.best_running_average_reward:
-                    self.best_running_average_reward = max_average_reward
-                    self.last_save_time_step = self.total_episodes_played
-                    return True
-                elif self.behavior_clone_name and self.total_episodes_played - 1000 >= self.last_save_time_step:
-                    self.last_save_time_step = self.total_episodes_played
-                    print("Periodical weight saving!")
-                    return True
+        # Returns true if the conditions for a new checkpoint are met.
+        if self.total_episodes_played - self.last_save_time_step > 10:
+            max_average_reward = self.average_rewards[self.best_actor]
+            if max_average_reward > self.best_running_average_reward:
+                self.best_running_average_reward = max_average_reward
+                self.last_save_time_step = self.total_episodes_played
+                return True
         return False
 
     def register_level_change(self, task_level_condition):
+        # In case of level change reset all queues and running averages, so that models with lower reward will still
+        # be stored.
         if task_level_condition:
             self.best_running_average_reward = -10000
             self.last_save_time_step = self.total_episodes_played
