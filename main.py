@@ -26,7 +26,7 @@ def main():
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
     mode = "training"
-    model_path = None
+    model_path = None #r""
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
@@ -41,13 +41,13 @@ def main():
     # in their current implementation only support continuous action spaces. Of those three Soft Actor-Critic (SAC)
     # is the most recent and preferred option.
     # Choose from "DQN", "DDPG", "TD3", "SAC"
-    trainer.select_training_algorithm('SAC')
+    trainer.select_training_algorithm('DQN')
 
     # - Exploration Algorithm -
     # The exploration algorithm helps the RL Agent to explore the environment by occasionally choosing suboptimal
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
     # Choose from "None", "EpsilonGreedy", "ICM" and "RND"
-    exploration_algorithm = "None"
+    exploration_algorithm = "EpsilonGreedy"
 
     # - Curriculum Strategy -
     # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for
@@ -75,7 +75,7 @@ def main():
     # region --- Initialization ---
 
     # Parse the trainer configuration (make sure to select the right key)
-    trainer.parse_training_parameters("trainer_configs/trainer_config.yaml", "sac")
+    trainer.parse_training_parameters("trainer_configs/trainer_config.yaml", "dqn")
     # Instantiate the agent which consists of a learner and one or multiple actors
     trainer.async_instantiate_agent(mode, preprocessing_algorithm, exploration_algorithm,
                                     environment_path, model_path, preprocessing_path)

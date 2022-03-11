@@ -48,7 +48,8 @@ class MlAgentsV18Interface:
         if action_type == "CONTINUOUS":
             return behavior_spec.action_spec.continuous_size
         if action_type == "DISCRETE":
-            return behavior_spec.action_spec.discrete_size
+            return behavior_spec.action_spec.discrete_branches
+            # return behavior_spec.action_spec.discrete_size
 
     @staticmethod
     def get_action_type(env: UnityEnvironment):

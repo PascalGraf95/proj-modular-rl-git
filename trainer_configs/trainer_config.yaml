@@ -27,32 +27,43 @@ ddpg:
     TrainingID: DDPG2D
     TrainingInterval: 64
 dqn:
+    Recurrent: true
+    BurnIn: 0
+    AdaptiveSequenceLength: false
+    SequenceLength: 10
+    Overlap: 5
+    ActorNum: 10
+    ClipGrad: 10.0
     BatchSize: 32
-    DoubleLearning: false
-    Episodes: 1000000
+    DoubleLearning: true
+    AdaptiveExploration: true
     ExplorationParameters:
         Epsilon: 1.0
-        EpsilonDecay: 0.995
-        EpsilonMin: 0.02
+        EpsilonDecay: 0.999
+        EpsilonMin: 0.025
+        StepDown: false
     Gamma: 0.99
     LearningRate: 0.0005
-    NSteps: 5
+    NSteps: 4
     NetworkParameters:
-    -   DuelingNetworks: false
-        Filters: 32
+        DuelingNetworks: false
         NoisyNetworks: false
+        Filters: 16
         Units: 32
         VectorNetworkArchitecture: SmallDense
         VisualNetworkArchitecture: CNN
-    ReplayCapacity: 50000
-    ReplayMinSize: 5000
-    SyncMode: hard_sync
+    NetworkUpdateFrequency: 50
+    ReplayCapacity: 100000
+    ReplayMinSize: 500
+    SyncMode: soft_sync
     SyncSteps: 200
-    Tau: 0.12
-    TrainingID: DQNScheduleFirstTest
-    TrainingInterval: 8
+    Tau: 0.01
+    PrioritizedReplay: true
+    PriorityAlpha: 0.8
+    TrainingID: DQN_Gridworld_Test
+    TrainingInterval: 10
 sac:
-    Recurrent: false
+    Recurrent: true
     BurnIn: 0
     AdaptiveSequenceLength: false
     SequenceLength: 10

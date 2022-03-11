@@ -12,6 +12,7 @@ import tensorflow_probability as tfp
 import os
 import ray
 import time
+
 tfd = tfp.distributions
 global AgentInterface
 
@@ -82,16 +83,16 @@ class SACActor(Actor):
             next_actions = tf.tanh(normal.sample())
             # Critic Target Predictions
             critic_prediction = self.critic_network([*next_state_batch, next_actions])
-            critic_target = critic_prediction*(1-done_batch)
+            critic_target = critic_prediction * (1 - done_batch)
 
             # Train Both Critic Networks
-            y = reward_batch + (self.gamma**self.n_steps) * critic_target
+            y = reward_batch + (self.gamma ** self.n_steps) * critic_target
             sample_errors = np.abs(y - self.critic_network([*state_batch, action_batch]))
             # In case of a recurrent agent the priority has to be averaged over each sequence according to the
             # formula in the paper
             if self.recurrent:
                 eta = 0.9
-                sample_errors = eta*np.max(sample_errors, axis=1) + (1-eta)*np.mean(sample_errors, axis=1)
+                sample_errors = eta * np.max(sample_errors, axis=1) + (1 - eta) * np.mean(sample_errors, axis=1)
         return sample_errors
 
     def update_actor_network(self, network_weights, total_episodes=0):
@@ -139,7 +140,7 @@ class SACActor(Actor):
         # The error prediction network is needed to calculate initial priorities for the prioritized experience replay
         # buffer.
         network_parameters[2] = network_parameters[0].copy()
-        network_parameters[2]['NetworkType'] = 'SAC_ActorErrorPredictionCopy{}'.format(self.index)
+        network_parameters[2]['NetworkName'] = 'SAC_ActorErrorPredictionCopy{}'.format(self.index)
         network_parameters[2]['ReturnSequences'] = True
         network_parameters[2]['ReturnStates'] = False
         network_parameters[2]['Stateful'] = False
@@ -184,8 +185,8 @@ class SACActor(Actor):
             # If there is a clone agent in the environment, instantiate another actor network for self-play.
             if self.behavior_clone_name:
                 network_parameters.append(network_parameters[0].copy())
-                network_parameters[3]['NetworkType'] = 'ActorCloneCopy{}'.format(self.index)
-                self.clone_actor_network = construct_network(network_parameters[3], plot_network_model=True)
+                network_parameters[3]['NetworkName'] = 'ActorCloneCopy{}'.format(self.index)
+                self.clone_actor_network = construct_network(network_parameters[3])
         # endregion
         return True
 
@@ -219,7 +220,7 @@ class SACLearner(Learner):
         # The alpha parameter similar to the epsilon in epsilon-greedy promotes exploring the environment by keeping
         # the standard deviation for each action as high as possible while still performing the task. However, in
         # contrast to epsilon, alpha is a learnable parameter and adjusts automatically.
-        self.log_alpha = tf.Variable(tf.ones(1)*trainer_configuration.get('LogAlpha'),
+        self.log_alpha = tf.Variable(tf.ones(1) * trainer_configuration.get('LogAlpha'),
                                      constraint=lambda x: tf.clip_by_value(x, -20, 20), trainable=True)
         self.target_entropy = -tf.reduce_sum(tf.ones(self.action_shape))
 
@@ -316,13 +317,13 @@ class SACLearner(Learner):
         # region --- Critic2 ---
         # The second critic is an exact copy of the first one
         network_parameters[2] = network_parameters[1].copy()
-        network_parameters[2]['NetworkType'] = "SAC_" + self.NetworkTypes[2]
+        network_parameters[2]['NetworkName'] = "SAC_" + self.NetworkTypes[2]
         # endregion
 
         # region --- Building ---
         # Build the networks from the network parameters
-        self.actor_network = construct_network(network_parameters[0])
-        self.critic1, self.critic_target1 = construct_network(network_parameters[1])
+        self.actor_network = construct_network(network_parameters[0], plot_network_model=True)
+        self.critic1, self.critic_target1 = construct_network(network_parameters[1], plot_network_model=True)
         self.critic2, self.critic_target2 = construct_network(network_parameters[2])
         # endregion
 
@@ -337,7 +338,7 @@ class SACLearner(Learner):
 
         # Calculate the logarithmic probability of z being sampled from the normal distribution.
         log_prob = normal.log_prob(z)
-        log_prob_normalizer = tf.math.log(1 - action**2 + self.epsilon)
+        log_prob_normalizer = tf.math.log(1 - action ** 2 + self.epsilon)
         log_prob -= log_prob_normalizer
 
         if self.recurrent:
@@ -377,23 +378,24 @@ class SACLearner(Learner):
             critic_target_prediction = self.inverse_value_function_rescaling(critic_target_prediction)
 
         # Training Target Calculation with standard TD-Error + Temperature Parameter
-        critic_target = (critic_target_prediction - self.alpha * next_log_prob)*(1-done_batch)
-        y = reward_batch + (self.gamma**self.n_steps) * critic_target
+        critic_target = (critic_target_prediction - self.alpha * next_log_prob) * (1 - done_batch)
+        y = reward_batch + (self.gamma ** self.n_steps) * critic_target
 
         # Possible Reward Normalization
         if self.reward_normalization:
             y = self.value_function_rescaling(y)
 
         # Calculate Sample Errors to update priorities in Prioritized Experience Replay
-        sample_errors = np.abs(y - self.critic1([*state_batch, action_batch]))[:, self.burn_in:]
+        sample_errors = np.abs(y - self.critic1([*state_batch, action_batch]))
         if self.recurrent:
             eta = 0.9
-            sample_errors = eta*np.max(sample_errors, axis=1) + (1-eta)*np.mean(sample_errors, axis=1)
+            sample_errors = eta * np.max(sample_errors[:, self.burn_in:], axis=1) + \
+                            (1 - eta) * np.mean(sample_errors[:, self.burn_in:], axis=1)
 
         # Calculate Critic 1 Loss
         value_loss1 = self.critic1.train_on_batch([*state_batch, action_batch], y)
         value_loss2 = self.critic2.train_on_batch([*state_batch, action_batch], y)
-        value_loss = (value_loss1 + value_loss2)/2
+        value_loss = (value_loss1 + value_loss2) / 2
         # endregion
 
         # region --- ACTOR TRAINING ---
@@ -402,7 +404,7 @@ class SACLearner(Learner):
             critic_prediction1 = self.critic1([*state_batch, new_actions])
             critic_prediction2 = self.critic2([*state_batch, new_actions])
             critic_prediction = tf.minimum(critic_prediction1, critic_prediction2)
-            policy_loss = tf.reduce_mean(self.alpha*log_prob[:, self.burn_in:] - critic_prediction[:, self.burn_in:])
+            policy_loss = tf.reduce_mean(self.alpha * log_prob[:, self.burn_in:] - critic_prediction[:, self.burn_in:])
 
         actor_grads = tape.gradient(policy_loss, self.actor_network.trainable_variables)
         self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor_network.trainable_variables))
@@ -421,141 +423,17 @@ class SACLearner(Learner):
         self.steps_since_actor_update += 1
         self.sync_models()
 
-        return {'Losses/Loss': policy_loss+value_loss, 'Losses/PolicyLoss': policy_loss,
-                'Losses/ValueLoss': value_loss, 'Losses/AlphaLoss': alpha_loss,
-                'Losses/Alpha': tf.reduce_mean(self.alpha).numpy()}, sample_errors, self.training_step
-
-    @ray.method(num_returns=3)
-    def learn_deprecated(self, replay_batch):
-        if not replay_batch:
-            return None, None, self.training_step
-
-        # region --- REPLAY BATCH PREPROCESSING ---
-        if self.recurrent:
-            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-                = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
-                                                                         self.action_shape, self.sequence_length)
-
-            # Reset hidden LSTM states for all networks
-            for net in [self.critic1, self.critic2, self.critic_target1,
-                        self.critic_target2, self.actor_network]:
-                for layer in net.layers:
-                    if "lstm" in layer.name:
-                        layer.reset_states()
-
-            if np.any(action_batch is None):
-                return None, None, self.training_step
-
-            # Create Burn In Batches
-            if self.burn_in:
-                # Separate batch into 2 sequences each
-                state_batch, action_batch, reward_batch, next_state_batch, done_batch, \
-                    state_batch_burn, action_batch_burn, reward_batch_burn, next_state_batch_burn, done_batch_burn = \
-                        Learner.separate_burn_in_batch(state_batch, action_batch, reward_batch,
-                                                       next_state_batch, done_batch, self.burn_in)
-
-        else:
-            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-                = self.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, self.action_shape)
-        if np.any(action_batch is None):
-            return None, None, self.training_step
-        # endregion
-
-        # region --- CRITIC TRAINING ---
-        # Burn in Critic Target Networks and Actor Network
-        if self.recurrent and self.burn_in:
-            next_actions_burn, next_log_prob_burn = self.forward(next_state_batch_burn)
-            _ = self.critic_target1([*next_state_batch_burn, next_actions_burn])
-            _ = self.critic_target2([*next_state_batch_burn, next_actions_burn])
-
-        next_actions, next_log_prob = self.forward(next_state_batch)
-
-        # Critic Target Predictions
-        critic_target_prediction1 = self.critic_target1([*next_state_batch, next_actions])
-        critic_target_prediction2 = self.critic_target2([*next_state_batch, next_actions])
-        critic_target_prediction = tf.minimum(critic_target_prediction1, critic_target_prediction2)
-
-        if self.reward_normalization:
-            critic_target_prediction = self.inverse_value_function_rescaling(critic_target_prediction)
-        critic_target = (critic_target_prediction - self.alpha * next_log_prob)*(1-done_batch)
-
-        # Train Both Critic Networks
-        y = reward_batch + (self.gamma**self.n_steps) * critic_target
-
-        if self.reward_normalization:
-            y = self.value_function_rescaling(y)
-
-        # Burn in Critic Network
-        if self.recurrent and self.burn_in:
-            _ = self.critic1([*state_batch_burn, action_batch_burn])
-            _ = self.critic2([*state_batch_burn, action_batch_burn])
-
-        # Calculate Sample Errors to update priorities in Prioritized Experience Replay
-        sample_errors = np.abs(y - self.critic1([*state_batch, action_batch]))
-        if self.recurrent:
-            eta = 0.9
-            sample_errors = eta*np.max(sample_errors, axis=1) + (1-eta)*np.mean(sample_errors, axis=1)
-
-        if self.recurrent:
-            for layer in self.critic1.layers:
-                if "lstm" in layer.name:
-                    layer.reset_states()
-            if self.burn_in:
-                _ = self.critic1([*state_batch_burn, action_batch_burn])
-
-        value_loss1 = self.critic1.train_on_batch([*state_batch, action_batch], y)
-        value_loss2 = self.critic2.train_on_batch([*state_batch, action_batch], y)
-        value_loss = (value_loss1 + value_loss2)/2
-        # endregion
-
-        # region --- ACTOR TRAINING ---
-        # Burn in Critic and Actor Network
-        if self.recurrent:
-            for net in [self.critic1, self.critic2, self.actor_network]:
-                for layer in net.layers:
-                    if "lstm" in layer.name:
-                        layer.reset_states()
-
-            if self.burn_in:
-                _ = self.critic1([*state_batch_burn, action_batch_burn])
-                _ = self.critic2([*state_batch_burn, action_batch_burn])
-                _, _ = self.forward(state_batch_burn)
-
-        with tf.GradientTape() as tape:
-            new_actions, log_prob = self.forward(state_batch)
-            critic_prediction1 = self.critic1([*state_batch, new_actions])
-            critic_prediction2 = self.critic2([*state_batch, new_actions])
-            critic_prediction = tf.minimum(critic_prediction1, critic_prediction2)
-            policy_loss = tf.reduce_mean(self.alpha*log_prob - critic_prediction)
-
-        actor_grads = tape.gradient(policy_loss, self.actor_network.trainable_variables)
-        self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor_network.trainable_variables))
-        # endregion
-
-        # region --- TEMPERATURE PARAMETER TRAINING ---
-        with tf.GradientTape() as tape:
-            alpha_loss = tf.reduce_mean(self.log_alpha * (-log_prob - self.target_entropy))
-
-        alpha_grads = tape.gradient(alpha_loss, [self.log_alpha])
-        self.alpha_optimizer.apply_gradients(zip(alpha_grads, [self.log_alpha]))
-        self.alpha = tf.exp(self.log_alpha).numpy()
-        # endregion
-
-        self.training_step += 1
-        self.steps_since_actor_update += 1
-        self.sync_models()
-
-        return {'Losses/Loss': policy_loss+value_loss, 'Losses/PolicyLoss': policy_loss,
+        return {'Losses/Loss': policy_loss + value_loss, 'Losses/PolicyLoss': policy_loss,
                 'Losses/ValueLoss': value_loss, 'Losses/AlphaLoss': alpha_loss,
                 'Losses/Alpha': tf.reduce_mean(self.alpha).numpy()}, sample_errors, self.training_step
 
     @staticmethod
     def value_function_rescaling(x, eps=1e-3):
-        return np.sign(x)*(np.sqrt(np.abs(x)+1)-1)+eps*x
+        return np.sign(x) * (np.sqrt(np.abs(x) + 1) - 1) + eps * x
 
     @staticmethod
     def inverse_value_function_rescaling(h, eps=1e-3):
-        return np.sign(h)*(((np.sqrt(1+4*eps*(np.abs(h)+1+eps))-1)/(2*eps))-1)
+        return np.sign(h) * (((np.sqrt(1 + 4 * eps * (np.abs(h) + 1 + eps)) - 1) / (2 * eps)) - 1)
 
     def sync_models(self):
         if self.sync_mode == "hard_sync":
@@ -564,11 +442,11 @@ class SACLearner(Learner):
                 self.critic_target2.set_weights(self.critic2.get_weights())
         elif self.sync_mode == "soft_sync":
             self.critic_target1.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
-                                            for weights, target_weights in zip(self.critic1.get_weights(),
-                                                                               self.critic_target1.get_weights())])
+                                             for weights, target_weights in zip(self.critic1.get_weights(),
+                                                                                self.critic_target1.get_weights())])
             self.critic_target2.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
-                                            for weights, target_weights in zip(self.critic2.get_weights(),
-                                                                               self.critic_target2.get_weights())])
+                                             for weights, target_weights in zip(self.critic2.get_weights(),
+                                                                                self.critic_target2.get_weights())])
         else:
             raise ValueError("Sync mode unknown.")
 
@@ -606,9 +484,6 @@ class SACLearner(Learner):
                 os.path.join(path, "SAC_Critic2_Step{}_Reward{:.2f}.h5".format(training_step, running_average_reward)))
 
     def boost_exploration(self):
-        self.log_alpha = tf.Variable(tf.ones(1)*-0.7,
+        self.log_alpha = tf.Variable(tf.ones(1) * -0.7,
                                      constraint=lambda x: tf.clip_by_value(x, -10, 20), trainable=True)
         return True
-
-
-

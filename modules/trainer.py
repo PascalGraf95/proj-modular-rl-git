@@ -314,6 +314,9 @@ class Trainer:
             # In case of a PER update the buffer priorities with the temporal difference errors
             self.global_buffer.update.remote(indices, sample_errors)
 
+            # Train the actor's exploration algorithm with the same batch
+            [actor.exploration_learning_step.remote(samples) for actor in self.actors]
+
             # If the training algorithm is constructed to act and learn by utilizing a recurrent neural network a
             # sequence length is chosen in the training parameters. However, as training progresses, the episode length
             # might change for some environments allowing for only shorter or even longer training sequences. If the

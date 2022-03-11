@@ -27,6 +27,7 @@ class Actor:
         self.clone_actor_network = None
         # Lastly, if the actor is working in a recurrent fashion another copy of the actor network exists.
         self.actor_prediction_network = None
+        self.critic_prediction_network = None
         # The following parameters keep track of the network's update status, i.e. if a new version of the networks is
         # requested from the learner and how long it's been since the last update
         self.network_update_requested = False
@@ -293,7 +294,11 @@ class Actor:
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
     def get_lstm_layers(self):
-        self.lstm = self.actor_network.get_layer("lstm")
+        if self.actor_network:
+            self.lstm = self.actor_network.get_layer("lstm")
+        elif self.critic_network:
+            self.lstm = self.critic_network.get_layer("lstm")
+
         self.lstm_units = self.lstm.units
         self.lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                            np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
@@ -496,7 +501,7 @@ class Learner:
         self.network_update_frequency = trainer_configuration.get('NetworkUpdateFrequency')
         self.reward_normalization = trainer_configuration.get('RewardNormalization')
 
-        # Recurrent Paramters
+        # Recurrent Parameters
         self.recurrent = trainer_configuration.get('Recurrent')
         self.sequence_length = trainer_configuration.get('SequenceLength')
         self.burn_in = trainer_configuration.get('BurnIn')
