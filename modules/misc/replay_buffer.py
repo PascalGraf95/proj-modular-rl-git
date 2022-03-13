@@ -492,6 +492,7 @@ class LocalRecurrentBuffer:
 
     def add_new_steps(self, states, rewards, ids, actions=None,
                       step_type='decision'):
+
         # Iterate through all available agents
         for idx, agent_id in enumerate(ids):
             # Don't add experiences of agents whose episode already ended
@@ -578,10 +579,6 @@ class LocalRecurrentBuffer:
                         temp_agent_buffer.pop(0)
                     else:
                         idx += 1
-
-    def append(self, s, a, r, next_s, done):
-        self.buffer.append({"state": s, "action": a, "reward": r, "next_state": next_s, "done": done})
-        self.new_training_samples += 1
 
     def append_sequence(self, sequence):
         self.buffer.append(sequence)

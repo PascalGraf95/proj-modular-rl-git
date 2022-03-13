@@ -628,6 +628,7 @@ class Learner:
                 for idx_comp, (state, next_state) in enumerate(zip(transition['state'], transition['next_state'])):
                     state_batch[idx_comp][idx_seq][idx_trans] = state
                     next_state_batch[idx_comp][idx_seq][idx_trans] = next_state
+
                 action_batch[idx_seq][idx_trans] = transition['action']
                 reward_batch[idx_seq][idx_trans] = transition['reward']
                 done_batch[idx_seq][idx_trans] = transition['done']

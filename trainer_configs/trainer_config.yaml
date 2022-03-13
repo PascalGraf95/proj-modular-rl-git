@@ -30,7 +30,7 @@ dqn:
     Recurrent: true
     BurnIn: 0
     AdaptiveSequenceLength: false
-    SequenceLength: 10
+    SequenceLength: 20
     Overlap: 5
     ActorNum: 10
     ClipGrad: 10.0
@@ -38,8 +38,8 @@ dqn:
     DoubleLearning: true
     AdaptiveExploration: true
     ExplorationParameters:
-        Epsilon: 1.0
-        EpsilonDecay: 0.999
+        Epsilon: 0.9
+        EpsilonDecay: 0.9995
         EpsilonMin: 0.025
         StepDown: false
     Gamma: 0.99
@@ -49,19 +49,19 @@ dqn:
         DuelingNetworks: false
         NoisyNetworks: false
         Filters: 16
-        Units: 32
-        VectorNetworkArchitecture: SmallDense
+        Units: 64
+        VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
     NetworkUpdateFrequency: 50
-    ReplayCapacity: 100000
-    ReplayMinSize: 500
+    ReplayCapacity: 500000
+    ReplayMinSize: 1000
     SyncMode: soft_sync
     SyncSteps: 200
     Tau: 0.01
     PrioritizedReplay: true
     PriorityAlpha: 0.8
-    TrainingID: DQN_Gridworld_Test
-    TrainingInterval: 10
+    TrainingID: DQN_PushBlock
+    TrainingInterval: 1
 sac:
     Recurrent: true
     BurnIn: 0

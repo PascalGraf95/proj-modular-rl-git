@@ -25,7 +25,7 @@ class DQNActor(Actor):
         super().__init__(idx, port, mode, interface, preprocessing_algorithm, preprocessing_path,
                          exploration_algorithm, environment_path, device)
 
-    def act(self, states, agent_ids=None,  mode="training", clone=False):
+    def act(self, states, agent_ids=None, mode="training", clone=False):
         # Check if any agent in the environment is not in a terminal state
         active_agent_number = np.shape(states[0])[0]
         if not active_agent_number:
@@ -37,7 +37,7 @@ class DQNActor(Actor):
                 # In case of a recurrent network, the state input needs an additional time dimension
                 states = [tf.expand_dims(state, axis=1) for state in states]
                 action_values, hidden_state, cell_state = self.critic_network(states)
-                actions = tf.expand_dims(tf.argmax(action_values, axis=1), axis=1)
+                actions = tf.expand_dims(tf.argmax(action_values[0], axis=1), axis=1)
                 self.update_lstm_states(agent_ids, [hidden_state.numpy(), cell_state.numpy()])
             else:
                 action_values = self.critic_network(states)
@@ -52,6 +52,7 @@ class DQNActor(Actor):
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_recurrent_replay_batch(samples, self.observation_shapes,
                                                                          1, self.sequence_length)
+
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_replay_batch(samples, self.observation_shapes, 1)
@@ -59,26 +60,32 @@ class DQNActor(Actor):
             return None
 
         with tf.device(self.device):
-            row_array = np.arange(len(samples))
+            batch_array = np.arange(len(samples))
+
             if self.recurrent:
                 target_prediction = self.critic_prediction_network(next_state_batch)
-                q_batch = self.critic_prediction_network(state_batch).numpy()
+                y = self.critic_prediction_network(state_batch).numpy()
             else:
                 target_prediction = self.critic_network(next_state_batch)
-                q_batch = self.critic_network(state_batch).numpy()
+                y = self.critic_network(state_batch).numpy()
             target_batch = reward_batch + \
-                (self.gamma**self.n_steps) * np.max(target_prediction, axis=1, keepdims=True) * (1-done_batch)
-            # Set the Q value of the chosen action to the target.
-            q_batch[row_array, action_batch[:, 0].astype(int)] = target_batch[:, 0]
+                           (self.gamma ** self.n_steps) * np.max(target_prediction, axis=1, keepdims=True) * (
+                                       1 - done_batch)
+            if self.recurrent:
+                time_step_array = np.arange(self.sequence_length)
+                mesh_x, mesh_y = np.meshgrid(time_step_array, batch_array)
+                y[mesh_y, mesh_x, action_batch[:, :, 0].astype(int)] = target_batch[:, :, 0]
+            else:
+                y[batch_array, action_batch[:, 0].astype(int)] = target_batch[:, 0]
 
             # Train the network on the training batch.
             if self.recurrent:
-                sample_errors = np.sum(np.abs(q_batch - self.critic_prediction_network(state_batch)), axis=1)
+                sample_errors = np.sum(np.abs(y - self.critic_prediction_network(state_batch)), axis=1)
             else:
-                sample_errors = np.sum(np.abs(q_batch - self.critic_network(state_batch)), axis=1)
+                sample_errors = np.sum(np.abs(y - self.critic_network(state_batch)), axis=1)
             if self.recurrent:
                 eta = 0.9
-                sample_errors = eta*np.max(sample_errors, axis=1) + (1-eta)*np.mean(sample_errors, axis=1)
+                sample_errors = eta * np.max(sample_errors, axis=1) + (1 - eta) * np.mean(sample_errors, axis=1)
         return sample_errors
 
     def update_actor_network(self, network_weights, total_episodes=0):
@@ -143,6 +150,7 @@ class DQNLearner(Learner):
     # region ParameterSpace
     ActionType = ['DISCRETE']
     NetworkTypes = ['QNetwork']
+
     # endregion
 
     def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None):
@@ -166,7 +174,7 @@ class DQNLearner(Learner):
 
             # Compile Networks
             self.critic.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRate'),
-                                              clipvalue=self.clip_grad), loss=self.burn_in_mse_loss)
+                                               clipvalue=self.clip_grad), loss=self.burn_in_mse_loss)
 
         # Load trained Models
         elif mode == 'testing':
@@ -220,10 +228,15 @@ class DQNLearner(Learner):
             return None, None, self.training_step
 
         # region --- REPLAY BATCH PREPROCESSING ---
+        batch_array = np.arange(len(replay_batch))
+
         if self.recurrent:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
                                                                          1, self.sequence_length)
+
+            time_step_array = np.arange(self.sequence_length)
+            mesh_x, mesh_y = np.meshgrid(time_step_array, batch_array)
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = self.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, 1)
@@ -231,23 +244,37 @@ class DQNLearner(Learner):
             return None, None, self.training_step
         # endregion
 
-        row_array = np.arange(len(replay_batch))
         # If the state is not terminal:
         # t = 𝑟 + 𝛾 * 𝑚𝑎𝑥_𝑎′ 𝑄̂(𝑠′,𝑎′) else t = r
+        # target_prediction: (batch_size, time_steps, action_size) or (batch_size, action_size)
         target_prediction = self.critic_target(next_state_batch).numpy()
         if self.double_learning:
-            model_prediction_argmax = np.expand_dims(np.argmax(self.critic(next_state_batch).numpy(), axis=-1), axis=1)
-            print(model_prediction_argmax.shape, reward_batch.shape, target_prediction.shape, row_array.shape, np.expand_dims(row_array, axis=1).shape)
-            # 32,10,5
-            target_batch = reward_batch + \
-                (self.gamma**self.n_steps) * target_prediction[np.expand_dims(row_array, axis=1), model_prediction_argmax] * (1-done_batch)
+            # model_prediction_argmax : (batch_size,time_steps) or (batch_size,)
+            model_prediction_argmax = np.argmax(self.critic(next_state_batch).numpy(), axis=-1)
+            if self.recurrent:
+                # target_batch: (32, 10, 1) or (32, 1)
+                target_batch = reward_batch + \
+                               (self.gamma ** self.n_steps) * \
+                               np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1) * \
+                               (1 - done_batch)
+            else:
+                target_batch = reward_batch + \
+                               (self.gamma ** self.n_steps) * \
+                               np.expand_dims(target_prediction[batch_array, model_prediction_argmax], axis=-1) * \
+                               (1 - done_batch)
         else:
             target_batch = reward_batch + \
-                (self.gamma**self.n_steps) * tf.reduce_max(target_prediction, axis=1, keepdims=True) * (1-done_batch)
+                           (self.gamma ** self.n_steps) * tf.reduce_max(target_prediction, axis=-1, keepdims=True) * (
+                                       1 - done_batch)
 
         # Set the Q value of the chosen action to the target.
+        # y: (32, 10, 5) or (32, 5)
         y = self.critic(state_batch).numpy()
-        y[row_array, action_batch[:, 0].astype(int)] = target_batch[:, 0]
+        # action_batch: (32, 10, 1) or (32, 1)
+        if self.recurrent:
+            y[mesh_y, mesh_x, action_batch[:, :, 0].astype(int)] = target_batch[:, :, 0]
+        else:
+            y[batch_array, action_batch[:, 0].astype(int)] = target_batch[:, 0]
 
         # Train the network on the training batch.
         sample_errors = np.sum(np.abs(y - self.critic(state_batch)), axis=1)
@@ -271,8 +298,8 @@ class DQNLearner(Learner):
                 self.critic_target.set_weights(self.critic.get_weights())
         elif self.sync_mode == "soft_sync":
             self.critic_target.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
-                                           for weights, target_weights in zip(self.critic.get_weights(),
-                                                                              self.critic_target.get_weights())])
+                                            for weights, target_weights in zip(self.critic.get_weights(),
+                                                                               self.critic_target.get_weights())])
         else:
             raise ValueError("Sync mode unknown.")
 

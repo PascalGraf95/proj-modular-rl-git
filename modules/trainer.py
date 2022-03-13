@@ -386,9 +386,11 @@ class Trainer:
         # Only applies if the network is recurrent and the respective flag is set to true
         if self.trainer_configuration["Recurrent"] and self.trainer_configuration["AdaptiveSequenceLength"]:
             # Check if a new sequence length is recommended.
-            new_sequence_length, new_burn_in = ray.get(self.global_logger.get_new_sequence_length.remote(
+            new_sequence_length, new_burn_in = self.global_logger.get_new_sequence_length.remote(
                 self.trainer_configuration["SequenceLength"], self.trainer_configuration["BurnIn"],
-                training_step))
+                training_step)
+            new_sequence_length = ray.get(new_sequence_length)
+            new_burn_in = ray.get(new_burn_in)
             # If so, update the trainer configuration, the actors and the learner. Also, reset the global buffer.
             if new_sequence_length:
                 self.trainer_configuration["SequenceLength"] = new_sequence_length
