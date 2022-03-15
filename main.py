@@ -25,8 +25,8 @@ def main():
 
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
-    mode = "training"
-    model_path = None #r""
+    mode = "testing"
+    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220314_191647_DQN_PushBlock"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()

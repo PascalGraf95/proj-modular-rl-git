@@ -183,7 +183,7 @@ class GlobalLogger:
 
     def check_checkpoint_condition(self):
         # Returns true if the conditions for a new checkpoint are met.
-        if self.total_episodes_played - self.last_save_time_step > 10:
+        if self.total_episodes_played - self.last_save_time_step > 10 and self.total_episodes_played > 100:
             max_average_reward = self.average_rewards[self.best_actor]
             if max_average_reward > self.best_running_average_reward:
                 self.best_running_average_reward = max_average_reward

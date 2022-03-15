@@ -265,6 +265,8 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
     hidden_state, cell_state = None, None
     if net_architecture == NetworkArchitecture.NONE.value:
         x = net_inp
+
+    # region --- Dense Architectures ---
     elif net_architecture == NetworkArchitecture.SINGLE_DENSE.value:
         if network_parameters["Recurrent"]:
             if network_parameters.get("ReturnStates"):
@@ -317,7 +319,9 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
                              stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(2*units, activation='selu')(x)
+    # endregion
 
+    # region --- CNN Architectures ---
     elif net_architecture == NetworkArchitecture.CNN.value:
         x = Conv2D(filters, kernel_size=8, strides=4, activation="selu")(net_inp)
         x = Conv2D(filters*2, kernel_size=4, strides=2, activation="selu")(x)
@@ -408,6 +412,7 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         else:
             x = Flatten()(x)
             x = Dense(512, activation="selu")(x)
+    # endregion
 
     else:
         raise ValueError("Unknown Network Architecture \"{}\"".format(net_architecture))

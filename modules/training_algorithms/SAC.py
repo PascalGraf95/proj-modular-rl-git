@@ -451,21 +451,21 @@ class SACLearner(Learner):
             raise ValueError("Sync mode unknown.")
 
     def load_checkpoint(self, path):
-        if os.path.isfile(path):
+        if "Step" in path:
             self.actor_network = load_model(path)
         elif os.path.isdir(path):
-            file_names = [f for f in os.listdir(path) if f.endswith(".h5")]
+            file_names = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f))]
             for file_name in file_names:
                 if "Critic1" in file_name:
-                    self.critic1 = load_model(os.path.join(path, file_name))
+                    self.critic1 = load_model(os.path.join(path, file_name), compile=False)
                     self.critic_target1 = clone_model(self.critic1)
                     self.critic_target1.set_weights(self.critic1.get_weights())
                 elif "Critic2" in file_name:
-                    self.critic2 = load_model(os.path.join(path, file_name))
+                    self.critic2 = load_model(os.path.join(path, file_name), compile=False)
                     self.critic_target2 = clone_model(self.critic2)
                     self.critic_target2.set_weights(self.critic2.get_weights())
                 elif "Actor" in file_name:
-                    self.actor_network = load_model(os.path.join(path, file_name))
+                    self.actor_network = load_model(os.path.join(path, file_name), compile=False)
             if not self.actor_network or not self.critic1 or not self.critic2:
                 raise FileNotFoundError("Could not find all necessary model files.")
         else:
@@ -476,12 +476,12 @@ class SACLearner(Learner):
         if not checkpoint_condition:
             return
         self.actor_network.save(
-            os.path.join(path, "SAC_Actor_Step{}_Reward{:.2f}.h5".format(training_step, running_average_reward)))
+            os.path.join(path, "SAC_Actor_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
         if save_all_models:
             self.critic1.save(
-                os.path.join(path, "SAC_Critic1_Step{}_Reward{:.2f}.h5".format(training_step, running_average_reward)))
+                os.path.join(path, "SAC_Critic1_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
             self.critic2.save(
-                os.path.join(path, "SAC_Critic2_Step{}_Reward{:.2f}.h5".format(training_step, running_average_reward)))
+                os.path.join(path, "SAC_Critic2_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
 
     def boost_exploration(self):
         self.log_alpha = tf.Variable(tf.ones(1) * -0.7,

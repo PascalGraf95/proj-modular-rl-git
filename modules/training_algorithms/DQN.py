@@ -304,14 +304,13 @@ class DQNLearner(Learner):
             raise ValueError("Sync mode unknown.")
 
     def load_checkpoint(self, path):
-        if os.path.isfile(path):
+        if "Step" in path:
             self.critic = load_model(path)
         elif os.path.isdir(path):
-            file_names = [f for f in os.listdir(path) if f.endswith(".h5")]
+            file_names = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f))]
             for file_name in file_names:
                 if "DQN_Critic" in file_name:
-                    self.critic = load_model(os.path.join(path, file_name),
-                                             custom_objects={'burn_in_mse_loss': self.burn_in_mse_loss})
+                    self.critic = load_model(os.path.join(path, file_name), compile=False)
                     self.critic_target = clone_model(self.critic)
                     self.critic_target.set_weights(self.critic.get_weights())
             if not self.critic:
@@ -324,7 +323,7 @@ class DQNLearner(Learner):
         if not checkpoint_condition:
             return
         self.critic.save(
-            os.path.join(path, "DQN_Critic_Step{}_Reward{:.2f}.h5".format(training_step, running_average_reward)))
+            os.path.join(path, "DQN_Critic_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
 
     @staticmethod
     def get_config():

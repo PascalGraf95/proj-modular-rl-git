@@ -38,10 +38,13 @@ dqn:
     DoubleLearning: true
     AdaptiveExploration: true
     ExplorationParameters:
-        Epsilon: 0.9
+        Epsilon: 0.2
         EpsilonDecay: 0.9995
         EpsilonMin: 0.025
         StepDown: false
+        FeatureSpaceSize: 8
+        CuriosityScalingFactor: 0.01
+        LearningRate: 0.0005
     Gamma: 0.99
     LearningRate: 0.0005
     NSteps: 4

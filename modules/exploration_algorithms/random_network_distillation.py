@@ -61,45 +61,32 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
 
     def build_network(self):
         with tf.device(self.device):
+            # List with two dictionaries in it, one for each network.
+            network_parameters = [{}, {}]
             # region --- Prediction Model ---
             # This model tries to mimic the target model for every state in the environment
-            # NOTE: Currently only works for vector inputs!
-
-            # First, one input layer per observation input is created.
-            input_layers = []
-            for obs_shape in self.observation_shapes:
-                input_layers.append(Input(obs_shape))
-            # Then they are concatenated.
-            if len(input_layers) > 1:
-                x = Concatenate()(input_layers)
-            else:
-                x = input_layers[0]
-            # Construct a network body consisting of two dense layers with 64 units.
-            x = Dense(64, activation="elu")(x)
-            x = Dense(64, activation="elu")(x)
-            # Add a network output with arbitrary feature space size and linear activation. Then construct the model.
-            x = Dense(self.feature_space_size, activation="linear")(x)
-            prediction_model = Model(input_layers, x, name="RND Prediction Model")
+            # - Network Name -
+            network_parameters[0]['NetworkName'] = "RND_PredictionModel"
+            # - Network Architecture-
+            network_parameters[0]['VectorNetworkArchitecture'] = "SmallDense"
+            network_parameters[0]['VisualNetworkArchitecture'] = "CNN"
+            network_parameters[0]['Filters'] = 32
+            network_parameters[0]['Units'] = 64
+            network_parameters[0]['TargetNetwork'] = False
+            # - Input / Output / Initialization -
+            network_parameters[0]['Input'] = self.observation_shapes
+            network_parameters[0]['Output'] = [self.feature_space_size]
+            network_parameters[0]['OutputActivation'] = [None]
+            # - Recurrent Parameters -
+            network_parameters[0]['Recurrent'] = False
             # endregion
 
-            # region --- Target Model ----
-            # A randomly initialized neural network with identical network topology, used as target model.
-            # First, one input layer per observation input is created.
-            input_layers = []
-            for obs_shape in self.observation_shapes:
-                input_layers.append(Input(obs_shape))
-            # Then they are concatenated.
-            if len(input_layers) > 1:
-                x = Concatenate()(input_layers)
-            else:
-                x = input_layers[0]
-            # Construct a network body consisting of two dense layers with 64 units.
-            x = Dense(64, activation="elu")(x)
-            x = Dense(64, activation="elu")(x)
-            # Add a network output with arbitrary feature space size and linear activation. Then construct the model.
-            x = Dense(self.feature_space_size, activation="linear")(x)
-            target_model = Model(input_layers, x, name="RND Target Model")
-            # endregion
+            # region --- TargetModel ---
+            network_parameters[1] = network_parameters[0].copy()
+            network_parameters[1]['NetworkName'] = "RND_TargetModel"
+
+            prediction_model = construct_network(network_parameters[0], plot_network_model=True)
+            target_model = construct_network(network_parameters[0], plot_network_model=True)
 
             return prediction_model, target_model
 
