@@ -79,6 +79,7 @@ class GlobalLogger:
         # Number of parallel actors
         self.actor_num = actor_num
         self.tensorboard = tensorboard
+        self.last_logged_dict = {}
 
         # Memory of the past 1000 rewards and episode lengths
         self.episode_reward_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
@@ -221,7 +222,12 @@ class GlobalLogger:
         if metrics:
             if step % logging_frequency == 0 or step == 1:
                 for key, val in metrics.items():
-                    self.log_scalar(key, val, step)
+                    if self.last_logged_dict.get(key) != step:
+                        self.log_scalar(key, val, step)
+                    self.last_logged_dict[key] = step
+
+
+
 
     def log_scalar(self, tag, value, step):
         with self.tensorboard_writer.as_default():

@@ -25,7 +25,6 @@ the `main.py` file.**
 
 ## To Do:
 - Incorporate CARLA interface into the main branch
-- Fix DQN Memory Leaks
 - SAC for discrete action spaces ([Paper](https://arxiv.org/pdf/1910.07207.pdf), 
 [Blog](https://towardsdatascience.com/adapting-soft-actor-critic-for-discrete-action-spaces-a20614d4a50a))
 - Incorporate Attention architecture into the main branch

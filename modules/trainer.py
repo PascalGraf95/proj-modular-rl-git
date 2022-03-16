@@ -338,6 +338,8 @@ class Trainer:
             # Every logging_frequency steps (usually set to 100 so the event file doesn't get to big for long trainings)
             # log the training metrics to the tensorboard.
             self.global_logger.log_dict.remote(training_metrics, training_step, self.logging_frequency)
+            self.global_logger.log_dict.remote({"Losses/BufferLength": ray.get(self.global_buffer.__len__.remote())},
+                                               training_step, 10)
             # Some exploration algorithms also return metrics that represent their training or decay state. These shall
             # be logged in the same interval.
             for idx, actor in enumerate(self.actors):
@@ -353,6 +355,7 @@ class Trainer:
             ray.wait(actors_ready)
             ray.wait([training_metrics])
             ray.wait(sample_error_list)
+            ray.wait([sample_errors])
             # endregion
 
             # TODO: Add an option to affect the training process with keyboard events.

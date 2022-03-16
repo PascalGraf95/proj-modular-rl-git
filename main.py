@@ -25,7 +25,7 @@ def main():
 
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
-    mode = "testing"
+    mode = "training"
     model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220314_191647_DQN_PushBlock"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
@@ -47,7 +47,7 @@ def main():
     # The exploration algorithm helps the RL Agent to explore the environment by occasionally choosing suboptimal
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
     # Choose from "None", "EpsilonGreedy", "ICM" and "RND"
-    exploration_algorithm = "EpsilonGreedy"
+    exploration_algorithm = "RND"
 
     # - Curriculum Strategy -
     # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for
