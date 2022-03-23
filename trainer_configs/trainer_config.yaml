@@ -136,15 +136,15 @@ sac:
     NetworkParameters:
     -   Filters: 32
         Units: 32
-        VectorNetworkArchitecture: Dense
+        VectorNetworkArchitecture: LargeDense
         VisualNetworkArchitecture: CNN
     -   Filters: 32
         Units: 32
-        VectorNetworkArchitecture: Dense
+        VectorNetworkArchitecture: LargeDense
         VisualNetworkArchitecture: CNN
     -   Filters: 32
         Units: 32
-        VectorNetworkArchitecture: Dense
+        VectorNetworkArchitecture: LargeDense
         VisualNetworkArchitecture: CNN
     PrioritizedReplay: true
     ReplayCapacity: 1000000
@@ -152,7 +152,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 50
     Tau: 0.01
-    TrainingID: RL_ACC_TEST_v21_accel_interface_2_5_action_normalized_and_linearized_reward_control_speed_only_dense_batchsize_60_all_scenarios_V2
+    TrainingID: RL_ACC_TEST_v32_accel_interface_2_5_action_normalized_and_linearized_reward_control_speed_only_4_timestep_input_largedense_batchsize_60_CAT5_removed_V4
     TrainingInterval: 10
 td3:
     ActorTrainingFreq: 3

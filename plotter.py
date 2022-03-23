@@ -196,7 +196,7 @@ def read_json(path):
     return data
 
 
-MEASUREMENT_PATH = "/home/ai-admin/Measurements/V3/"
+MEASUREMENT_PATH = "/home/ai-admin/Measurements/V4_split/V16_V32/"
 
 # main loop
 if __name__ == "__main__":
@@ -233,6 +233,8 @@ if __name__ == "__main__":
     versions = ["V16-TRY1-CONT"]
     versions = ["V16-TRY2"]
     versions = ["V17"]
+    versions = ["V16", "V23", "V24"]
+    versions = ["V16", "V32"]
 
     # Determine the complete scenarios
     completeScenarios = []
