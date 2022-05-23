@@ -25,9 +25,10 @@ class SACActor(Actor):
                  preprocessing_path: str,
                  exploration_algorithm: str,
                  environment_path: str = "",
+                 demonstration_path: str = "",
                  device: str = '/cpu:0'):
         super().__init__(idx, port, mode, interface, preprocessing_algorithm, preprocessing_path,
-                         exploration_algorithm, environment_path, device)
+                         exploration_algorithm, environment_path, demonstration_path, device)
 
     def act(self, states, agent_ids=None, mode="training", clone=False):
         # Check if any agent in the environment is not in a terminal state
@@ -191,7 +192,7 @@ class SACActor(Actor):
         return True
 
 
-@ray.remote(num_gpus=1)
+@ray.remote
 class SACLearner(Learner):
     ActionType = ['CONTINUOUS']
     NetworkTypes = ['Actor', 'Critic1', 'Critic2']
@@ -245,7 +246,7 @@ class SACLearner(Learner):
                                         clipvalue=self.clip_grad)
 
         # Load trained Models
-        elif mode == 'testing':
+        elif mode == 'testing' or mode == 'fastTesting':
             assert model_path, "No model path entered."
             self.load_checkpoint(model_path)
 
@@ -391,8 +392,7 @@ class SACLearner(Learner):
             eta = 0.9
             sample_errors = eta * np.max(sample_errors[:, self.burn_in:], axis=1) + \
                             (1 - eta) * np.mean(sample_errors[:, self.burn_in:], axis=1)
-
-        # Calculate Critic 1 Loss
+        # Calculate Critic 1 and 2 Loss, utilizes custom mse loss function defined in Trainer-class
         value_loss1 = self.critic1.train_on_batch([*state_batch, action_batch], y)
         value_loss2 = self.critic2.train_on_batch([*state_batch, action_batch], y)
         value_loss = (value_loss1 + value_loss2) / 2

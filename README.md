@@ -25,6 +25,7 @@ the `main.py` file.**
 
 ## To Do:
 - Incorporate CARLA interface into the main branch
+- Implement Offline Reinforcement Learning methods
 - SAC for discrete action spaces ([Paper](https://arxiv.org/pdf/1910.07207.pdf), 
 [Blog](https://towardsdatascience.com/adapting-soft-actor-critic-for-discrete-action-spaces-a20614d4a50a))
 - Incorporate Attention architecture into the main branch
@@ -32,3 +33,4 @@ the `main.py` file.**
 - Implement Meta Learning and "Never Give Up" (Agent57)
 - Fix and extend self play functionality
 - Implement Multi Agent RL algorithms for cooperative / competitive learning
+- Implement Imitation Learning methods

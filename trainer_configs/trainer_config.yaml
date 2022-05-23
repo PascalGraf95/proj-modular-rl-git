@@ -67,31 +67,31 @@ dqn:
     TrainingInterval: 1
 sac:
     Recurrent: true
-    BurnIn: 10
+    BurnIn: 0
     AdaptiveSequenceLength: false
-    SequenceLength: 80
-    Overlap: 20
-    ActorNum: 10
+    SequenceLength: 30
+    Overlap: 8
+    ActorNum: 1
     BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
-        FeatureSpaceSize: 8
-        CuriosityScalingFactor: 0.01
+        FeatureSpaceSize: 16
+        CuriosityScalingFactor: 0.02
         LearningRate: 0.001
-        Epsilon: 0.25
+        Epsilon: 0.99
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
         StepDown: false
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -3.0
+    LogAlpha: -1.0
     NSteps: 4
     AdaptiveExploration: true
     NetworkUpdateFrequency: 50
     SelfPlayNetworkUpdateFrequency: 1000
     NetworkParameters:
-        Filters: 64
+        Filters: 16
         Units: 64
         ActorVectorNetworkArchitecture: Dense
         ActorVisualNetworkArchitecture: CNN
@@ -100,13 +100,55 @@ sac:
     PrioritizedReplay: true
     PriorityAlpha: 0.8
     RewardNormalization: false
-    ReplayCapacity: 10000
+    ReplayCapacity: 300000
+    ReplayMinSize: 1000
+    SyncMode: soft_sync
+    SyncSteps: 500
+    Tau: 0.01
+    TrainingID: SAC_InvertedDoublePendulumCart_Recurrent
+    TrainingInterval: 10
+cql:
+    Recurrent: false
+    BurnIn: 0
+    AdaptiveSequenceLength: false
+    SequenceLength: 30
+    Overlap: 8
+    ActorNum: 1
+    BatchSize: 256
+    ClipGrad: 10.0
+    ExplorationParameters:
+        FeatureSpaceSize: 16
+        CuriosityScalingFactor: 0.02
+        LearningRate: 0.001
+        Epsilon: 0.99
+        EpsilonDecay: 0.9995
+        EpsilonMin: 0.01
+        StepDown: false
+    Gamma: 0.99
+    LearningRateActor: 0.00003
+    LearningRateCritic: 0.0003
+    LogAlpha: -4.0
+    NSteps: 4
+    AdaptiveExploration: true
+    NetworkUpdateFrequency: 50
+    SelfPlayNetworkUpdateFrequency: 1000
+    NetworkParameters:
+        Filters: 16
+        Units: 64
+        ActorVectorNetworkArchitecture: Dense
+        ActorVisualNetworkArchitecture: CNN
+        CriticVectorNetworkArchitecture: Dense
+        CriticVisualNetworkArchitecture: CNN
+    PrioritizedReplay: false
+    PriorityAlpha: 0.8
+    RewardNormalization: false
+    ReplayCapacity: 1000000
     ReplayMinSize: 100
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_Worm_BurnIn_RND
-    TrainingInterval: 10
+    TrainingID: CQL_SinglePendulum
+    TrainingInterval: 1
 td3:
     ActorTrainingFreq: 3
     BatchSize: 64

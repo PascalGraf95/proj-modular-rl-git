@@ -209,11 +209,11 @@ def build_network_body(network_input, network_parameters):
         if network_parameters.get("Recurrent") and network_parameters.get("ReturnStates"):
             network_body, hidden_state, cell_state = get_network_component(network_body[0], "SingleDense",
                                                                            network_parameters,
-                                                                           units=network_parameters.get("Units")*10)
+                                                                           units=network_parameters.get("Units")*5)
             network_body = [network_body]
         else:
             network_body = [get_network_component(network_body[0], "SingleDense",
-                                                  network_parameters, units=network_parameters.get("Units")*10)]
+                                                  network_parameters, units=network_parameters.get("Units")*5)]
     return network_body[0], hidden_state, cell_state
 
 

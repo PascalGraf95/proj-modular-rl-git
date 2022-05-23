@@ -26,28 +26,33 @@ def main():
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
     mode = "training"
-    model_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220314_191647_DQN_PushBlock"
+    model_path = None
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
     trainer.interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
     # If you want to run multiple Unity actors in parallel you need to specify the path to the Environment '.exe' here.
-    # In case of "OpenAIGym" enter the desired env name here instead, e.g. "LunarLanderContinuous-v2"
-    environment_path = None
+    # In case of "OpenAIGym" enter the desired env name here instead, e.g. "LunarLanderContinuous-v2".
+    # If you want a CQL agent to learn from demonstrations, an environment can be used to evaluate the model on a
+    # regular basis. Please provide a path or type None to connect directly to the Unity Editor. Otherwise, type
+    # 'NoEnv' to proceed without evaluation.
+    environment_path = None #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Conveyor\DoBotEnvironment.exe"
 
     # - Training Algorithm -
     # This is the core learning algorithm behind the RL Agent. While Deep Q-Learning / Deep Q Networks (DQN) presumably
     # is the most famous algorithm it can only act in environments with discrete action space. The three others
     # in their current implementation only support continuous action spaces. Of those three Soft Actor-Critic (SAC)
     # is the most recent and preferred option.
-    # Choose from "DQN", "DDPG", "TD3", "SAC"
-    trainer.select_training_algorithm('DQN')
+    # Choose from "DQN", "DDPG", "TD3", "SAC", "CQL"
+    trainer.select_training_algorithm('SAC')
+    # In case you want to train the agent offline via CQL please provide the path for demonstrations.
+    demonstration_path = r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-robot-arm-environment\DemoSinglePendulum"
 
     # - Exploration Algorithm -
     # The exploration algorithm helps the RL Agent to explore the environment by occasionally choosing suboptimal
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
     # Choose from "None", "EpsilonGreedy", "ICM" and "RND"
-    exploration_algorithm = "RND"
+    exploration_algorithm = "None"
 
     # - Curriculum Strategy -
     # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for
@@ -75,10 +80,10 @@ def main():
     # region --- Initialization ---
 
     # Parse the trainer configuration (make sure to select the right key)
-    trainer.parse_training_parameters("trainer_configs/trainer_config.yaml", "dqn")
+    trainer.parse_training_parameters("trainer_configs/trainer_config.yaml", "sac")
     # Instantiate the agent which consists of a learner and one or multiple actors
     trainer.async_instantiate_agent(mode, preprocessing_algorithm, exploration_algorithm,
-                                    environment_path, model_path, preprocessing_path)
+                                    environment_path, model_path, preprocessing_path, demonstration_path)
     # If you are trying to understand this project, the next place to continue exploring it would be the trainer file
     # in the respective directory (./modules/trainer.py)
 

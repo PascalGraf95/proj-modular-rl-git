@@ -71,7 +71,8 @@ class GlobalLogger:
     def __init__(self, log_dir="./summaries",
                  tensorboard=True,
                  actor_num=1,
-                 running_average_episodes=100):
+                 running_average_episodes=100,
+                 periodic_model_saving=False):
         # Summary file path and logger creation time
         self.log_dir = log_dir
         self.creation_time = datetime.now()
@@ -99,6 +100,8 @@ class GlobalLogger:
         self.running_average_episodes = running_average_episodes
         # Total episode number at which the network weights have been saved last.
         self.last_save_time_step = 0
+        # If true, new models are saved periodically independent of the agents' rewards
+        self.periodic_model_saving = periodic_model_saving
 
         # Tensorboard Writer
         if self.tensorboard:
@@ -182,7 +185,18 @@ class GlobalLogger:
             return new_sequence_length, new_burn_in
         return None, None
 
-    def check_checkpoint_condition(self):
+    def check_checkpoint_condition(self, training_step):
+        if self.periodic_model_saving:
+            if training_step - self.last_save_time_step >= 10000:
+                self.last_save_time_step = training_step
+                return True
+            if training_step - self.last_save_time_step > 1000 and self.total_episodes_played > 10:
+                max_average_reward = self.average_rewards[self.best_actor]
+                if max_average_reward > self.best_running_average_reward:
+                    self.best_running_average_reward = max_average_reward
+                    self.last_save_time_step = training_step
+                    return True
+
         # Returns true if the conditions for a new checkpoint are met.
         if self.total_episodes_played - self.last_save_time_step > 10 and self.total_episodes_played > 100:
             max_average_reward = self.average_rewards[self.best_actor]

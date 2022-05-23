@@ -267,8 +267,7 @@ class LocalFIFOBuffer:
                  capacity: int,
                  agent_num: int = 1,
                  n_steps: int = 1,
-                 gamma: float = 1,
-                 store_trajectories: bool = False):
+                 gamma: float = 1):
 
         # Initialize actual buffer with defined capacity
         self.buffer = deque(maxlen=capacity)
@@ -279,9 +278,6 @@ class LocalFIFOBuffer:
         # Keep track of which agent's episodes have ended in the simulation (relevant if multiple)
         self.done_agents = set()
         self.agent_num = agent_num
-        # If set to true, only whole trajectories are written into the buffer, otherwise they are written step-by-step
-        # which results in arbitrary order for multiple agents in one environment.
-        self.store_trajectories = store_trajectories
 
         # New sample and trajectory counters
         self.new_training_samples = 0
@@ -370,7 +366,7 @@ class LocalFIFOBuffer:
                 self.temp_agent_buffer[agent_id].clear()
                 self.collected_trajectories += 1
 
-                if self.store_trajectories or self.agent_num == 1:
+                if self.agent_num == 1:
                     self.done_agents.add(agent_id)
 
             # Write the deque data to the temporal buffer
@@ -382,10 +378,9 @@ class LocalFIFOBuffer:
                                                          False])
 
             # Write the collected data to the actual replay buffer if not storing whole trajectories.
-            if not self.store_trajectories:
-                for experience in self.temp_agent_buffer[agent_id]:
-                    self.append(*experience)
-                self.temp_agent_buffer[idx].clear()
+            for experience in self.temp_agent_buffer[agent_id]:
+                self.append(*experience)
+            self.temp_agent_buffer[idx].clear()
 
     def append(self, s, a, r, next_s, done):
         self.buffer.append({"state": s, "action": a, "reward": r, "next_state": next_s, "done": done})
@@ -610,6 +605,5 @@ class LocalRecurrentBuffer:
             self.reward_deque = [deque(maxlen=self.n_steps) for x in range(self.agent_num)]
 
         self.new_training_samples = 0
-
         copy_by_val_replay_batch = deepcopy(replay_batch)
         return copy_by_val_replay_batch, indices

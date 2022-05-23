@@ -18,6 +18,7 @@ class Actor:
                  preprocessing_path: str,
                  exploration_algorithm: str,
                  environment_path: str = "",
+                 demonstration_path: str = "",
                  device: str = '/cpu:0'):
         # - Networks and Network Parameters -
         # Depending on the chosen algorithm an actor utilizes the actor or critic network to determine its next action.
@@ -68,6 +69,10 @@ class Actor:
         # Working in an async fashion using ray makes it necessary to actively distribute processes among the CPU and
         # GPUs available. Each actor is usually placed on an individual CPU core/thread.
         self.device = device
+
+        # - CQL -
+        self.samples_buffered = False
+        self.demonstration_path = demonstration_path
 
         # - Behavior Parameters -
         # Information read from the environment.
@@ -132,7 +137,7 @@ class Actor:
     def is_minimum_capacity_reached(self):
         return len(self.local_buffer) >= 10
 
-    def is_network_update_requested(self):
+    def is_network_update_requested(self, training_step):
         return self.steps_taken_since_network_update >= self.network_update_frequency
 
     def is_clone_network_update_requested(self, total_episodes):
@@ -372,7 +377,7 @@ class Actor:
     # endregion
 
     # region Environment Interaction
-    def play_one_step(self):
+    def play_one_step(self, training_step):
         # Step acquisition (steps contain states, done_flags and rewards)
         decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
         # Preprocess steps if a respective algorithm has been activated
@@ -478,6 +483,9 @@ class Actor:
 
     def get_sample_errors(self, samples):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    def get_local_buffer(self):
+        return self.local_buffer.sample(1, reset_buffer=False, random_samples=True)
     # endregion
 
 

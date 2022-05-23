@@ -86,7 +86,7 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
             network_parameters[1]['NetworkName'] = "RND_TargetModel"
 
             prediction_model = construct_network(network_parameters[0], plot_network_model=True)
-            target_model = construct_network(network_parameters[0], plot_network_model=True)
+            target_model = construct_network(network_parameters[1], plot_network_model=True)
 
             return prediction_model, target_model
 

@@ -26,8 +26,10 @@ class Trainer:
     def __init__(self):
         # - Trainer Configuration -
         # The trainer configuration file contains all training parameters relevant for the chosen algorithm under the
-        # selected key.
+        # selected key. Furthermore, the abbreviation of the chosen algorithm is stored as it might affect the
+        # initiation of other modules.
         self.trainer_configuration = None
+        self.training_algorithm = None
 
         # - Global Tensorboard Logger -
         # The global logger is used to store the training results like rewards and losses in a Tensorboard which can be
@@ -83,6 +85,7 @@ class Trainer:
     def select_training_algorithm(self, training_algorithm):
         """ Imports the agent (actor, learner) blueprint according to the algorithm choice."""
         global Actor, Learner
+        self.training_algorithm = training_algorithm
         if training_algorithm == "DQN":
             from .training_algorithms.DQN import DQNActor as Actor
             from .training_algorithms.DQN import DQNLearner as Learner
@@ -93,6 +96,9 @@ class Trainer:
         elif training_algorithm == "SAC":
             from .training_algorithms.SAC import SACActor as Actor
             from .training_algorithms.SAC import SACLearner as Learner
+        elif training_algorithm == "CQL":
+            from .training_algorithms.CQL import CQLActor as Actor
+            from .training_algorithms.CQL import CQLLearner as Learner
         else:
             raise ValueError("There is no {} training algorithm.".format(training_algorithm))
 
@@ -127,14 +133,14 @@ class Trainer:
     # region Instantiation
     def async_instantiate_agent(self, mode: str, preprocessing_algorithm: str, exploration_algorithm: str,
                                 environment_path: str = None, model_path: str = None,
-                                preprocessing_path: str = None):
+                                preprocessing_path: str = None, demonstration_path: str = None):
         """ Instantiate the agent consisting of learner and actor(s) and their respective submodules in an asynchronous
         fashion utilizing the ray library."""
         # Initialize ray for parallel multiprocessing.
         ray.init()
         # If the connection is established directly with the Unity Editor or if we are in testing mode, override
         # the number of actors with 1.
-        if not environment_path or mode == "testing" or mode == "fastTesting":
+        if not environment_path or mode == "testing" or mode == "fastTesting" or environment_path == "Unity":
             actor_num = 1
         else:
             actor_num = self.trainer_configuration.get("ActorNum")
@@ -159,6 +165,7 @@ class Trainer:
                                     preprocessing_path,
                                     exploration_algorithm,
                                     environment_path,
+                                    demonstration_path,
                                     '/cpu:0') for idx in range(actor_num)]
 
         # Instantiate one environment for each actor and connect them to one another.
@@ -225,7 +232,8 @@ class Trainer:
             datetime.strftime(datetime.now(), '%y%m%d_%H%M%S_') + self.trainer_configuration['TrainingID']
         self.global_logger = GlobalLogger.remote(os.path.join("training/summaries", self.logging_name),
                                                  actor_num=self.trainer_configuration["ActorNum"],
-                                                 tensorboard=(mode == 'training'))
+                                                 tensorboard=(mode == 'training'),
+                                                 periodic_model_saving=(self.training_algorithm == 'CQL'))
         # If training mode is enabled all configs are stored into a yaml file in the summaries folder
         if mode == 'training':
             if not os.path.isdir(os.path.join("./training/summaries", self.logging_name)):
@@ -239,7 +247,7 @@ class Trainer:
     # region Misc
     def async_save_agent_models(self, training_step):
         """"""
-        checkpoint_condition = self.global_logger.check_checkpoint_condition.remote()
+        checkpoint_condition = self.global_logger.check_checkpoint_condition.remote(training_step)
         self.learner.save_checkpoint.remote(os.path.join("training/summaries", self.logging_name),
                                             self.global_logger.get_best_running_average.remote(),
                                             training_step, self.save_all_models, checkpoint_condition)
@@ -262,6 +270,7 @@ class Trainer:
         """"""
         # region --- Initialization ---
         total_episodes = 0
+        training_step = 0
         # Before starting the acting and training loop all actors need a copy of the latest network weights.
         [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True), total_episodes)
          for actor in self.actors]
@@ -272,7 +281,7 @@ class Trainer:
             # Receiving the latest state from its environment each actor chooses an action according to its policy
             # and/or its exploration algorithm. Furthermore, the reward and the info about the environment state (done)
             # is processed and stored in a local replay buffer for each actor.
-            actors_ready = [actor.play_one_step.remote() for actor in self.actors]
+            actors_ready = [actor.play_one_step.remote(training_step) for actor in self.actors]
             # endregion
 
             # region --- Global Buffer and Logger ---
@@ -327,7 +336,7 @@ class Trainer:
             # region --- Network Update and Checkpoint Saving ---
             # Check if the actor networks request to be updated with the latest network weights from the learner.
             [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
-                actor.is_network_update_requested.remote()), total_episodes)
+                actor.is_network_update_requested.remote(training_step)), total_episodes)
                 for actor in self.actors]
 
             # Check if a new best reward has been achieved, if so save the models
@@ -526,6 +535,6 @@ class Trainer:
 
         while True:
             # Receiving the latest state from its environment each actor chooses an action according to its policy.
-            actors_ready = [actor.play_one_step.remote() for actor in self.actors]
+            actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]
             ray.wait(actors_ready)
     # endregion
