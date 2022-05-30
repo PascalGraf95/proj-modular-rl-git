@@ -69,8 +69,8 @@ sac:
     Recurrent: true
     BurnIn: 0
     AdaptiveSequenceLength: false
-    SequenceLength: 30
-    Overlap: 8
+    SequenceLength: 10
+    Overlap: 6
     ActorNum: 1
     BatchSize: 32
     ClipGrad: 10.0
@@ -92,7 +92,7 @@ sac:
     SelfPlayNetworkUpdateFrequency: 1000
     NetworkParameters:
         Filters: 16
-        Units: 64
+        Units: 32
         ActorVectorNetworkArchitecture: Dense
         ActorVisualNetworkArchitecture: CNN
         CriticVectorNetworkArchitecture: Dense
@@ -101,11 +101,11 @@ sac:
     PriorityAlpha: 0.8
     RewardNormalization: false
     ReplayCapacity: 300000
-    ReplayMinSize: 1000
+    ReplayMinSize: 100
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_InvertedDoublePendulumCart_Recurrent
+    TrainingID: SAC_3DBall
     TrainingInterval: 10
 cql:
     Recurrent: false
@@ -126,7 +126,9 @@ cql:
         StepDown: false
     Gamma: 0.99
     LearningRateActor: 0.00003
-    LearningRateCritic: 0.0003
+    LearningRateCritic: 0.0005
+    CQLTemperature: 10.0
+    CQLWeight: 1.0
     LogAlpha: -4.0
     NSteps: 4
     AdaptiveExploration: true

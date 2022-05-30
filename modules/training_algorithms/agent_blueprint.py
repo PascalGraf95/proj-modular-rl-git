@@ -378,11 +378,13 @@ class Actor:
 
     # region Environment Interaction
     def play_one_step(self, training_step):
+
         # Step acquisition (steps contain states, done_flags and rewards)
         decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
         # Preprocess steps if a respective algorithm has been activated
         decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
                                                                                               terminal_steps)
+
         # Register terminal agents, so the hidden LSTM state is reset
         self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
         # Choose the next action either by exploring or exploiting
@@ -391,6 +393,7 @@ class Actor:
             actions = self.act(decision_steps.obs,
                                agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                mode=self.mode)
+
         # Do the same for the clone behavior if active
         if self.behavior_clone_name:
             # Step acquisition (steps contain states, done_flags and rewards)

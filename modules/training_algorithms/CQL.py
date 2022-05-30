@@ -14,6 +14,7 @@ import tensorflow_probability as tfp
 import os
 import ray
 import time
+import matplotlib.pyplot as plt
 
 tfd = tfp.distributions
 
@@ -58,18 +59,51 @@ class CQLActor(Actor):
                 print("SAMPLE LEN:", len(samples))
 
                 # Loop over all demo files to acquire decision and terminal steps.
-                for sample in samples:
+                for idx, sample in enumerate(samples):
                     decision_steps, terminal_steps = steps_from_proto([sample.agent_info], behavior_spec)
                     # Append steps and actions to the local replay buffer
-                    self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
-                                                    [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
-                                                    step_type="terminal")
-                    self.local_buffer.add_new_steps(decision_steps.obs, decision_steps.reward,
-                                                    [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
-                                                    actions=sample.action_info.continuous_actions, step_type="decision")
+                    # Force the last step of a demo to be a terminal step
+                    if idx == len(samples) - 1 and not len(terminal_steps.agent_id):
+                        self.local_buffer.add_new_steps(decision_steps.obs, decision_steps.reward,
+                                                        [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                                        step_type="terminal")
+                        self.local_logger.track_episode(decision_steps.reward,
+                                                        [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                                        step_type="terminal")
+                    else:
+                        self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
+                                                        [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
+                                                        step_type="terminal")
+                        self.local_buffer.add_new_steps(decision_steps.obs, decision_steps.reward,
+                                                        [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                                        actions=sample.action_info.continuous_actions,
+                                                        step_type="decision")
+                        # Track the rewards in a local logger
+                        self.local_logger.track_episode(terminal_steps.reward,
+                                                        [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
+                                                        step_type="terminal")
+
+                        self.local_logger.track_episode(decision_steps.reward,
+                                                        [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                                        step_type="decision")
                     self.local_buffer.done_agents.clear()
                 print("Number of samples in the local buffer:", len(self.local_buffer))
             self.samples_buffered = True
+
+            # region --- Demo file analysis ---
+            lengths, rewards, total_episodes_played = self.local_logger.get_episode_stats()
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 8))
+            fig.suptitle('Demonstration data analysis')
+            ax1.hist(lengths, bins=20)
+            ax1.set_title("Episode Lengths")
+            ax2.scatter([np.mean(rewards)], [5], marker='o', s=20, c='r', zorder=10)
+            ax2.hist(rewards, bins=20, zorder=0)
+            ax2.set_title("Episode Rewards")
+            plt.show()
+            print("Mean Reward: ", np.mean(rewards))
+            print("Total Episodes: ", total_episodes_played)
+            # endregion
+
             return True
 
         # In the CQL Algorithm this method plays one whole episode each 100 training steps to evaluate the offline
@@ -357,6 +391,8 @@ class CQLLearner(Learner):
         self.epsilon = 1.0e-6
 
         # CQL Parameter
+        self.cql_temperature = trainer_configuration.get('CQLTemperature')
+        self.cql_weight = trainer_configuration.get('CQLWeight')
         self.target_action_gap = 10
         self.cql_log_alpha = tf.Variable(tf.ones(1)*0)
         self.cql_alpha_optimizer: keras.optimizers.Optimizer
@@ -609,12 +645,10 @@ class CQLLearner(Learner):
             # This again is multiplied by the temperature parameter and the cql_weight (standard: 1).
             # Then the mean value calculated by the critics for the actual state and action batches is subtracted.
             # After that weighted again.
-            cql_temperature = 1.0
-            cql_weight = 0.1
-            cql_loss1 = ((tf.reduce_mean(tf.reduce_logsumexp(concat_value_stack1 / cql_temperature, axis=1)) *
-                         cql_weight * cql_temperature) - tf.reduce_mean(state_value1)) * cql_weight
-            cql_loss2 = ((tf.reduce_mean(tf.reduce_logsumexp(concat_value_stack2 / cql_temperature, axis=1)) *
-                         cql_weight * cql_temperature) - tf.reduce_mean(state_value2)) * cql_weight
+            cql_loss1 = ((tf.reduce_mean(tf.reduce_logsumexp(concat_value_stack1 / self.cql_temperature, axis=1)) *
+                         self.cql_weight * self.cql_temperature) - tf.reduce_mean(state_value1)) * self.cql_weight
+            cql_loss2 = ((tf.reduce_mean(tf.reduce_logsumexp(concat_value_stack2 / self.cql_temperature, axis=1)) *
+                         self.cql_weight * self.cql_temperature) - tf.reduce_mean(state_value2)) * self.cql_weight
 
             cql_alpha = tf.reduce_mean(tf.clip_by_value(tf.math.exp(self.cql_log_alpha), 0.0, 1000000.0))
             cql_loss1 = cql_alpha * (cql_loss1 - self.target_action_gap)

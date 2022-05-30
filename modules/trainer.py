@@ -291,6 +291,9 @@ class Trainer:
             for idx, actor in enumerate(self.actors):
                 # Gather samples from the local buffer of an actor.
                 samples, indices = actor.get_new_samples.remote()
+                ind = ray.get([indices])
+                if np.any(ind):
+                    print(ind)
                 # Calculate an initial priority based on the temporal difference error of the critic network.
                 if self.trainer_configuration["PrioritizedReplay"]:
                     sample_errors = actor.get_sample_errors.remote(samples)
@@ -307,11 +310,11 @@ class Trainer:
 
             # region --- Training Process ---
             # This code section is responsible for the actual training process of the involved neural networks.
-
             # Sample a new batch of transitions from the global replay buffer. Their indices matter in case of a
             # Prioritized Replay Buffer (PER) because their priorities need to be updated afterwards.
             samples, indices = self.global_buffer.sample.remote(self.trainer_configuration,
                                                                 self.trainer_configuration.get("BatchSize"))
+
             # Some exploration algorithms assign an intrinsic reward on top of the extrinsic reward to each sample.
             # This reward is usually based upon the novelty of a visited state and aims to promote exploring the
             # environment.
@@ -322,7 +325,6 @@ class Trainer:
 
             # In case of a PER update the buffer priorities with the temporal difference errors
             self.global_buffer.update.remote(indices, sample_errors)
-
             # Train the actor's exploration algorithm with the same batch
             [actor.exploration_learning_step.remote(samples) for actor in self.actors]
 
@@ -342,7 +344,6 @@ class Trainer:
             # Check if a new best reward has been achieved, if so save the models
             self.async_save_agent_models(training_step)
             # endregion
-
             # region --- Tensorboard Logging ---
             # Every logging_frequency steps (usually set to 100 so the event file doesn't get to big for long trainings)
             # log the training metrics to the tensorboard.

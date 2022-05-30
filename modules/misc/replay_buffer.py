@@ -487,7 +487,6 @@ class LocalRecurrentBuffer:
 
     def add_new_steps(self, states, rewards, ids, actions=None,
                       step_type='decision'):
-
         # Iterate through all available agents
         for idx, agent_id in enumerate(ids):
             # Don't add experiences of agents whose episode already ended
