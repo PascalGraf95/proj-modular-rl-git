@@ -89,6 +89,7 @@ class Actor:
         self.exploration_configuration = None
         self.exploration_algorithm = None
         self.adaptive_exploration = False
+        self.use_episodic_intrinsic_rewards = False
 
         # - Curriculum Learning Strategy & Engine Side Channel -
         self.engine_configuration_channel = None
@@ -217,6 +218,10 @@ class Actor:
             from ..exploration_algorithms.intrinsic_curiosity_module import IntrinsicCuriosityModule as ExplorationAlgorithm
         elif exploration_algorithm == "RND":
             from ..exploration_algorithms.random_network_distillation import RandomNetworkDistillation as ExplorationAlgorithm
+        elif exploration_algorithm == "ENM":
+            from ..exploration_algorithms.episodic_novelty_module import EpisodicNoveltyModule as ExplorationAlgorithm
+            # TODO: Clean-it-up
+            self.use_episodic_intrinsic_rewards = True
         else:
             raise ValueError("There is no {} exploration algorithm.".format(exploration_algorithm))
 
@@ -326,6 +331,13 @@ class Actor:
                     layer.reset_states()
 
     def register_terminal_agents(self, terminal_ids, clone=False):
+        # TODO: Reset Episodic Memory via function here
+        # - Check how to call agents per id directly
+        '''
+        if self.use_episodic_intrinsic_rewards:
+            for agent_id in terminal_ids:
+                self.exploration_algorithm.reset()
+        '''
         if not self.recurrent:
             return
         # Reset the hidden and cell state for agents that are in a terminal episode state
@@ -386,11 +398,18 @@ class Actor:
         # Register terminal agents, so the hidden LSTM state is reset
         self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
         # Choose the next action either by exploring or exploiting
-        actions = self.exploration_algorithm.act(decision_steps)
-        if actions is None:
+        # TODO: Clean-it-up, bind in self.use_episodic_intrinsic_rewards properly
+        if self.use_episodic_intrinsic_rewards:
+            episodic_intrinsic_reward = self.exploration_algorithm.act(decision_steps)
             actions = self.act(decision_steps.obs,
                                agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                mode=self.mode)
+        else:
+            actions = self.exploration_algorithm.act(decision_steps)
+            if actions is None:
+                actions = self.act(decision_steps.obs,
+                                   agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                   mode=self.mode)
         # Do the same for the clone behavior if active
         if self.behavior_clone_name:
             # Step acquisition (steps contain states, done_flags and rewards)
@@ -411,12 +430,20 @@ class Actor:
         else:
             clone_actions = None
         # Append steps and actions to the local replay buffer
-        self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
-                                        [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
-                                        step_type="terminal")
-        self.local_buffer.add_new_steps(decision_steps.obs, decision_steps.reward,
-                                        [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
-                                        actions=actions, step_type="decision")
+        if self.use_episodic_intrinsic_rewards:
+            self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward + episodic_intrinsic_reward,
+                                            [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
+                                            step_type="terminal")
+            self.local_buffer.add_new_steps(decision_steps.obs, decision_steps.reward + episodic_intrinsic_reward,
+                                            [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                            actions=actions, step_type="decision")
+        else:
+            self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
+                                            [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
+                                            step_type="terminal")
+            self.local_buffer.add_new_steps(decision_steps.obs, decision_steps.reward,
+                                            [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                            actions=actions, step_type="decision")
 
         # Track the rewards in a local logger
         self.local_logger.track_episode(terminal_steps.reward,

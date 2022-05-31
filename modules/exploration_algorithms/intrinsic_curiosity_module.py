@@ -15,7 +15,6 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
     """
     Basic implementation of the Intrinsic Curiosity Module (ICM)
     """
-    # TODO: FIX and UPDATE
     Name = "IntrinsicCuriosityModule"
     ActionAltering = False
     IntrinsicReward = True

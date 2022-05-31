@@ -3,7 +3,7 @@ import logging
 
 from modules.misc.replay_buffer import FIFOBuffer, PrioritizedBuffer
 from modules.misc.logger import GlobalLogger
-from modules.misc.utility import getsize
+from modules.misc.utility import getsize, get_exploration_policies
 
 import os
 import numpy as np
@@ -149,10 +149,19 @@ class Trainer:
         # each actor will be instantiated with a different degree of exploration. This only has an effect if the
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
         # returns 0.
+        # TODO: Process exploration_policy dictionary properly
         if actor_num == 1 and mode == "training":
-            exploration_degree = [1.0]
+            if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
+                self.exploration_policies = get_exploration_policies(num_policies=self.trainer_configuration["ActorNum"])
+                exploration_degree = self.exploration_policies
+            else:
+                exploration_degree = [1.0]
         else:
-            exploration_degree = np.linspace(0, 1, actor_num)
+            if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
+                self.exploration_policies = get_exploration_policies(num_policies=self.trainer_configuration["ActorNum"])
+                exploration_degree = self.exploration_policies
+            else:
+                exploration_degree = np.linspace(0, 1, actor_num)
 
         # - Actor Instantiation -
         # Create the desired number of actors using the ray "remote"-function. Each of them will construct their own
@@ -191,7 +200,7 @@ class Trainer:
                     actor.set_unity_parameters.remote(time_scale=1, width=500, height=500)
 
         # Get the environment and exploration configuration from the first actor.
-        # NOTE: ray remote-functions return IDs only. If you want the actual returned value of the function you neet to
+        # NOTE: ray remote-functions return IDs only. If you want the actual returned value of the function you need to
         # call ray.get() on the ID.
         environment_configuration = self.actors[0].get_environment_configuration.remote()
         self.environment_configuration = ray.get(environment_configuration)
@@ -275,7 +284,8 @@ class Trainer:
         [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True), total_episodes)
          for actor in self.actors]
         # endregion
-
+        # TODO: Make gamma sampleable within trainer_configuration - Needs to be pushed with samples
+        # TODO: Add additional inputs to network constructor in case of intrinsic reward feedback-loop and j
         while True:
             # region --- Acting ---
             # Receiving the latest state from its environment each actor chooses an action according to its policy
@@ -324,6 +334,7 @@ class Trainer:
             self.global_buffer.update.remote(indices, sample_errors)
 
             # Train the actor's exploration algorithm with the same batch
+            # TODO: Sync network weights between actors as they hold the exploration algorithms
             [actor.exploration_learning_step.remote(samples) for actor in self.actors]
 
             # If the training algorithm is constructed to act and learn by utilizing a recurrent neural network a

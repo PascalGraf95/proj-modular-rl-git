@@ -380,6 +380,7 @@ class SACLearner(Learner):
 
         # Training Target Calculation with standard TD-Error + Temperature Parameter
         critic_target = (critic_target_prediction - self.alpha * next_log_prob) * (1 - done_batch)
+        # TODO: Sample gamma with exploration policy index
         y = reward_batch + (self.gamma ** self.n_steps) * critic_target
 
         # Possible Reward Normalization

@@ -45,6 +45,7 @@ dqn:
         FeatureSpaceSize: 8
         CuriosityScalingFactor: 0.01
         LearningRate: 0.0005
+        ObservationNormalization: false
     Gamma: 0.99
     LearningRate: 0.0005
     NSteps: 4
@@ -67,10 +68,10 @@ dqn:
     TrainingInterval: 1
 sac:
     Recurrent: true
-    BurnIn: 0
+    BurnIn: 4
     AdaptiveSequenceLength: false
-    SequenceLength: 30
-    Overlap: 8
+    SequenceLength: 15
+    Overlap: 6
     ActorNum: 1
     BatchSize: 32
     ClipGrad: 10.0
@@ -82,12 +83,13 @@ sac:
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
         StepDown: false
+        ObservationNormalization: false
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -1.0
+    LogAlpha: -3.0
     NSteps: 4
-    AdaptiveExploration: true
+    AdaptiveExploration: false
     NetworkUpdateFrequency: 50
     SelfPlayNetworkUpdateFrequency: 1000
     NetworkParameters:
@@ -97,16 +99,16 @@ sac:
         ActorVisualNetworkArchitecture: CNN
         CriticVectorNetworkArchitecture: Dense
         CriticVisualNetworkArchitecture: CNN
-    PrioritizedReplay: true
+    PrioritizedReplay: false
     PriorityAlpha: 0.8
     RewardNormalization: false
-    ReplayCapacity: 300000
+    ReplayCapacity: 15000
     ReplayMinSize: 1000
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_InvertedDoublePendulumCart_Recurrent
-    TrainingInterval: 10
+    TrainingID: SAC_3DBall
+    TrainingInterval: 4
 cql:
     Recurrent: false
     BurnIn: 0
@@ -124,6 +126,7 @@ cql:
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
         StepDown: false
+        ObservationNormalization: false
     Gamma: 0.99
     LearningRateActor: 0.00003
     LearningRateCritic: 0.0003

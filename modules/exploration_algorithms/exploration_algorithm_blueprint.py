@@ -42,6 +42,9 @@ class ExplorationAlgorithm:
     def prevent_checkpoint(self):
         return False
 
+    def reset(self):
+        return
+
     @staticmethod
     def calculate_intrinsic_reward(replay_buffer: FIFOBuffer):
         return True
