@@ -101,6 +101,7 @@ def construct_network(network_parameters, plot_network_model=False):
 def build_network_input(network_input_shapes, network_parameters):
     """ Builds the input layers for an arbitrary number of inputs with arbitrary shape."""
     network_input = []
+    # TODO: Add intrinsic reward and exploration policy index j as network inputs
     # Iterate through all input components
     for input_shapes in network_input_shapes:
         # In case of a recurrent neural network, the input shape of vector observation changes from 2 to 3,

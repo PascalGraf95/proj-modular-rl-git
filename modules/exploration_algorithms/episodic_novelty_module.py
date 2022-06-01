@@ -12,6 +12,7 @@ from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatena
 import time
 from collections import deque
 from tensorflow.keras.utils import plot_model
+import itertools as IT
 
 class EpisodicNoveltyModule(ExplorationAlgorithm):
     """
@@ -40,15 +41,9 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         self.index = idx
         self.device = '/cpu:0'
 
-        #if self.index == 0:
         self.recurrent = training_parameters["Recurrent"]
         self.sequence_length = training_parameters["SequenceLength"]
         self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
-
-        print('******************************************************************')
-        print('Actor Index:', self.index)
-        print('Exploration Degree:', exploration_parameters["ExplorationDegree"])
-        print('******************************************************************')
         self.beta = exploration_parameters["ExplorationDegree"]["beta"]
 
         # Categorical Cross-Entropy for discrete action spaces
@@ -59,8 +54,6 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             self.mse = MeanSquaredError()
 
         self.optimizer = Adam(exploration_parameters["LearningRate"])
-
-        self.episodic_intrinsic_reward = 0
         self.loss = 0
 
         # Episodic memory and kernel hyperparameters
@@ -70,45 +63,21 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         self.eps = 0.0001  # exploration_parameters["KernelEpsilon"]
         self.c = 0.001  # exploration_parameters["KernelConstant"]
         self.similarity_max = 8  # exploration_parameters["MaximumSimilarity"]
-        self.episodic_memory = deque(maxlen=3000)  # deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
+        self.episodic_memory = deque(maxlen=1000)  # deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
         self.mean_distance = 0
         self.old_mean_distance = 0
-
-        # For calculation of running mean
         self.total_num_processed_means = 0
+        self.episodic_intrinsic_reward = 0
 
-        # self.reward_deque = deque(maxlen=1000)
-        # self.reward_mean = 0
-        # self.reward_std = 1
+        #print('******************************************************************')
+        #print('Actor Index:', self.index)
+        #print('Exploration Degree:', exploration_parameters["ExplorationDegree"])
+        #print('******************************************************************')
 
         self.feature_extractor, self.embedding_classifier = self.build_network()
 
     def build_network(self):
         # TODO: Construct networks via construct_network()
-        # region Schematic Network Built-Ups
-        """
-        Feature Extractor
-        -> Single Network for both left and right part of siamese
-        (Input: ObservationShape)
-               |
-        (Dense, ReLU: 64)
-               |
-        (Dense, ReLU: 64)
-               |
-        (Dense, ReLU: 64)
-               |
-        (Dense, Output: Feature Space Size)
-
-
-        Embedding Classifier Built-Up
-        Concatenate(Input1, Input2)
-               |
-        (Dense, ReLU: 64)
-               |
-        (Dense, Softmax: ActionShape)
-        """
-        # endregion
-
         with tf.device(self.device):
             # region Feature Extractor
             if len(self.observation_shapes) == 1:
@@ -119,9 +88,9 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
                 for obs_shape in self.observation_shapes:
                     feature_input.append(Input(obs_shape))
                 x = Concatenate()(feature_input)
-            x = Dense(32, activation="relu")(x)
-            x = Dense(32, activation="relu")(x)
-            x = Dense(32, activation="relu")(x)
+            x = Dense(16, activation="relu")(x)
+            x = Dense(16, activation="relu")(x)
+            x = Dense(16, activation="relu")(x)
             x = Dense(self.feature_space_size, activation="relu")(x)
             feature_extractor = Model(feature_input, x, name="ENM Feature Extractor")
             # endregion
@@ -130,7 +99,7 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             current_state_features = Input(self.feature_space_size)
             next_state_features = Input(self.feature_space_size)
             x = Concatenate(axis=-1)([current_state_features, next_state_features])
-            x = Dense(128, 'relu')(x)
+            x = Dense(32, 'relu')(x)
             if self.action_space == "DISCRETE":
                 x = Dense(self.action_shape[0], 'softmax')(x)   # DISC
             elif self.action_space == "CONTINUOUS":
@@ -240,67 +209,95 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         pass
 
     def learning_step(self, replay_batch):
-        """Can stay like that, learning function is different from acting
-        state_batch, action_batch, \
-        reward_batch, next_state_batch, \
-        done_batch = Agent.get_training_batch_from_replay_batch(replay_batch,
-                                                                self.observation_shapes,
-                                                                self.action_shape)
-        """
-        # region Batch Reshaping
+        # region --- RECURRENT
         if self.recurrent:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
                                                                          self.action_shape, self.sequence_length)
+
+            if np.any(np.isnan(action_batch)):
+                return replay_batch
+
+            for state_sequence, next_state_sequence, action_sequence in zip(state_batch[0], next_state_batch[0], action_batch[0]):
+                # Cast as lists (MUST BE DONE)
+                state_sequence = [state_sequence]
+                next_state_sequence = [next_state_sequence]
+
+                with tf.device(self.device):
+                    # Calculate Loss
+                    with tf.GradientTape() as tape:
+                        # Calculate features of this and next state
+                        state_features = self.feature_extractor(state_sequence)
+                        next_state_features = self.feature_extractor(next_state_sequence)
+
+                        # Inverse Loss
+                        action_prediction = self.embedding_classifier([state_features, next_state_features])
+
+                        if self.action_space == "DISCRETE":
+                            # TODO: Turn into real and working code
+                            # Encode true action as one hot vector encoding
+                            num_actions = self.action_shape[:]
+                            true_actions_one_hot = tf.one_hot(action_sequence, num_actions).numpy()
+
+                            # Compute Loss via Categorical Cross Entropy
+                            self.inverse_loss = self.cce(true_actions_one_hot, action_prediction)
+
+                        elif self.action_space == "CONTINUOUS":
+                            # Compute Loss via Mean Squared Error
+                            self.inverse_loss = self.mse(action_sequence, action_prediction)
+
+                        self.loss = self.inverse_loss
+                        print("ENM-Loss: ", self.loss)
+                    # Calculate Gradients
+                    grad = tape.gradient(self.loss, [self.embedding_classifier.trainable_weights,
+                                                     self.feature_extractor.trainable_weights])
+                    # Apply Gradients to all models
+                    self.optimizer.apply_gradients(zip(grad[0], self.embedding_classifier.trainable_weights))
+                    self.optimizer.apply_gradients(zip(grad[1], self.feature_extractor.trainable_weights))
+        # endregion
+
+        # region --- NON-RECURRENT
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes,
                                                                self.action_shape)
 
-        if np.any(np.isnan(action_batch)):
-            return replay_batch
+            if np.any(np.isnan(action_batch)):
+                return replay_batch
+            # endregion
+
+            with tf.device(self.device):
+                # Calculate Loss
+                with tf.GradientTape() as tape:
+                    # Calculate features of this and next state
+                    state_features = self.feature_extractor(state_batch)
+                    next_state_features = self.feature_extractor(next_state_batch)
+
+                    # Inverse Loss
+                    action_prediction = self.embedding_classifier([state_features, next_state_features])
+
+                    if self.action_space == "DISCRETE":
+                        # TODO: Turn into real and working code
+                        # Encode true action as one hot vector encoding
+                        num_actions = self.action_shape[:]
+                        true_actions_one_hot = tf.one_hot(action_batch, num_actions).numpy()
+
+                        # Compute Loss via Categorical Cross Entropy
+                        self.inverse_loss = self.cce(true_actions_one_hot, action_prediction)
+
+                    elif self.action_space == "CONTINUOUS":
+                        # Compute Loss via Mean Squared Error
+                        self.inverse_loss = self.mse(action_batch, action_prediction)
+
+                    self.loss = self.inverse_loss
+
+                # Calculate Gradients
+                grad = tape.gradient(self.loss, [self.embedding_classifier.trainable_weights,
+                                                 self.feature_extractor.trainable_weights])
+                # Apply Gradients to all models
+                self.optimizer.apply_gradients(zip(grad[0], self.embedding_classifier.trainable_weights))
+                self.optimizer.apply_gradients(zip(grad[1], self.feature_extractor.trainable_weights))
         # endregion
-
-        # TODO: Use single states within loop in case of not calculating properly
-        #for state_sequence, next_state_sequence, action_sequence in zip(state_batch, next_state_batch, action_batch):
-
-        # Only the last 5 transitions from the batches are used to train networks
-        #state_batch = [state_batch[0][:][-5:]]
-        #action_batch = action_batch[-5:]
-        #reward_batch = reward_batch[-5:]
-        #next_state_batch = [next_state_batch[0][:][-5:]]
-        #done_batch = done_batch[-5:]
-
-        # Calculate Loss
-        with tf.GradientTape() as tape:
-            # Calculate features of this and next state
-            state_features = self.feature_extractor(state_batch)
-            next_state_features = self.feature_extractor(next_state_batch)
-
-            # Inverse Loss
-            action_prediction = self.embedding_classifier([state_features, next_state_features])
-
-            if self.action_space == "DISCRETE":
-                # TODO: Turn into real and working code
-                # Encode true action as one hot vector encoding
-                num_actions = self.action_shape[:]
-                true_actions_one_hot = tf.one_hot(action_batch, num_actions).numpy()
-
-                # Compute Loss via Categorical Cross Entropy
-                self.inverse_loss = self.cce(true_actions_one_hot, action_prediction)
-
-            elif self.action_space == "CONTINUOUS":
-                # Compute Loss via Mean Squared Error
-                self.inverse_loss = self.mse(action_batch, action_prediction)
-
-            self.loss = self.inverse_loss
-
-        # Calculate Gradients
-        grad = tape.gradient(self.loss, [self.embedding_classifier.trainable_weights,
-                                         self.feature_extractor.trainable_weights])
-        # Apply Gradients to all models
-        self.optimizer.apply_gradients(zip(grad[0], self.embedding_classifier.trainable_weights))
-        self.optimizer.apply_gradients(zip(grad[1], self.feature_extractor.trainable_weights))
         return
 
     def reset(self):

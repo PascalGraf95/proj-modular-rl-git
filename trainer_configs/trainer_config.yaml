@@ -70,7 +70,7 @@ sac:
     Recurrent: true
     BurnIn: 4
     AdaptiveSequenceLength: false
-    SequenceLength: 15
+    SequenceLength: 10
     Overlap: 6
     ActorNum: 1
     BatchSize: 32
@@ -103,11 +103,11 @@ sac:
     PriorityAlpha: 0.8
     RewardNormalization: false
     ReplayCapacity: 15000
-    ReplayMinSize: 1000
+    ReplayMinSize: 50
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_3DBall
+    TrainingID: SAC_3DBall_agent57Branch_wENM
     TrainingInterval: 4
 cql:
     Recurrent: false

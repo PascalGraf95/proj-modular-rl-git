@@ -264,7 +264,6 @@ class CQLActor(Actor):
             # region --- Build ---
             with tf.device(self.device):
                 self.actor_network = construct_network(network_parameters[0], plot_network_model=True)
-                # TODO: only construct this if PER
                 self.critic_network = construct_network(network_parameters[1])
                 if self.recurrent:
                     self.actor_prediction_network = construct_network(network_parameters[2])

@@ -378,9 +378,6 @@ class Trainer:
             ray.wait([sample_errors])
             # endregion
 
-            # TODO: Add an option to affect the training process with keyboard events.
-            #       E.g. Skip Level, Boost Exploration, Render Test Episode
-
     def on_press(self, key):
         try:
             x = key.char

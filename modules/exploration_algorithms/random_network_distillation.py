@@ -96,87 +96,139 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         return
 
     def get_intrinsic_reward(self, replay_batch):
-        # region --- Batch Reshaping ---
+        # region --- RECURRENT ---
         if self.recurrent:
+            # region --- Batch Reshaping ---
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
                                                                          self.action_shape, self.sequence_length)
-        else:
-            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-                = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes,
-                                                               self.action_shape)
-        if np.any(np.isnan(action_batch)):
-            return replay_batch
-        # endregion
 
-        #next_state_batch = list(next_state_batch[0])
-        #action_batch = list(action_batch[0])
-        #reward_batch = list(reward_batch[0])
-        #done_batch = list(done_batch[0])
+            if np.any(np.isnan(action_batch)):
+                return replay_batch
+            # endregion
 
-        #TODO: Check if next state observations are normalized and afterwards used
-        # Normalize the observations
-        if self.normalize_observations:
-            for state in next_state_batch:
-                state -= self.observation_mean
-                state /= self.observation_std
-                state = np.clip(state, -5, 5)
+            intrinsic_reward = []
+            # Loop through state sequences
+            for idx, next_state_sequence in enumerate(next_state_batch[0]):
+                # TODO: Check if next state observations are normalized and afterwards used
+                # Normalize the observations
+                if self.normalize_observations:
+                    for state in next_state_batch:
+                        state -= self.observation_mean
+                        state /= self.observation_std
+                        state = np.clip(state, -5, 5)
 
-        # region --- Feature Calculation and Learning Step ---
-        with tf.device(self.device):
-            # Calculate the features for the current next state batch with the target and the prediction model.
-            # Then calculate the Mean Squared Error between them.
-            with tf.GradientTape() as tape:
-                target_features = self.target_model(next_state_batch)
-                prediction_features = self.prediction_model(next_state_batch)
-                self.loss = self.mse(target_features, prediction_features)
-            # Calculate Gradients and apply the weight updates to the prediction model.
-            grad = tape.gradient(self.loss, self.prediction_model.trainable_weights)
-            self.optimizer.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
-        # endregion
+                # Casting current sequence as list (MUST be done)
+                next_state_sequence = [next_state_sequence]
 
-        # region --- Intrinsic Reward Calculation ---
-        # The intrinsic reward is the L2 error between target and prediction features summed over all features.
-        # This results in a 1D-array of rewards if non-recurrent or a 2D-array of rewards if recurrent.
-        intrinsic_reward = tf.math.sqrt(
-            tf.math.reduce_sum(tf.math.square(target_features - prediction_features), axis=-1)).numpy()
+                # region --- Feature Calculation and Learning Step ---
+                with tf.device(self.device):
+                    # Calculate the features for the current next state batch with the target and the prediction model.
+                    # Then calculate the Mean Squared Error between them.
+                    with tf.GradientTape() as tape:
+                        target_features = self.target_model(next_state_sequence)
+                        prediction_features = self.prediction_model(next_state_sequence)
+                        self.loss = self.mse(target_features, prediction_features)
 
-        # Calculate the standard deviation of the intrinsic rewards to normalize them.
-        if self.recurrent:
+                    # Calculate Gradients and apply the weight updates to the prediction model.
+                    grad = tape.gradient(self.loss, self.prediction_model.trainable_weights)
+                    self.optimizer.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
+                # endregion
+
+                # The intrinsic reward is the L2 error between target and prediction features summed over all features.
+                intrinsic_reward.append(tf.math.sqrt(
+                    tf.math.reduce_sum(tf.math.square(target_features - prediction_features), axis=-1)).numpy())
+
+            # Cast as array
+            intrinsic_reward = np.array(intrinsic_reward)
+
+            # Calculate the standard deviation of the intrinsic rewards to normalize them.
             for reward_sequence in intrinsic_reward:
                 for reward in reward_sequence:
                     self.reward_deque.append(reward)
-        else:
-            for reward in intrinsic_reward:
-                self.reward_deque.append(reward)
-        self.reward_std = np.std(self.reward_deque)
+            self.reward_std = np.std(self.reward_deque)
 
-        # Normalize the intrinsic reward by the standard deviation
-        intrinsic_reward /= self.reward_std
-        # Scale the reward
-        intrinsic_reward *= self.reward_scaling_factor
-        # endregion
+            # Normalize the intrinsic reward by the standard deviation
+            intrinsic_reward /= self.reward_std
+            # Scale the reward
+            intrinsic_reward *= self.reward_scaling_factor
 
-        # region --- Store Max and Mean intrinsic rewards
-        self.max_intrinsic_reward = np.max(intrinsic_reward)
-        self.mean_intrinsic_reward = np.mean(intrinsic_reward)
-        # endregion
+            # region --- Store Max and Mean intrinsic rewards
+            self.max_intrinsic_reward = np.max(intrinsic_reward)
+            self.mean_intrinsic_reward = np.mean(intrinsic_reward)
+            # endregion
 
-        # region --- Overwrite Original Rewards ---
-        # If recurrent iterate through each sequence in the intrinsic reward array, then iterate through each reward
-        # and add it to the original reward of that sample.
-        if self.recurrent:
+            # region --- Overwrite Original Rewards ---
+            # If recurrent iterate through each sequence in the intrinsic reward array, then iterate through each reward
+            # and add it to the original reward of that sample.
             for seq_idx, reward_sequence in enumerate(intrinsic_reward):
                 for idx, rew in enumerate(reward_sequence):
                     replay_batch[seq_idx][idx]["reward"] = \
-                        replay_batch[seq_idx][idx]["reward"]*(1-self.reward_scaling_factor)+rew
-        # Else just iterate through each reward and add it to the original sample.
+                        replay_batch[seq_idx][idx]["reward"] * (1 - self.reward_scaling_factor) + rew
+            # endregion
+            return replay_batch
+        # endregion
+
+        # region --- NON-RECURRENT ---
         else:
+            # region --- Batch Reshaping ---
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes,
+                                                               self.action_shape)
+            if np.any(np.isnan(action_batch)):
+                return replay_batch
+            # endregion
+
+            if self.normalize_observations:
+                for state in next_state_batch:
+                    state -= self.observation_mean
+                    state /= self.observation_std
+                    state = np.clip(state, -5, 5)
+
+            # region --- Feature Calculation and Learning Step ---
+            with tf.device(self.device):
+                # Calculate the features for the current next state batch with the target and the prediction model.
+                # Then calculate the Mean Squared Error between them.
+                with tf.GradientTape() as tape:
+                    target_features = self.target_model(next_state_batch)
+                    prediction_features = self.prediction_model(next_state_batch)
+                    self.loss = self.mse(target_features, prediction_features)
+                # Calculate Gradients and apply the weight updates to the prediction model.
+                grad = tape.gradient(self.loss, self.prediction_model.trainable_weights)
+                self.optimizer.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
+            # endregion
+
+            # region --- Intrinsic Reward Calculation ---
+            # The intrinsic reward is the L2 error between target and prediction features summed over all features.
+            # This results in a 1D-array of rewards if non-recurrent or a 2D-array of rewards if recurrent.
+            intrinsic_reward = tf.math.sqrt(
+                tf.math.reduce_sum(tf.math.square(target_features - prediction_features), axis=-1)).numpy()
+
+            # Calculate the standard deviation of the intrinsic rewards to normalize them.
+            for reward in intrinsic_reward:
+                self.reward_deque.append(reward)
+            self.reward_std = np.std(self.reward_deque)
+
+            # Normalize the intrinsic reward by the standard deviation
+            intrinsic_reward /= self.reward_std
+            # Scale the reward
+            intrinsic_reward *= self.reward_scaling_factor
+            # endregion
+
+            # region --- Store Max and Mean intrinsic rewards
+            self.max_intrinsic_reward = np.max(intrinsic_reward)
+            self.mean_intrinsic_reward = np.mean(intrinsic_reward)
+            # endregion
+
+            # region --- Overwrite Original Rewards ---
+            # Iterate through each reward and add it to the original sample.
+            # Else just iterate through each reward and add it to the original sample.
             for idx, rew in enumerate(intrinsic_reward):
                 replay_batch[idx]["reward"] = \
                     replay_batch[idx]["reward"]*(1-self.reward_scaling_factor)+rew
+            # endregion
+            return replay_batch
         # endregion
-        return replay_batch
 
     @staticmethod
     def get_config():

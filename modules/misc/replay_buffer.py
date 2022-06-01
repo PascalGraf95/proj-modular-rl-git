@@ -48,7 +48,6 @@ class SumTree:
         self.tree[idx] = priority
         # Then propagate the change through the tree
         # self._propagate(idx, change)
-        # TODO: Test while loop vs. recursive function time
         while idx != 0:
             idx = (idx - 1) // 2
             self.tree[idx] += change
@@ -166,7 +165,6 @@ class PrioritizedBuffer:
         # sampling_probabilities = priorities / self.tree.total_priority()
         # is_weight = np.power(self.tree.n_entries * sampling_probabilities, -self.per_beta)
         # is_weight /= is_weight.max()
-        # TODO: Implement Importance Sampling
         # Reset the number of training samples since last sampling.
         self.new_training_samples = 0
         # Deepcopy the batch so a potential change to the batch does not affect the actual buffer.
