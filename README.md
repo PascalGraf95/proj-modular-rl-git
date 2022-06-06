@@ -4,6 +4,15 @@
 **Documentation and instructions are incorporated into the code. To get started take a look at 
 the `main.py` file.**
 
+## Package Versions:
+*The following packages have successfully been used with this framework. Other versions might cause errors.*
+- ### CUDA
+  - Cuda Version: 10.1.X (Later versions, especially 11.X lead to memory leaks on Windows machines)
+  - CuDnn Version: 7.6.X (corresponds to the Cuda version, see: https://www.tensorflow.org/install/source)
+- ### PIP
+  - tensorflow: 2.3.X
+  - tensorflow-probability: 0.11.X (corresponds to tensorflow version)
+  - ray: 1.11.X (later versions, especially 1.12 lead to Windows fatal errors 'access violation')
 ## Features
 - ###Interfaces:
   - Unity MlAgentsV18
