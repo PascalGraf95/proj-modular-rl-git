@@ -43,6 +43,7 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
 
             self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
             self.reward_scaling_factor = exploration_parameters["CuriosityScalingFactor"]
+            self.normalize_observations = exploration_parameters["ObservationNormalization"]
             self.mse = MeanSquaredError()
             self.optimizer = Adam(exploration_parameters["LearningRate"])
 
@@ -110,18 +111,19 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         # endregion
 
         # Normalize the observations
-        for state in state_batch:
-            state -= self.observation_mean
-            state /= self.observation_std
-            state = np.clip(state, -5, 5)
+        if self.normalize_observations:
+            for next_state in next_state_batch:
+                next_state -= self.observation_mean
+                next_state /= self.observation_std
+                next_state = np.clip(next_state, -5, 5)
 
         # region --- Feature Calculation and Learning Step ---
         with tf.device(self.device):
-            # Calculate the features for the current state batch with the target and the prediction model.
+            # Calculate the features for the next state batch with the target and the prediction model.
             # Then calculate the Mean Squared Error between them.
             with tf.GradientTape() as tape:
-                target_features = self.target_model(state_batch)
-                prediction_features = self.prediction_model(state_batch)
+                target_features = self.target_model(next_state_batch)
+                prediction_features = self.prediction_model(next_state_batch)
                 self.loss = self.mse(target_features, prediction_features)
             # Calculate Gradients and apply the weight updates to the prediction model.
             grad = tape.gradient(self.loss, self.prediction_model.trainable_weights)
@@ -129,10 +131,10 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         # endregion
 
         # region --- Intrinsic Reward Calculation ---
-        # The intrinsic reward is the absolute error between target and prediction features summed over all features.
+        # The intrinsic reward is the L2 error between target and prediction features summed over all features.
         # This results in a 1D-array of rewards if non-recurrent or a 2D-array of rewards if recurrent.
-        intrinsic_reward = tf.math.reduce_sum(
-            tf.math.abs(target_features - prediction_features), axis=-1).numpy()
+        intrinsic_reward = tf.math.sqrt(
+            tf.math.reduce_sum(tf.math.square(target_features - prediction_features), axis=-1)).numpy()
 
         # Calculate the standard deviation of the intrinsic rewards to normalize them.
         if self.recurrent:

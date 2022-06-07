@@ -45,6 +45,7 @@ dqn:
         FeatureSpaceSize: 8
         CuriosityScalingFactor: 0.01
         LearningRate: 0.0005
+        ObservationNormalization: false
     Gamma: 0.99
     LearningRate: 0.0005
     NSteps: 4
@@ -71,7 +72,7 @@ sac:
     AdaptiveSequenceLength: false
     SequenceLength: 10
     Overlap: 6
-    ActorNum: 1
+    ActorNum: 4
     BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
@@ -82,6 +83,7 @@ sac:
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
         StepDown: false
+        ObservationNormalization: false
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
