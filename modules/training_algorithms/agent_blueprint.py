@@ -333,11 +333,6 @@ class Actor:
     def register_terminal_agents(self, terminal_ids, clone=False):
         # TODO: Reset Episodic Memory via function here
         # - Check how to call agents per id directly
-        '''
-        if self.use_episodic_intrinsic_rewards:
-            for agent_id in terminal_ids:
-                self.exploration_algorithm.reset()
-        '''
         if not self.recurrent:
             return
         # Reset the hidden and cell state for agents that are in a terminal episode state
@@ -349,6 +344,8 @@ class Actor:
             for agent_id in terminal_ids:
                 self.lstm_state[0][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
                 self.lstm_state[1][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
+        if self.use_episodic_intrinsic_rewards:
+            return terminal_ids
 
     def set_lstm_states(self, agent_ids, clone=False):
         active_agent_number = len(agent_ids)
@@ -396,11 +393,17 @@ class Actor:
         decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
                                                                                               terminal_steps)
         # Register terminal agents, so the hidden LSTM state is reset
-        self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
-        # Choose the next action either by exploring or exploiting
-        # TODO: Clean-it-up, bind in self.use_episodic_intrinsic_rewards properly
+        # If episodic intrinsic rewards are used (e.g. with NGU-Rewards), episodic memory needs to be reset
         if self.use_episodic_intrinsic_rewards:
-            episodic_intrinsic_reward = self.exploration_algorithm.act(decision_steps)
+            terminal_ids = self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
+            if len(terminal_ids):
+                self.exploration_algorithm.reset()
+        else:
+            self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
+
+        # Choose the next action either by exploring or exploiting
+        if self.use_episodic_intrinsic_rewards:
+            episodic_intrinsic_reward = self.exploration_algorithm.act(decision_steps, terminal_steps)
             actions = self.act(decision_steps.obs,
                                agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                mode=self.mode)
@@ -410,6 +413,7 @@ class Actor:
                 actions = self.act(decision_steps.obs,
                                    agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                    mode=self.mode)
+
         # Do the same for the clone behavior if active
         if self.behavior_clone_name:
             # Step acquisition (steps contain states, done_flags and rewards)
@@ -419,6 +423,7 @@ class Actor:
             clone_decision_steps, clone_terminal_steps = self.preprocessing_algorithm.preprocess_observations(
                 clone_decision_steps,
                 clone_terminal_steps)
+            # TODO: Add episodic memory options for cloning behaviour
             # Register terminal agents, so the hidden LSTM state is reset
             self.register_terminal_agents([a_id - self.clone_agent_id_offset for a_id in clone_terminal_steps.agent_id],
                                           clone=True)
@@ -429,12 +434,16 @@ class Actor:
             self.steps_taken_since_clone_network_update += len(clone_decision_steps)
         else:
             clone_actions = None
+
         # Append steps and actions to the local replay buffer
         if self.use_episodic_intrinsic_rewards:
-            self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward + episodic_intrinsic_reward,
+            # In case of episodic intrinsic rewards rewards are directly augmented with intrinsic reward
+            augmented_reward_terminal = terminal_steps.reward + episodic_intrinsic_reward
+            augmented_reward_decision = decision_steps.reward + episodic_intrinsic_reward
+            self.local_buffer.add_new_steps(terminal_steps.obs, augmented_reward_terminal,
                                             [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
                                             step_type="terminal")
-            self.local_buffer.add_new_steps(decision_steps.obs, decision_steps.reward + episodic_intrinsic_reward,
+            self.local_buffer.add_new_steps(decision_steps.obs, augmented_reward_decision,
                                             [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                             actions=actions, step_type="decision")
         else:

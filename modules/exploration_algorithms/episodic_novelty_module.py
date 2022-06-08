@@ -12,7 +12,7 @@ from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatena
 import time
 from collections import deque
 from tensorflow.keras.utils import plot_model
-import itertools as IT
+
 
 class EpisodicNoveltyModule(ExplorationAlgorithm):
     """
@@ -43,6 +43,7 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
 
         self.recurrent = training_parameters["Recurrent"]
         self.sequence_length = training_parameters["SequenceLength"]
+
         self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
         self.beta = exploration_parameters["ExplorationDegree"]["beta"]
 
@@ -64,149 +65,61 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         self.c = 0.001  # exploration_parameters["KernelConstant"]
         self.similarity_max = 8  # exploration_parameters["MaximumSimilarity"]
         self.episodic_memory = deque(maxlen=1000)  # deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
-        self.mean_distance = 0
-        self.old_mean_distance = 0
-        self.total_num_processed_means = 0
+        self.mean_distances = deque(maxlen=self.episodic_memory.maxlen)
         self.episodic_intrinsic_reward = 0
+        self._FIRST_ITER = True
 
-        #print('******************************************************************')
-        #print('Actor Index:', self.index)
-        #print('Exploration Degree:', exploration_parameters["ExplorationDegree"])
-        #print('******************************************************************')
+        print('******************************************************************')
+        print('Actor Index:', self.index)
+        print('Exploration Degree:', exploration_parameters["ExplorationDegree"])
+        print('******************************************************************')
 
         self.feature_extractor, self.embedding_classifier = self.build_network()
 
     def build_network(self):
-        # TODO: Construct networks via construct_network()
         with tf.device(self.device):
-            # region Feature Extractor
-            if len(self.observation_shapes) == 1:
-                feature_input = Input(self.observation_shapes[0])
-                x = feature_input
-            else:
-                feature_input = []
-                for obs_shape in self.observation_shapes:
-                    feature_input.append(Input(obs_shape))
-                x = Concatenate()(feature_input)
-            x = Dense(16, activation="relu")(x)
-            x = Dense(16, activation="relu")(x)
-            x = Dense(16, activation="relu")(x)
-            x = Dense(self.feature_space_size, activation="relu")(x)
-            feature_extractor = Model(feature_input, x, name="ENM Feature Extractor")
-            # endregion
+            # List with two dictionaries in it, one for each network.
+            network_parameters = [{}, {}]
+            # region --- Feature Extraction Model ---
+            # This model outputs an embedding vector consisting of observation components the agent can influence
+            # through its actions.
+            # - Network Name -
+            network_parameters[0]['NetworkName'] = "ENM_FeatureExtractor"
+            # - Network Architecture-
+            network_parameters[0]['VectorNetworkArchitecture'] = "Dense"
+            network_parameters[0]['VisualNetworkArchitecture'] = "CNN"
+            network_parameters[0]['Filters'] = 32
+            network_parameters[0]['Units'] = 32
+            network_parameters[0]['TargetNetwork'] = False
+            # - Input / Output / Initialization -
+            network_parameters[0]['Input'] = self.observation_shapes
+            network_parameters[0]['Output'] = [self.feature_space_size]
+            #network_parameters[0]['OutputActivation'] = [None]
+            network_parameters[0]['OutputActivation'] = ["relu"]
+            # - Recurrent Parameters -
+            network_parameters[0]['Recurrent'] = False
 
-            # region Classifier
-            current_state_features = Input(self.feature_space_size)
-            next_state_features = Input(self.feature_space_size)
-            x = Concatenate(axis=-1)([current_state_features, next_state_features])
-            x = Dense(32, 'relu')(x)
+            # region --- Embedding Classifier Model ---
+            # This model tries to predict the action used for the transition between two states.
+            # - Network Name -
+            network_parameters[1] = network_parameters[0].copy()
+            network_parameters[1]['NetworkName'] = "ENM_EmbeddingClassifier"
+            # - Network Architecture-
+            network_parameters[1]['VectorNetworkArchitecture'] = "SingleDense"
+            network_parameters[1]['Units'] = 64
+            # - Input / Output / Initialization -
+            network_parameters[1]['Input'] = [self.feature_space_size, self.feature_space_size]
             if self.action_space == "DISCRETE":
-                x = Dense(self.action_shape[0], 'softmax')(x)   # DISC
+                network_parameters[1]['Output'] = [self.action_shape[0]]
+                network_parameters[1]['OutputActivation'] = ["softmax"]
             elif self.action_space == "CONTINUOUS":
-                x = Dense(self.action_shape, 'tanh')(x)         # CONT
-            embedding_classifier = Model([current_state_features, next_state_features], x, name="ENM Classifier")
-            # endregion
+                network_parameters[1]['Output'] = [self.action_shape]
+                network_parameters[1]['OutputActivation'] = ["tanh"]
 
-            # region Model compilation and plotting
-            if self.action_space == "DISCRETE":
-                embedding_classifier.compile(loss=self.cce, optimizer=self.optimizer)
-            elif self.action_space == "CONTINUOUS":
-                embedding_classifier.compile(loss=self.mse, optimizer=self.optimizer)
-
-            # Model plots
-            try:
-                plot_model(feature_extractor, "plots/ENM_FeatureExtractor.png", show_shapes=True)
-                plot_model(embedding_classifier, "plots/ENM_EmbeddingClassifier.png", show_shapes=True)
-            except ImportError:
-                print("Could not create model plots for ENM.")
-
-            # Summaries
-            feature_extractor.summary()
-            embedding_classifier.summary()
-            # endregion
+            feature_extractor = construct_network(network_parameters[0], plot_network_model=True)
+            embedding_classifier = construct_network(network_parameters[1], plot_network_model=True)
 
             return feature_extractor, embedding_classifier
-
-    @staticmethod
-    def get_config(config_dict=None):
-        if not config_dict:
-            config_dict = ExplorationAlgorithm.__dict__
-        config_dict = {key: val for (key, val) in config_dict.items()
-                       if not key.startswith('__')
-                       and not callable(val)
-                       and not type(val) is staticmethod
-                       }
-        return config_dict
-
-    def act(self, decision_steps):
-        # TODO: Add variable descriptions
-        """Calculate intrinsically-based episodic reward through similarity comparison of current state embedding
-        with prior ones present within episodic memory. Needs to be calculated on every actor step and therefore within
-        this function and not get_intrinsic_reward().
-        
-        Notes:
-        - The code within this function is called from play_one_step() within agent_blueprint.py
-        - decision_steps.obs == current state
-        - Needs to be done per actor
-        - Should ideally be called with current actor state
-        - Computed intrinsic reward must be returned to actor and from there sent to replay_buffer
-        """
-        # Extract relevant features from current state
-        state_embedding = self.feature_extractor(decision_steps.obs)
-
-        # Calculate the euclidean distances between current state embedding and the ones within episodic memory (N_k)
-        embedding_distances = [np.linalg.norm(mem_state_embedding - state_embedding)
-                               for mem_state_embedding in self.episodic_memory]
-
-        # Add state to episodic memory
-        self.episodic_memory.append(state_embedding)
-
-        # Calculate list of top k distances (d_k)
-        # topk_emb_distances = np.flip(np.sort(embedding_distances))[:self.k]     # descending order
-        topk_emb_distances = np.sort(embedding_distances)[:self.k]  # ascending order
-
-        # Calculate mean distance value of current top k distances(d_m)
-        self.mean_distance = np.mean(topk_emb_distances)
-
-        # Mean distance will be nan for first iteration, as episodic memory is empty
-        if self.mean_distance:
-            # Calculate moving average of mean distance
-            self.mean_distance = ((self.mean_distance * self.k) +
-                                  (self.old_mean_distance * self.total_num_processed_means))/(self.k + self.total_num_processed_means)
-            self.total_num_processed_means += self.k
-            self.old_mean_distance = self.mean_distance
-
-            # Normalize the distances with moving average of mean distance
-            topk_emb_distances_normalized = topk_emb_distances / self.mean_distance
-
-            # Cluster the normalized distances
-            topk_emb_distances = np.where(topk_emb_distances_normalized - self.cluster_distance > 0,
-                                     topk_emb_distances_normalized - self.cluster_distance, 0)
-        else:
-            return 0
-
-        # Calculate similarity
-        K = self.eps / (topk_emb_distances + self.eps)
-        similarity = np.sqrt(np.sum(K)) + self.c
-
-        # Check for similarity boundaries and return intrinsic episodic reward
-        if np.isnan(similarity) or similarity > self.similarity_max:
-            self.episodic_intrinsic_reward = 0
-        else:
-            # 1/similarity to encourage visiting states with lower similarity
-            self.episodic_intrinsic_reward = self.beta * (1 / similarity)
-
-        return self.episodic_intrinsic_reward
-
-    def boost_exploration(self):
-        return
-
-    def get_logs(self):
-        return {"Exploration/EpisodicLoss": self.loss,
-                "Exploration/EpisodicReward": self.episodic_intrinsic_reward}
-
-    def get_intrinsic_reward(self, current_states):
-        pass
 
     def learning_step(self, replay_batch):
         # region --- RECURRENT
@@ -218,7 +131,8 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             if np.any(np.isnan(action_batch)):
                 return replay_batch
 
-            for state_sequence, next_state_sequence, action_sequence in zip(state_batch[0], next_state_batch[0], action_batch[0]):
+            for state_sequence, next_state_sequence, action_sequence in zip(state_batch[0], next_state_batch[0],
+                                                                            action_batch):
                 # Cast as lists (MUST BE DONE)
                 state_sequence = [state_sequence]
                 next_state_sequence = [next_state_sequence]
@@ -247,7 +161,7 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
                             self.inverse_loss = self.mse(action_sequence, action_prediction)
 
                         self.loss = self.inverse_loss
-                        print("ENM-Loss: ", self.loss)
+
                     # Calculate Gradients
                     grad = tape.gradient(self.loss, [self.embedding_classifier.trainable_weights,
                                                      self.feature_extractor.trainable_weights])
@@ -300,13 +214,92 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         # endregion
         return
 
+    def get_intrinsic_reward(self, replay_batch):
+        return replay_batch
+
+    @staticmethod
+    def get_config():
+        config_dict = EpisodicNoveltyModule.__dict__
+        return ExplorationAlgorithm.get_config(config_dict)
+
+    def act(self, decision_steps, terminal_steps):
+        # TODO: Add variable descriptions
+        """Calculate intrinsically-based episodic reward through similarity comparison of current state embedding
+        with prior ones present within episodic memory. Needs to be calculated on every actor step and therefore within
+        this function and not get_intrinsic_reward().
+
+        Notes:
+        - The code within this function is called from play_one_step() within agent_blueprint.py
+        - Computed intrinsic reward must be returned to actor and from there sent to replay_buffer
+        """
+        # Extract relevant features from current state
+        state_embedding = self.feature_extractor(decision_steps.obs)
+
+        # Calculate the euclidean distances between current state embedding and the ones within episodic memory (N_k)
+        embedding_distances = [np.linalg.norm(mem_state_embedding - state_embedding)
+                               for mem_state_embedding in self.episodic_memory]
+
+        # Add state to episodic memory
+        self.episodic_memory.append(state_embedding)
+
+        # Get list of top k distances (d_k)
+        topk_emb_distances = np.sort(embedding_distances)[:self.k]  # ascending order
+
+        # Calculate mean distance value of current top k distances (d_m)
+        if np.any(topk_emb_distances):
+            self.mean_distances.append(np.mean(topk_emb_distances))
+        else:
+            # Mean distance will be zero for first iteration, as episodic memory is empty
+            self.mean_distances.append(0)
+            return 0
+
+        # Normalize the distances with moving average of mean distance
+        topk_emb_distances_normalized = topk_emb_distances / np.mean(self.mean_distances)
+
+        # Cluster the normalized distances
+        topk_emb_distances = np.where(topk_emb_distances_normalized - self.cluster_distance > 0,
+                                      topk_emb_distances_normalized - self.cluster_distance, 0)
+
+        '''
+        if len(self.mean_distances):
+            if np.mean(self.mean_distances)>0:
+                # Normalize the distances with moving average of mean distance
+                topk_emb_distances_normalized = topk_emb_distances / np.mean(self.mean_distances)
+
+                # Cluster the normalized distances
+                topk_emb_distances = np.where(topk_emb_distances_normalized - self.cluster_distance > 0,
+                                         topk_emb_distances_normalized - self.cluster_distance, 0)
+            else:
+                return 0
+        else:
+            return 0'''
+
+        # Calculate similarity (will increase as agent collects more and more states similar to each other)
+        K = self.eps / (topk_emb_distances + self.eps)
+        similarity = np.sqrt(np.sum(K)) + self.c
+
+        # Check for similarity boundaries and return intrinsic episodic reward
+        if np.isnan(similarity) or (similarity > self.similarity_max):
+            self.episodic_intrinsic_reward = 0
+        else:
+            # 1/similarity to encourage visiting states with lower similarity
+            self.episodic_intrinsic_reward = self.beta * (1 / similarity)
+
+        # print("Episodic Reward: ", self.episodic_intrinsic_reward)
+        return self.episodic_intrinsic_reward
+
+
+    def get_logs(self):
+        return {"Exploration/EpisodicLoss": self.loss,
+                "Exploration/EpisodicReward": self.episodic_intrinsic_reward}
+
     def reset(self):
-        # TODO: Check if reset even needs to be called as episodic memory is deque
         """Empty episodic memory and clear euclidean distance metrics."""
-        self.mean_distance = 0
-        self.old_mean_distance = 0
-        print('Episodic Memory Cleared')
-        self.episodic_memory.clear()
+        # if self.episodic_memory.__len__() > self.episodic_memory.maxlen:
+        # print('*****Episodic Novelty Module reset with length: ', self.episodic_memory.__len__())
+        # self.mean_distances.clear()
+        # self.episodic_memory.clear()
+        return
 
     def prevent_checkpoint(self):
         return False

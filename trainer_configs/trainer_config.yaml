@@ -70,7 +70,7 @@ sac:
     Recurrent: true
     BurnIn: 4
     AdaptiveSequenceLength: false
-    SequenceLength: 10
+    SequenceLength: 15
     Overlap: 6
     ActorNum: 1
     BatchSize: 32
@@ -103,7 +103,7 @@ sac:
     PriorityAlpha: 0.8
     RewardNormalization: false
     ReplayCapacity: 15000
-    ReplayMinSize: 50
+    ReplayMinSize: 100
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01

@@ -235,7 +235,7 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         config_dict = RandomNetworkDistillation.__dict__
         return ExplorationAlgorithm.get_config(config_dict)
 
-    def act(self, decision_steps):
+    def act(self, decision_steps, terminal_steps):
         if self.index or not len(decision_steps):
             return None
         for idx, state in enumerate(decision_steps.obs):

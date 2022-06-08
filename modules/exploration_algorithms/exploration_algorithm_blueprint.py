@@ -24,7 +24,7 @@ class ExplorationAlgorithm:
                        }
         return config_dict
 
-    def act(self, decision_steps):
+    def act(self, decision_steps, terminal_steps):
         return
 
     def boost_exploration(self):
