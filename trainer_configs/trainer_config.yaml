@@ -119,7 +119,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_3DBall_RND
+    TrainingID: SAC_3DBall_NGU_finalEverythforTerm
     TrainingInterval: 4
 cql:
     Recurrent: false

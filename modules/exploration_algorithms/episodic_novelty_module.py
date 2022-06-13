@@ -41,12 +41,13 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         self.observation_shapes = observation_shapes
         self.index = idx
         self.device = '/cpu:0'
-
         self.recurrent = training_parameters["Recurrent"]
         self.sequence_length = training_parameters["SequenceLength"]
-
         self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
-        self.beta = exploration_parameters["ExplorationDegree"]["beta"]
+
+        # Scale rewards later on by exploration degree
+        #self.beta = exploration_parameters["ExplorationDegree"]["beta"]
+        self.reward_scaling_factor = exploration_parameters["ExplorationDegree"]
 
         # Categorical Cross-Entropy for discrete action spaces
         # Mean Squared Error for continuous action spaces
@@ -68,11 +69,6 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         self.similarity_max = exploration_parameters["MaximumSimilarity"]
         self.episodic_memory = deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
         self.mean_distances = deque(maxlen=self.episodic_memory.maxlen)
-
-        print('******************************************************************')
-        print('Actor Index:', self.index)
-        print('Exploration Policy:', exploration_parameters["ExplorationDegree"])
-        print('******************************************************************')
 
         self.feature_extractor, self.embedding_classifier = self.build_network()
 
@@ -321,14 +317,13 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             self.episodic_intrinsic_reward = 0
         else:
             # 1/similarity to encourage visiting states with lower similarity
-            self.episodic_intrinsic_reward = self.beta * (1 / similarity)
+            self.episodic_intrinsic_reward = self.reward_scaling_factor * (1 / similarity)
 
-        # print("Episodic Reward: ", self.episodic_intrinsic_reward)
         return self.episodic_intrinsic_reward
 
     def get_logs(self):
         return {"Exploration/EpisodicLoss": self.loss,
-                "Exploration/EpisodicReward_Act{:02d}_{:.4f}".format(self.index, self.beta): self.episodic_intrinsic_reward}
+                "Exploration/Reward_Act{:02d}_{:.4f}".format(self.index, self.reward_scaling_factor): self.episodic_intrinsic_reward}
 
     def reset(self):
         """Empty episodic memory and clear euclidean distance metrics."""

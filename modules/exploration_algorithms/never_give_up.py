@@ -66,8 +66,8 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.optimizer = Adam(exploration_parameters["LearningRate"])
         self.lifelong_loss = 0
         self.episodic_loss = 0
-        self.enm_reward = 0
-        self.rnd_reward = 0  # Refers to alpha, a curiosity scaling factor
+        #self.enm_reward = 0
+        #self.rnd_reward = 0  # Refers to alpha, a curiosity scaling factor
         self.intrinsic_reward = 0
 
         # region Episodic novelty module
@@ -153,7 +153,7 @@ class NeverGiveUp(ExplorationAlgorithm):
                 # - Network Architecture-
                 network_parameters[0]['VectorNetworkArchitecture'] = "SmallDense"
                 network_parameters[0]['VisualNetworkArchitecture'] = "CNN"
-                network_parameters[0]['Filters'] = 16
+                network_parameters[0]['Filters'] = 32
                 network_parameters[0]['Units'] = 32
                 network_parameters[0]['TargetNetwork'] = False
                 # - Input / Output / Initialization -
@@ -190,7 +190,6 @@ class NeverGiveUp(ExplorationAlgorithm):
         # endregion
 
         with tf.device(self.device):
-
             # region RND
             with tf.GradientTape() as tape:
                 target_features = self.target_model(next_state_batch)
@@ -242,15 +241,17 @@ class NeverGiveUp(ExplorationAlgorithm):
         return ExplorationAlgorithm.get_config(config_dict)
 
     def act(self, decision_steps, terminal_steps):
-        # Switch current state to terminal step
         if len(decision_steps.obs[0]):
             current_state = decision_steps.obs
-            '''else:
-                current_state = terminal_steps.obs
-            '''
-        #Alternative
         else:
+            self.rnd_reward_deque.append(0)
+            self.mean_distances.append(0)
             return 0
+        '''
+        # Alternative
+        else:
+            current_state = terminal_steps.obs
+        '''
 
         # region Lifelong Novelty Module
         if self.normalize_observations:
@@ -270,19 +271,20 @@ class NeverGiveUp(ExplorationAlgorithm):
         prediction_features = self.prediction_model(current_state)
 
         # The rnd reward is the L2 error between target and prediction features summed over all features.
-        self.rnd_reward = tf.math.sqrt(tf.math.reduce_sum(
+        rnd_reward = tf.math.sqrt(tf.math.reduce_sum(
             tf.math.square(target_features - prediction_features), axis=-1)).numpy()
+        rnd_reward = rnd_reward[0]
 
         # Calculate the running standard deviation and mean of the rnd rewards to normalize it.
-        self.rnd_reward_deque.append(self.rnd_reward)
+        self.rnd_reward_deque.append(rnd_reward)
         self.rnd_reward_std = np.std(self.rnd_reward_deque)
         self.rnd_reward_mean = np.mean(self.rnd_reward_deque)
 
-        # Normalize reward
-        self.rnd_reward = 1 + (self.rnd_reward - self.rnd_reward_mean) / self.rnd_reward_std
-
-        # Calculate the lifelong part of the reward signal within the ngu reward generator
-        #self.rnd_reward = min(max(self.rnd_reward, 1), self.alpha_max)  # shape: [VALUE]
+        # Normalize reward value
+        if self.rnd_reward_mean and self.rnd_reward_std:
+            rnd_reward = 1 + (rnd_reward - self.rnd_reward_mean) / self.rnd_reward_std
+        else:
+            rnd_reward = 1
         # endregion
 
         # region Episodic Novelty Module
@@ -320,21 +322,22 @@ class NeverGiveUp(ExplorationAlgorithm):
 
         # Check for similarity boundaries and return intrinsic episodic reward
         if np.isnan(similarity) or (similarity > self.similarity_max):
-            self.enm_reward = 0
+            enm_reward = 0
         else:
             # 1/similarity to encourage visiting states with lower similarity
-            self.enm_reward = self.beta * (1 / similarity)
+            enm_reward = self.beta * (1 / similarity)
+        # endregion
 
         # Calculate final and combined intrinsic reward
-        self.intrinsic_reward = self.enm_reward * min(max(self.rnd_reward, 1), self.alpha_max)
+        self.intrinsic_reward = enm_reward * min(max(rnd_reward, 1), self.alpha_max)
 
         return self.intrinsic_reward
-        # endregion
+
 
     def get_logs(self):
         return {"Exploration/EpisodicLoss": self.episodic_loss,
                 "Exploration/LifeLongLoss": self.lifelong_loss,
-                "Exploration/IntrinsicReward_Agent{:03d}_beta{:.4f}".format(self.index, self.beta): self.intrinsic_reward}
+                "Exploration/Reward_Act{:02d}_{:.4f}".format(self.index, self.beta): self.intrinsic_reward}
 
     def reset(self):
         """Empty episodic memory and clear euclidean distance metrics."""

@@ -149,14 +149,17 @@ class Trainer:
         # each actor will be instantiated with a different degree of exploration. This only has an effect if the
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
         # returns 0.
+        # TODO: Let NGU and ENM as single modules use regular exploration degree implementation
         if actor_num == 1 and mode == "training":
-            if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
+            #if exploration_algorithm == "NGU" or exploration_algorithm == "ENM" or exploration_algorithm == "RND":
+            if exploration_algorithm == "NGU":
                 self.exploration_policies = get_exploration_policies(num_policies=self.trainer_configuration["ActorNum"])
                 exploration_degree = self.exploration_policies
             else:
                 exploration_degree = [1.0]
         else:
-            if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
+            #if exploration_algorithm == "NGU" or exploration_algorithm == "ENM" or exploration_algorithm == "RND":
+            if exploration_algorithm == "NGU":
                 self.exploration_policies = get_exploration_policies(num_policies=self.trainer_configuration["ActorNum"])
                 exploration_degree = self.exploration_policies
             else:
