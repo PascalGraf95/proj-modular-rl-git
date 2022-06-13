@@ -30,7 +30,8 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         "LearningRate": float,
         "EpisodicMemoryCapacity": int
     }
-
+    # TODO: Optimierungsidee - Weight Syncing für learning step
+    # -> Aufruf der learning funktion mit dem actor für den der höchste durchschnittliche extrinsische reward erspielt wurde
     def __init__(self, action_shape, observation_shapes,
                  action_space,
                  exploration_parameters,
@@ -56,22 +57,21 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
 
         self.optimizer = Adam(exploration_parameters["LearningRate"])
         self.loss = 0
+        self.episodic_intrinsic_reward = 0
+        self.intrinsic_reward = 0
 
         # Episodic memory and kernel hyperparameters
-        # TODO: Transfer into trainer_config.yaml
-        self.k = 10  # exploration_parameters["kNearest"]
-        self.cluster_distance = 0.008  # exploration_parameters["ClusterDistance"]
-        self.eps = 0.0001  # exploration_parameters["KernelEpsilon"]
-        self.c = 0.001  # exploration_parameters["KernelConstant"]
-        self.similarity_max = 8  # exploration_parameters["MaximumSimilarity"]
-        self.episodic_memory = deque(maxlen=1000)  # deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
+        self.k = exploration_parameters["kNearest"]
+        self.cluster_distance = exploration_parameters["ClusterDistance"]
+        self.eps = exploration_parameters["KernelEpsilon"]
+        self.c = exploration_parameters["KernelConstant"]
+        self.similarity_max = exploration_parameters["MaximumSimilarity"]
+        self.episodic_memory = deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
         self.mean_distances = deque(maxlen=self.episodic_memory.maxlen)
-        self.episodic_intrinsic_reward = 0
-        self._FIRST_ITER = True
 
         print('******************************************************************')
         print('Actor Index:', self.index)
-        print('Exploration Degree:', exploration_parameters["ExplorationDegree"])
+        print('Exploration Policy:', exploration_parameters["ExplorationDegree"])
         print('******************************************************************')
 
         self.feature_extractor, self.embedding_classifier = self.build_network()
@@ -122,6 +122,56 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             return feature_extractor, embedding_classifier
 
     def learning_step(self, replay_batch):
+        # region --- Batch Reshaping ---
+        if self.recurrent:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
+                                                                         self.action_shape, self.sequence_length)
+        else:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
+                = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes,
+                                                               self.action_shape)
+
+        if np.any(np.isnan(action_batch)):
+            return replay_batch
+        # endregion
+
+        with tf.device(self.device):
+            # Calculate Loss
+            with tf.GradientTape() as tape:
+                # Calculate features of this and next state
+                state_features = self.feature_extractor(state_batch)
+                next_state_features = self.feature_extractor(next_state_batch)
+
+                # Inverse Loss
+                action_prediction = self.embedding_classifier([state_features, next_state_features])
+
+                if self.action_space == "DISCRETE":
+                    # TODO: Turn into real and working code
+                    # Encode true action as one hot vector encoding
+                    num_actions = self.action_shape[:]
+                    true_actions_one_hot = tf.one_hot(action_batch, num_actions).numpy()
+
+                    # Compute Loss via Categorical Cross Entropy
+                    self.inverse_loss = self.cce(true_actions_one_hot, action_prediction)
+
+                elif self.action_space == "CONTINUOUS":
+                    # Compute Loss via Mean Squared Error
+                    self.inverse_loss = self.mse(action_batch, action_prediction)
+
+                self.loss = self.inverse_loss
+
+            # Calculate Gradients
+            grad = tape.gradient(self.loss, [self.embedding_classifier.trainable_weights,
+                                             self.feature_extractor.trainable_weights])
+            # Apply Gradients to all models
+            self.optimizer.apply_gradients(zip(grad[0], self.embedding_classifier.trainable_weights))
+            self.optimizer.apply_gradients(zip(grad[1], self.feature_extractor.trainable_weights))
+            return
+
+        # region tensorflow-gpu 2.4.1 compatible learning step
+        # Use following code to be able to train correctly with tensorflow-gpu 2.4.1
+        '''
         # region --- RECURRENT
         if self.recurrent:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
@@ -212,7 +262,9 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
                 self.optimizer.apply_gradients(zip(grad[0], self.embedding_classifier.trainable_weights))
                 self.optimizer.apply_gradients(zip(grad[1], self.feature_extractor.trainable_weights))
         # endregion
-        return
+        
+        return'''
+        # endregion
 
     def get_intrinsic_reward(self, replay_batch):
         return replay_batch
@@ -260,20 +312,6 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         topk_emb_distances = np.where(topk_emb_distances_normalized - self.cluster_distance > 0,
                                       topk_emb_distances_normalized - self.cluster_distance, 0)
 
-        '''
-        if len(self.mean_distances):
-            if np.mean(self.mean_distances)>0:
-                # Normalize the distances with moving average of mean distance
-                topk_emb_distances_normalized = topk_emb_distances / np.mean(self.mean_distances)
-
-                # Cluster the normalized distances
-                topk_emb_distances = np.where(topk_emb_distances_normalized - self.cluster_distance > 0,
-                                         topk_emb_distances_normalized - self.cluster_distance, 0)
-            else:
-                return 0
-        else:
-            return 0'''
-
         # Calculate similarity (will increase as agent collects more and more states similar to each other)
         K = self.eps / (topk_emb_distances + self.eps)
         similarity = np.sqrt(np.sum(K)) + self.c
@@ -288,17 +326,16 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         # print("Episodic Reward: ", self.episodic_intrinsic_reward)
         return self.episodic_intrinsic_reward
 
-
     def get_logs(self):
         return {"Exploration/EpisodicLoss": self.loss,
-                "Exploration/EpisodicReward": self.episodic_intrinsic_reward}
+                "Exploration/EpisodicReward_Act{:02d}_{:.4f}".format(self.index, self.beta): self.episodic_intrinsic_reward}
 
     def reset(self):
         """Empty episodic memory and clear euclidean distance metrics."""
-        # if self.episodic_memory.__len__() > self.episodic_memory.maxlen:
-        # print('*****Episodic Novelty Module reset with length: ', self.episodic_memory.__len__())
-        # self.mean_distances.clear()
-        # self.episodic_memory.clear()
+        '''
+        self.mean_distances.clear()
+        self.episodic_memory.clear()
+        '''
         return
 
     def prevent_checkpoint(self):

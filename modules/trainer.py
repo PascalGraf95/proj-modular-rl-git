@@ -149,7 +149,6 @@ class Trainer:
         # each actor will be instantiated with a different degree of exploration. This only has an effect if the
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
         # returns 0.
-        # TODO: Process exploration_policy dictionary properly
         if actor_num == 1 and mode == "training":
             if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
                 self.exploration_policies = get_exploration_policies(num_policies=self.trainer_configuration["ActorNum"])

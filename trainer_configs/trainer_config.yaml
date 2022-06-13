@@ -46,6 +46,12 @@ dqn:
         CuriosityScalingFactor: 0.01
         LearningRate: 0.0005
         ObservationNormalization: false
+        kNearest: 10
+        ClusterDistance: 0.008
+        KernelEpsilon: 0.0001
+        KernelConstant: 0.001
+        MaximumSimilarity: 8
+        EpisodicMemoryCapacity: 1000
     Gamma: 0.99
     LearningRate: 0.0005
     NSteps: 4
@@ -72,24 +78,30 @@ sac:
     AdaptiveSequenceLength: false
     SequenceLength: 15
     Overlap: 6
-    ActorNum: 1
+    ActorNum: 6
     BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
         FeatureSpaceSize: 16
         CuriosityScalingFactor: 0.02
-        LearningRate: 0.001
+        LearningRate: 0.0005
         Epsilon: 0.99
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
         StepDown: false
         ObservationNormalization: false
+        kNearest: 10
+        ClusterDistance: 0.008
+        KernelEpsilon: 0.0001
+        KernelConstant: 0.001
+        MaximumSimilarity: 8
+        EpisodicMemoryCapacity: 1000
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
     LogAlpha: -3.0
     NSteps: 4
-    AdaptiveExploration: false
+    AdaptiveExploration: true
     NetworkUpdateFrequency: 50
     SelfPlayNetworkUpdateFrequency: 1000
     NetworkParameters:
@@ -102,12 +114,12 @@ sac:
     PrioritizedReplay: false
     PriorityAlpha: 0.8
     RewardNormalization: false
-    ReplayCapacity: 15000
+    ReplayCapacity: 100000
     ReplayMinSize: 100
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_3DBall_agent57Branch_wENM
+    TrainingID: SAC_3DBall_RND
     TrainingInterval: 4
 cql:
     Recurrent: false

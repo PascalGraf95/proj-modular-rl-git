@@ -42,7 +42,7 @@ def main():
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
-    trainer.interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
+    trainer.interface = 'OpenAIGym'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
     # If you want to run multiple Unity actors in parallel you need to specify the path to the Environment '.exe' here.
     # In case of "OpenAIGym" enter the desired env name here instead, e.g. "LunarLanderContinuous-v2".
     # If you want a CQL agent to learn from demonstrations, an environment can be used to evaluate the model on a
@@ -63,8 +63,8 @@ def main():
     # - Exploration Algorithm -
     # The exploration algorithm helps the RL Agent to explore the environment by occasionally choosing suboptimal
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
-    # Choose from "None", "EpsilonGreedy", "ICM", "RND", "ENM"
-    exploration_algorithm = "ENM"
+    # Choose from "None", "EpsilonGreedy", "ICM", "RND", "ENM", "NGU"
+    exploration_algorithm = "RND"
 
     # - Curriculum Strategy -
     # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for

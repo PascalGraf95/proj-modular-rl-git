@@ -220,7 +220,9 @@ class Actor:
             from ..exploration_algorithms.random_network_distillation import RandomNetworkDistillation as ExplorationAlgorithm
         elif exploration_algorithm == "ENM":
             from ..exploration_algorithms.episodic_novelty_module import EpisodicNoveltyModule as ExplorationAlgorithm
-            # TODO: Clean-it-up
+            self.use_episodic_intrinsic_rewards = True
+        elif exploration_algorithm == "NGU":
+            from ..exploration_algorithms.never_give_up import NeverGiveUp as ExplorationAlgorithm
             self.use_episodic_intrinsic_rewards = True
         else:
             raise ValueError("There is no {} exploration algorithm.".format(exploration_algorithm))
@@ -331,8 +333,6 @@ class Actor:
                     layer.reset_states()
 
     def register_terminal_agents(self, terminal_ids, clone=False):
-        # TODO: Reset Episodic Memory via function here
-        # - Check how to call agents per id directly
         if not self.recurrent:
             return
         # Reset the hidden and cell state for agents that are in a terminal episode state
@@ -397,13 +397,16 @@ class Actor:
         if self.use_episodic_intrinsic_rewards:
             terminal_ids = self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
             if len(terminal_ids):
-                self.exploration_algorithm.reset()
+                with tf.device(self.device):
+                    self.exploration_algorithm.reset()
         else:
             self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
 
         # Choose the next action either by exploring or exploiting
         if self.use_episodic_intrinsic_rewards:
-            episodic_intrinsic_reward = self.exploration_algorithm.act(decision_steps, terminal_steps)
+            with tf.device(self.device):
+                episodic_intrinsic_reward = self.exploration_algorithm.act(decision_steps, terminal_steps)
+                episodic_intrinsic_reward = 1
             actions = self.act(decision_steps.obs,
                                agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                mode=self.mode)
@@ -438,6 +441,11 @@ class Actor:
         # Append steps and actions to the local replay buffer
         if self.use_episodic_intrinsic_rewards:
             # In case of episodic intrinsic rewards rewards are directly augmented with intrinsic reward
+            '''
+            if len(terminal_ids):
+                augmented_reward_terminal = terminal_steps.reward + episodic_intrinsic_reward
+            else:
+                augmented_reward_terminal = terminal_steps.reward'''
             augmented_reward_terminal = terminal_steps.reward + episodic_intrinsic_reward
             augmented_reward_decision = decision_steps.reward + episodic_intrinsic_reward
             self.local_buffer.add_new_steps(terminal_steps.obs, augmented_reward_terminal,
@@ -458,7 +466,6 @@ class Actor:
         self.local_logger.track_episode(terminal_steps.reward,
                                         [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
                                         step_type="terminal")
-
         self.local_logger.track_episode(decision_steps.reward,
                                         [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                         step_type="decision")
