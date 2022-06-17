@@ -2,62 +2,76 @@ import tensorflow as tf
 import numpy as np
 import time
 
+from tensorflow.keras.losses import MeanSquaredError, CategoricalCrossentropy
+from tensorflow.keras.optimizers import Adam, SGD
+import tensorflow as tf
+import itertools
+from tensorflow.keras import Input, Model
+from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
+import time
+from collections import deque
+from tensorflow.keras.utils import plot_model
+
 np.random.seed(42)
 tf.random.set_seed(42)
 
 
 class Mooodel():
     def __init__(self):
-        input_layer = tf.keras.Input(shape=(None, 2))
-        lstm_out, hidden_state, cell_state = tf.keras.layers.LSTM(3, return_state=True)(input_layer)
-        output = tf.keras.layers.Dense(2)(lstm_out)
-        self.model = tf.keras.Model(inputs=input_layer, outputs=[output, hidden_state, cell_state])
-        self.lstm = self.model.get_layer("lstm")
-        print(self.lstm.units)
+        self.observation_shapes = [(35,)]
+        self.feature_space_size = 16
 
-    def get_zero_initial_state(self, inputs):
-        return [tf.zeros((2, 3)), tf.zeros((2, 3))]
+        # Override observation shapes
+        modified_observation_shapes = []
+        for obs_shape in self.observation_shapes:
+            modified_observation_shapes.append(obs_shape)
+        modified_observation_shapes.append((1,))
+        modified_observation_shapes.append((1,))
+        self.observation_shapes = modified_observation_shapes
 
-    def get_initial_state(self, inputs):
-        return self.initial_state
-
-    def set_zero_initial_state(self):
-        self.lstm.get_initial_state = lambda x: [tf.zeros((2, 3)), tf.zeros((2, 3))]
-
-    def set_initial_state(self, states):
-        self.initial_state = states
-        self.lstm.get_initial_state = lambda x: states
-
-    def __call__(self, inputs, states=None):
-        """
-        if states is None:
-            self.lstm.get_initial_state = self.get_zero_initial_state
-
+        # region Feature Extractor
+        if len(self.observation_shapes) == 1:
+            feature_input = Input((None, *self.observation_shapes[0]))
+            x = feature_input
         else:
-            self.initial_state = states
-            self.lstm.get_initial_state = self.get_initial_state
-        """
+            feature_input = []
+            for obs_shape in self.observation_shapes:
+                # obs_shape = (obs_shape,)
+                feature_input.append(Input((None, *obs_shape)))
+            x = Concatenate()(feature_input)
+        x = Dense(32, activation="relu")(x)
+        x = Dense(32, activation="relu")(x)
+        x = Dense(32, activation="relu")(x)
+        x = Dense(16, activation="relu")(x)
 
-        return self.model(inputs)
+        self.feature_extractor = Model(feature_input, x, name="ENM Feature Extractor")
+        # endregion
 
+        # region Classifier
+        #current_state_features = Input(self.feature_space_size)
+        #next_state_features = Input(self.feature_space_size)
+
+        current_state_features = Input((None, *(self.feature_space_size,)))
+        next_state_features = Input((None, *(self.feature_space_size,)))
+
+        x = Concatenate(axis=-1)([current_state_features, next_state_features])
+        x = Dense(128, 'relu')(x)
+        x = Dense(2, 'tanh')(x)  # CONT
+        self.embedding_classifier = Model([current_state_features, next_state_features], x, name="ENM Classifier")
+
+        # Summaries
+        self.feature_extractor.summary()
+        self.embedding_classifier.summary()
+        # endregion
 
 if __name__ == '__main__':
-    lstm_state = [np.ones((2, 3), dtype=np.float32), np.ones((2, 3), dtype=np.float32)]
-    #print(lstm_state)
-    #print(lstm_state[0].shape)
-    #print(tf.zeros(3).shape)
-    #lstm_state[0][0] = np.zeros(3)
-    #lstm_state[1][0] = np.zeros(3)
-    print(lstm_state)
-
+    state = [np.array([[0., 0., 0., 0., 1., 0., 0.5393357, 0., 0., 0., 0., 1., 0., 0.41818592, 0., 0., 0., 0.,
+                        1., 0., 0.5442544, 0., 0., 0., 0., 1., 0., 0.32862315, 0., 0., 0., 0., 1., 0.,
+                        0.8650164]], dtype=np.float32), np.array([[0.8650164]], dtype=np.float32)]
+    state.append(np.array([[0.69]], dtype=np.float32))
+    state = [tf.expand_dims(single_state, axis=1) for single_state in state]
     mdl = Mooodel()
     time.sleep(3)
-    x = np.random.rand(2, 1, 2).astype(np.float32)
-    out, hidden_state, cell_state = mdl(x)
-    print(np.mean(out))
-    mdl.set_initial_state([tf.convert_to_tensor(lstm_state[0]), tf.convert_to_tensor(lstm_state[1])])
-    out, hidden_state, cell_state = mdl(x)
-    print(np.mean(out))
-    mdl.set_zero_initial_state()
-    out, hidden_state, cell_state = mdl(x)
-    print(np.mean(out))
+    state_embedding = mdl.feature_extractor(state)[0]
+    action_prediction = mdl.embedding_classifier([state_embedding, state_embedding])
+    print(state_embedding)

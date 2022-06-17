@@ -11,6 +11,7 @@ from tensorflow.keras import Input, Model
 from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
 import time
 from collections import deque
+from tensorflow.keras.utils import plot_model
 
 
 class RandomNetworkDistillation(ExplorationAlgorithm):
@@ -62,7 +63,63 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
 
     def build_network(self):
         with tf.device(self.device):
-            # List with two dictionaries in it, one for each network.
+            # region Prediction Model
+            if len(self.observation_shapes) == 1:
+                if self.recurrent:
+                    feature_input = Input((None, *self.observation_shapes[0]))
+                else:
+                    feature_input = Input(self.observation_shapes[0])
+                x = feature_input
+            else:
+                feature_input = []
+                for obs_shape in self.observation_shapes:
+                    if self.recurrent:
+                        # Add additional time dimensions if networks work with recurrent replay batches
+                        feature_input.append(Input((None, *obs_shape)))
+                    else:
+                        feature_input.append(Input(obs_shape))
+                x = Concatenate()(feature_input)
+            x = Dense(32, activation="relu")(x)
+            x = Dense(32, activation="relu")(x)
+            x = Dense(self.feature_space_size, activation=None)(x)
+            prediction_model = Model(feature_input, x, name="RND_PredictionModel")
+            # endregion
+
+            # region Target Model
+            if len(self.observation_shapes) == 1:
+                if self.recurrent:
+                    feature_input = Input((None, *self.observation_shapes[0]))
+                else:
+                    feature_input = Input(self.observation_shapes[0])
+                x = feature_input
+            else:
+                feature_input = []
+                for obs_shape in self.observation_shapes:
+                    if self.recurrent:
+                        # Add additional time dimensions if networks work with recurrent replay batches
+                        feature_input.append(Input((None, *obs_shape)))
+                    else:
+                        feature_input.append(Input(obs_shape))
+                x = Concatenate()(feature_input)
+            x = Dense(32, activation="relu")(x)
+            x = Dense(32, activation="relu")(x)
+            x = Dense(self.feature_space_size, activation=None)(x)
+            target_model = Model(feature_input, x, name="RND_TargetModel")
+            # endregion
+
+            # Model plots
+            try:
+                plot_model(prediction_model, "plots/RND_PredictionModel.png", show_shapes=True)
+                plot_model(target_model, "plots/RND_TargetModel.png", show_shapes=True)
+            except ImportError:
+                print("Could not create model plots for RND.")
+
+            # Summaries
+            prediction_model.summary()
+            target_model.summary()
+            # endregion
+
+            '''# List with two dictionaries in it, one for each network.
             network_parameters = [{}, {}]
             # region --- Prediction Model ---
             # This model tries to mimic the target model for every state in the environment
@@ -87,7 +144,7 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
             network_parameters[1]['NetworkName'] = "RND_TargetModel"
 
             prediction_model = construct_network(network_parameters[0], plot_network_model=True)
-            target_model = construct_network(network_parameters[1], plot_network_model=True)
+            target_model = construct_network(network_parameters[1], plot_network_model=True)'''
 
             return prediction_model, target_model
 
@@ -117,82 +174,6 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         return
 
     def get_intrinsic_reward(self, replay_batch):
-        '''
-        # region --- Batch Reshaping ---
-        if self.recurrent:
-            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-                = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
-                                                                         self.action_shape, self.sequence_length)
-        else:
-            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-                = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes,
-                                                               self.action_shape)
-
-        if np.any(np.isnan(action_batch)):
-            return replay_batch
-        # endregion
-
-        # Normalize the observations
-        if self.normalize_observations:
-            for next_state in next_state_batch:
-                next_state -= self.observation_mean
-                next_state /= self.observation_std
-                next_state = np.clip(next_state, -5, 5)
-
-        # region --- Feature Calculation and Learning Step ---
-        with tf.device(self.device):
-            # Calculate the features for the next state batch with the target and the prediction model.
-            # Then calculate the Mean Squared Error between them.
-            with tf.GradientTape() as tape:
-                target_features = self.target_model(next_state_batch)
-                prediction_features = self.prediction_model(next_state_batch)
-                self.loss = self.mse(target_features, prediction_features)
-            # Calculate Gradients and apply the weight updates to the prediction model.
-            grad = tape.gradient(self.loss, self.prediction_model.trainable_weights)
-            self.optimizer.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
-        # endregion
-
-        # region --- Intrinsic Reward Calculation ---
-        # The intrinsic reward is the L2 error between target and prediction features summed over all features.
-        # This results in a 1D-array of rewards if non-recurrent or a 2D-array of rewards if recurrent.
-        intrinsic_reward = tf.math.sqrt(
-            tf.math.reduce_sum(tf.math.square(target_features - prediction_features), axis=-1)).numpy()
-
-        # Calculate the standard deviation of the intrinsic rewards to normalize them.
-        if self.recurrent:
-            for reward_sequence in intrinsic_reward:
-                for reward in reward_sequence:
-                    self.reward_deque.append(reward)
-        else:
-            for reward in intrinsic_reward:
-                self.reward_deque.append(reward)
-        self.reward_std = np.std(self.reward_deque)
-
-        # Normalize the intrinsic reward by the standard deviation
-        intrinsic_reward /= self.reward_std
-        # Scale the reward
-        intrinsic_reward *= self.reward_scaling_factor
-        # endregion
-
-        # region --- Store Max and Mean intrinsic rewards
-        self.max_intrinsic_reward = np.max(intrinsic_reward)
-        self.mean_intrinsic_reward = np.mean(intrinsic_reward)
-        # endregion
-
-        # region --- Overwrite Original Rewards ---
-        # If recurrent iterate through each sequence in the intrinsic reward array, then iterate through each reward
-        # and add it to the original reward of that sample.
-        if self.recurrent:
-            for seq_idx, reward_sequence in enumerate(intrinsic_reward):
-                for idx, rew in enumerate(reward_sequence):
-                    replay_batch[seq_idx][idx]["reward"] = \
-                        replay_batch[seq_idx][idx]["reward"]*(1-self.reward_scaling_factor)+rew
-        # Else just iterate through each reward and add it to the original sample.
-        else:
-            for idx, rew in enumerate(intrinsic_reward):
-                replay_batch[idx]["reward"] = \
-                    replay_batch[idx]["reward"]*(1-self.reward_scaling_factor)+rew
-        # endregion'''
         return replay_batch
 
     @staticmethod
@@ -204,7 +185,6 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         if not len(decision_steps.obs[0]):
             self.reward_deque.append(0)
             return 0
-
         current_state = decision_steps.obs
 
         # region Lifelong Novelty Module
@@ -221,8 +201,15 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
             current_state = np.clip(current_state, -5, 5)
 
         # Calculate the features for the current state with the target and the prediction model.
-        target_features = self.target_model(current_state)
-        prediction_features = self.prediction_model(current_state)
+        if self.recurrent:
+            # Add additional time dimension if recurrent networks are used
+            current_state = [tf.expand_dims(state, axis=1) for state in current_state]
+            target_features = self.target_model(current_state)[0]
+            prediction_features = self.prediction_model(current_state)[0]
+        else:
+            # Calculate the features for the current state with the target and the prediction model.
+            target_features = self.target_model(current_state)
+            prediction_features = self.prediction_model(current_state)
 
         # The rnd reward is the L2 error between target and prediction features summed over all features.
         self.intrinsic_reward = tf.math.sqrt(tf.math.reduce_sum(
@@ -246,12 +233,6 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
     def get_logs(self):
         return {"Exploration/RNDLoss": self.loss,
                 "Exploration/Reward_Act{:02d}_{:.4f}".format(self.index, self.reward_scaling_factor): self.intrinsic_reward}
-        '''
-        if self.index == 0:
-            return {"Exploration/RNDLoss": self.loss,
-                    "Exploration/MaxIntrinsicReward": self.max_intrinsic_reward}
-        else:
-            return {}'''
 
     def prevent_checkpoint(self):
         return False

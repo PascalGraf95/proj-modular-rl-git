@@ -3,7 +3,7 @@ import logging
 
 from modules.misc.replay_buffer import FIFOBuffer, PrioritizedBuffer
 from modules.misc.logger import GlobalLogger
-from modules.misc.utility import getsize, get_exploration_policies
+from modules.misc.utility import getsize, get_exploration_policies, print_policy_functions
 
 import os
 import numpy as np
@@ -58,6 +58,7 @@ class Trainer:
         # possible decay over time.
         self.exploration_configuration = None
         self.exploration_algorithm = None
+        self.exploration_policies = None
 
         # - Curriculum Learning Strategy -
         # The curriculum strategy determines when an agent has solved the current task level and is ready to proceed
@@ -149,21 +150,25 @@ class Trainer:
         # each actor will be instantiated with a different degree of exploration. This only has an effect if the
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
         # returns 0.
-        # TODO: Let NGU and ENM as single modules use regular exploration degree implementation
         if actor_num == 1 and mode == "training":
-            #if exploration_algorithm == "NGU" or exploration_algorithm == "ENM" or exploration_algorithm == "RND":
-            if exploration_algorithm == "NGU":
+            if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
                 self.exploration_policies = get_exploration_policies(num_policies=self.trainer_configuration["ActorNum"])
                 exploration_degree = self.exploration_policies
             else:
                 exploration_degree = [1.0]
         else:
-            #if exploration_algorithm == "NGU" or exploration_algorithm == "ENM" or exploration_algorithm == "RND":
-            if exploration_algorithm == "NGU":
+            if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
                 self.exploration_policies = get_exploration_policies(num_policies=self.trainer_configuration["ActorNum"])
                 exploration_degree = self.exploration_policies
             else:
                 exploration_degree = np.linspace(0, 1, actor_num)
+
+        # If NeverGiveUp or EpisodicNoveltyModule are used as exploration algorithms, use additional network inputs
+        # like the intrinsic reward
+        if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
+            self.trainer_configuration["AdditionalNetworkInputs"] = True
+        else:
+            self.trainer_configuration["AdditionalNetworkInputs"] = False
 
         # - Actor Instantiation -
         # Create the desired number of actors using the ray "remote"-function. Each of them will construct their own

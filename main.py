@@ -6,18 +6,12 @@
 import numpy as np
 from modules.trainer import Trainer
 np.set_printoptions(precision=2)
-'''
-import tensorflow as tf
-import os
-os.environ["RAY_DISABLE_MEMORY_MONITOR"] = '1'
 
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-  try:
-    for gpu in gpus:
-      tf.config.experimental.set_memory_growth(gpu, True)
-  except RuntimeError as e:
-    print(e)'''
+import random
+import tensorflow as tf
+random.seed(0)
+np.random.seed(0)
+tf.random.set_seed(0)
 # endregion
 
 
@@ -32,11 +26,6 @@ def main():
 
     :return: None
     """
-    import random
-    random.seed(0)
-    np.random.seed(0)
-    import tensorflow as tf
-    tf.random.set_seed(0)
     # region  --- Parameter Choice ---
 
     # Choose between "training", "testing" or "fastTesting"
@@ -53,6 +42,7 @@ def main():
     # regular basis. Please provide a path or type None to connect directly to the Unity Editor. Otherwise, type
     # 'NoEnv' to proceed without evaluation.
     environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\3DBall_singleAgent\Skiing.exe"
+    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\minimHallway\Hallway.exe"
 
     # - Training Algorithm -
     # This is the core learning algorithm behind the RL Agent. While Deep Q-Learning / Deep Q Networks (DQN) presumably
@@ -68,7 +58,7 @@ def main():
     # The exploration algorithm helps the RL Agent to explore the environment by occasionally choosing suboptimal
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
     # Choose from "None", "EpsilonGreedy", "ICM", "RND", "ENM", "NGU"
-    exploration_algorithm = "NGU"
+    exploration_algorithm = "ENM"
 
     # - Curriculum Strategy -
     # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for
@@ -90,7 +80,6 @@ def main():
     # - Misc -
     trainer.save_all_models = True  # Determines if all models or only the actor will be saved during training
     trainer.remove_old_checkpoints = True  # Determines if old model checkpoints will be overwritten
-
     # endregion
 
     # region --- Initialization ---

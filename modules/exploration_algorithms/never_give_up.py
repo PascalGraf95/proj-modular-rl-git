@@ -41,6 +41,16 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.action_space = action_space
         self.action_shape = action_shape
         self.observation_shapes = observation_shapes
+
+        # Modify observation shapes to add additional Inputs
+        # Override observation shapes
+        modified_observation_shapes = []
+        for obs_shape in self.observation_shapes:
+            modified_observation_shapes.append(obs_shape)
+        modified_observation_shapes.append((1,))
+        modified_observation_shapes.append((1,))
+        self.observation_shapes = modified_observation_shapes
+
         self.index = idx
         self.device = '/cpu:0'
         self.episodic_novelty_module_built = False
@@ -49,7 +59,7 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.sequence_length = training_parameters["SequenceLength"]
 
         self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
-        self.beta = exploration_parameters["ExplorationDegree"]["beta"]
+        self.reward_scaling_factor = exploration_parameters["ExplorationDegree"]["beta"]
 
         print('******************************************************************')
         print('Actor Index:', self.index)
@@ -66,8 +76,6 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.optimizer = Adam(exploration_parameters["LearningRate"])
         self.lifelong_loss = 0
         self.episodic_loss = 0
-        #self.enm_reward = 0
-        #self.rnd_reward = 0  # Refers to alpha, a curiosity scaling factor
         self.intrinsic_reward = 0
 
         # region Episodic novelty module
@@ -100,7 +108,65 @@ class NeverGiveUp(ExplorationAlgorithm):
         with tf.device(self.device):
             # region Episodic Novelty Module
             if not self.episodic_novelty_module_built:
-                # List with two dictionaries in it, one for each network.
+                # region Feature Extractor
+                if len(self.observation_shapes) == 1:
+                    if self.recurrent:
+                        feature_input = Input((None, *self.observation_shapes[0]))
+                    else:
+                        feature_input = Input(self.observation_shapes[0])
+                    x = feature_input
+                else:
+                    feature_input = []
+                    for obs_shape in self.observation_shapes:
+                        if self.recurrent:
+                            # Add additional time dimensions if networks work with recurrent replay batches
+                            feature_input.append(Input((None, *obs_shape)))
+                        else:
+                            feature_input.append(Input(obs_shape))
+                    x = Concatenate()(feature_input)
+                x = Dense(32, activation="relu")(x)
+                x = Dense(32, activation="relu")(x)
+                x = Dense(32, activation="relu")(x)
+                x = Dense(self.feature_space_size, activation="relu")(x)
+                feature_extractor = Model(feature_input, x, name="ENM Feature Extractor")
+                # endregion
+
+                # region Classifier
+                if self.recurrent:
+                    # Add additional time dimension if networks work with recurrent replay batches
+                    current_state_features = Input((None, *(self.feature_space_size,)))
+                    next_state_features = Input((None, *(self.feature_space_size,)))
+                else:
+                    current_state_features = Input(self.feature_space_size)
+                    next_state_features = Input(self.feature_space_size)
+                x = Concatenate(axis=-1)([current_state_features, next_state_features])
+                x = Dense(64, 'relu')(x)
+                if self.action_space == "DISCRETE":
+                    x = Dense(self.action_shape[0], 'softmax')(x)
+                elif self.action_space == "CONTINUOUS":
+                    x = Dense(self.action_shape, 'tanh')(x)
+                embedding_classifier = Model([current_state_features, next_state_features], x, name="ENM Classifier")
+                # endregion
+
+                # region Model compilation and plotting
+                if self.action_space == "DISCRETE":
+                    embedding_classifier.compile(loss=self.cce, optimizer=self.optimizer)
+                elif self.action_space == "CONTINUOUS":
+                    embedding_classifier.compile(loss=self.mse, optimizer=self.optimizer)
+
+                # Model plots
+                try:
+                    plot_model(feature_extractor, "plots/ENM_FeatureExtractor.png", show_shapes=True)
+                    plot_model(embedding_classifier, "plots/ENM_EmbeddingClassifier.png", show_shapes=True)
+                except ImportError:
+                    print("Could not create model plots for ENM.")
+
+                # Summaries
+                feature_extractor.summary()
+                embedding_classifier.summary()
+                # endregion
+
+                '''# List with two dictionaries in it, one for each network.
                 network_parameters = [{}, {}]
                 # region --- Feature Extraction Model ---
                 # This model outputs an embedding vector consisting of observation components the agent can influence
@@ -138,13 +204,70 @@ class NeverGiveUp(ExplorationAlgorithm):
                     network_parameters[1]['OutputActivation'] = ["tanh"]
 
                 feature_extractor = construct_network(network_parameters[0], plot_network_model=True)
-                embedding_classifier = construct_network(network_parameters[1], plot_network_model=True)
+                embedding_classifier = construct_network(network_parameters[1], plot_network_model=True)'''
 
                 return feature_extractor, embedding_classifier
             # endregion
+
             # region Lifelong Novelty Module
             else:
-                # List with two dictionaries in it, one for each network.
+                # region Prediction Model
+                if len(self.observation_shapes) == 1:
+                    if self.recurrent:
+                        feature_input = Input((None, *self.observation_shapes[0]))
+                    else:
+                        feature_input = Input(self.observation_shapes[0])
+                    x = feature_input
+                else:
+                    feature_input = []
+                    for obs_shape in self.observation_shapes:
+                        if self.recurrent:
+                            # Add additional time dimensions if networks work with recurrent replay batches
+                            feature_input.append(Input((None, *obs_shape)))
+                        else:
+                            feature_input.append(Input(obs_shape))
+                    x = Concatenate()(feature_input)
+                x = Dense(32, activation="relu")(x)
+                x = Dense(32, activation="relu")(x)
+                x = Dense(self.feature_space_size, activation=None)(x)
+                prediction_model = Model(feature_input, x, name="RND_PredictionModel")
+                # endregion
+
+                # region Target Model
+                if len(self.observation_shapes) == 1:
+                    if self.recurrent:
+                        feature_input = Input((None, *self.observation_shapes[0]))
+                    else:
+                        feature_input = Input(self.observation_shapes[0])
+                    x = feature_input
+                else:
+                    feature_input = []
+                    for obs_shape in self.observation_shapes:
+                        if self.recurrent:
+                            # Add additional time dimensions if networks work with recurrent replay batches
+                            feature_input.append(Input((None, *obs_shape)))
+                        else:
+                            feature_input.append(Input(obs_shape))
+                    x = Concatenate()(feature_input)
+                x = Dense(32, activation="relu")(x)
+                x = Dense(32, activation="relu")(x)
+                x = Dense(self.feature_space_size, activation=None)(x)
+                target_model = Model(feature_input, x, name="RND_TargetModel")
+                # endregion
+
+                # Model plots
+                try:
+                    plot_model(prediction_model, "plots/RND_PredictionModel.png", show_shapes=True)
+                    plot_model(target_model, "plots/RND_TargetModel.png", show_shapes=True)
+                except ImportError:
+                    print("Could not create model plots for RND.")
+
+                # Summaries
+                prediction_model.summary()
+                target_model.summary()
+                # endregion
+
+                '''# List with two dictionaries in it, one for each network.
                 network_parameters = [{}, {}]
                 # region --- Prediction Model ---
                 # This model tries to mimic the target model for every state in the environment
@@ -169,7 +292,7 @@ class NeverGiveUp(ExplorationAlgorithm):
                 network_parameters[1]['NetworkName'] = "RND_TargetModel"
 
                 prediction_model = construct_network(network_parameters[0], plot_network_model=True)
-                target_model = construct_network(network_parameters[1], plot_network_model=True)
+                target_model = construct_network(network_parameters[1], plot_network_model=True)'''
 
                 return prediction_model, target_model
                 # endregion
@@ -203,13 +326,13 @@ class NeverGiveUp(ExplorationAlgorithm):
 
             # region ENM
             with tf.GradientTape() as tape:
-                # Calculate features of this and next state
+                # Calculate features of current and next state
                 state_features = self.feature_extractor(state_batch)
                 next_state_features = self.feature_extractor(next_state_batch)
 
-                # Inverse Loss
                 action_prediction = self.embedding_classifier([state_features, next_state_features])
 
+                # Calculate inverse loss
                 if self.action_space == "DISCRETE":
                     # TODO: Turn into real and working code
                     # Encode true action as one hot vector encoding
@@ -229,7 +352,6 @@ class NeverGiveUp(ExplorationAlgorithm):
             self.optimizer.apply_gradients(zip(grad[0], self.embedding_classifier.trainable_weights))
             self.optimizer.apply_gradients(zip(grad[1], self.feature_extractor.trainable_weights))
             # endregion
-
         return
 
     def get_intrinsic_reward(self, replay_batch):
@@ -241,17 +363,11 @@ class NeverGiveUp(ExplorationAlgorithm):
         return ExplorationAlgorithm.get_config(config_dict)
 
     def act(self, decision_steps, terminal_steps):
-        if len(decision_steps.obs[0]):
-            current_state = decision_steps.obs
-        else:
+        if not len(decision_steps.obs[0]):
             self.rnd_reward_deque.append(0)
             self.mean_distances.append(0)
             return 0
-        '''
-        # Alternative
-        else:
-            current_state = terminal_steps.obs
-        '''
+        current_state = decision_steps.obs
 
         # region Lifelong Novelty Module
         if self.normalize_observations:
@@ -267,12 +383,20 @@ class NeverGiveUp(ExplorationAlgorithm):
             current_state = np.clip(current_state, -5, 5)
 
         # Calculate the features for the current state with the target and the prediction model.
-        target_features = self.target_model(current_state)
-        prediction_features = self.prediction_model(current_state)
+        if self.recurrent:
+            # Add additional time dimension if recurrent networks are used
+            current_state = [tf.expand_dims(state, axis=1) for state in decision_steps.obs]
+            # '[0]' -> to get rid of time dimension directly after network inference
+            target_features = self.target_model(current_state)[0]
+            prediction_features = self.prediction_model(current_state)[0]
+        else:
+            target_features = self.target_model(current_state)
+            prediction_features = self.prediction_model(current_state)
 
         # The rnd reward is the L2 error between target and prediction features summed over all features.
         rnd_reward = tf.math.sqrt(tf.math.reduce_sum(
             tf.math.square(target_features - prediction_features), axis=-1)).numpy()
+        # To prevent scalar related logging error
         rnd_reward = rnd_reward[0]
 
         # Calculate the running standard deviation and mean of the rnd rewards to normalize it.
@@ -289,7 +413,11 @@ class NeverGiveUp(ExplorationAlgorithm):
 
         # region Episodic Novelty Module
         # Extract relevant features from current state
-        state_embedding = self.feature_extractor(current_state)
+        if self.recurrent:
+            # '[0]' -> to get rid of time dimension directly after network inference
+            state_embedding = self.feature_extractor(current_state)[0]
+        else:
+            state_embedding = self.feature_extractor(current_state)
 
         # Calculate the euclidean distances between current state embedding and the ones within episodic memory (N_k)
         embedding_distances = [np.linalg.norm(mem_state_embedding - state_embedding)
@@ -325,26 +453,22 @@ class NeverGiveUp(ExplorationAlgorithm):
             enm_reward = 0
         else:
             # 1/similarity to encourage visiting states with lower similarity
-            enm_reward = self.beta * (1 / similarity)
+            enm_reward = self.reward_scaling_factor * (1 / similarity)
         # endregion
 
         # Calculate final and combined intrinsic reward
         self.intrinsic_reward = enm_reward * min(max(rnd_reward, 1), self.alpha_max)
-
         return self.intrinsic_reward
-
 
     def get_logs(self):
         return {"Exploration/EpisodicLoss": self.episodic_loss,
                 "Exploration/LifeLongLoss": self.lifelong_loss,
-                "Exploration/Reward_Act{:02d}_{:.4f}".format(self.index, self.beta): self.intrinsic_reward}
+                "Exploration/Reward_Act{:02d}_{:.4f}".format(self.index, self.reward_scaling_factor): self.intrinsic_reward}
 
     def reset(self):
         """Empty episodic memory and clear euclidean distance metrics."""
-        '''
-        self.mean_distances.clear()
-        self.episodic_memory.clear()
-        '''
+        #self.mean_distances.clear()
+        #self.episodic_memory.clear()
         return
 
     def prevent_checkpoint(self):

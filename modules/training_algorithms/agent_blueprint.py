@@ -90,6 +90,8 @@ class Actor:
         self.exploration_algorithm = None
         self.adaptive_exploration = False
         self.use_episodic_intrinsic_rewards = False
+        self.additional_network_inputs = False
+        self.last_episodic_instrinsic_reward = 0
 
         # - Curriculum Learning Strategy & Engine Side Channel -
         self.engine_configuration_channel = None
@@ -286,6 +288,23 @@ class Actor:
                                                           trainer_configuration["ExplorationParameters"],
                                                           trainer_configuration,
                                                           self.index)
+
+        # If necessary update the observation shapes through adding additional network inputs
+        if trainer_configuration["AdditionalNetworkInputs"]:
+            self.additional_network_inputs = True
+            # Add additional network inputs to actor and learner network for proper training with never give up and
+            # episodic novelty module.
+            with tf.device(self.device):
+                modified_observation_shapes = []
+                for obs_shape in self.environment_configuration["ObservationShapes"]:
+                        modified_observation_shapes.append(obs_shape)
+                # - intrinsic rewards
+                modified_observation_shapes.append((1,))
+                # - j (index of exploration policy (beta, gamma) -> NGU)
+                modified_observation_shapes.append((1,))
+            self.environment_configuration["ObservationShapes"] = modified_observation_shapes
+            self.observation_shapes = modified_observation_shapes
+
         # Instantiate the Curriculum Side Channel.
         self.curriculum_communicator = CurriculumCommunicator(self.curriculum_side_channel)
 
@@ -383,21 +402,24 @@ class Actor:
             for idx, agent_id in enumerate(agent_ids):
                 self.clone_lstm_state[0][agent_id] = lstm_state[0][idx]
                 self.clone_lstm_state[1][agent_id] = lstm_state[1][idx]
-
     # endregion
 
     # region Environment Interaction
     def play_one_step(self, training_step):
+        # TODO: Add epsilon-greedy actor behaviour
         # Step acquisition (steps contain states, done_flags and rewards)
         decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
         # Preprocess steps if a respective algorithm has been activated
         decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
                                                                                               terminal_steps)
         # Register terminal agents, so the hidden LSTM state is reset
-        # If episodic intrinsic rewards are used (e.g. with NGU-Rewards), episodic memory needs to be reset
+        # If episodic intrinsic rewards are used (e.g. with NGU-Rewards), specific algorithm metrics need to be reset
         if self.use_episodic_intrinsic_rewards:
             terminal_ids = self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
             if len(terminal_ids):
+                # Last episodic intrinsic reward equals 0 in the episode beginning
+                self.last_episodic_instrinsic_reward = 0
+                # Reset exploration algorithm
                 with tf.device(self.device):
                     self.exploration_algorithm.reset()
         else:
@@ -406,12 +428,22 @@ class Actor:
         # Choose the next action either by exploring or exploiting
         if self.use_episodic_intrinsic_rewards:
             with tf.device(self.device):
+                if self.additional_network_inputs:
+                    # Augment decision and terminal steps 'globally' with additional inputs
+                    # TODO: Replace reward_scaling_factor by policy index chosen by meta-controller
+                    decision_steps.obs.append(np.array([[self.last_episodic_instrinsic_reward]], dtype=np.float32))
+                    decision_steps.obs.append(np.array([[self.exploration_algorithm.reward_scaling_factor]], dtype=np.float32))
+                    if len(terminal_steps.obs[0]):
+                        terminal_steps.obs.append(np.array([[self.last_episodic_instrinsic_reward]], dtype=np.float32))
+                        terminal_steps.obs.append(np.array([[self.exploration_algorithm.reward_scaling_factor]], dtype=np.float32))
+                # Calculate episodic intrinsic reward
                 episodic_intrinsic_reward = self.exploration_algorithm.act(decision_steps, terminal_steps)
+
             actions = self.act(decision_steps.obs,
                                agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                mode=self.mode)
         else:
-            actions = self.exploration_algorithm.act(decision_steps)
+            actions = self.exploration_algorithm.act(decision_steps, terminal_steps)
             if actions is None:
                 actions = self.act(decision_steps.obs,
                                    agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
@@ -441,11 +473,7 @@ class Actor:
         # Append steps and actions to the local replay buffer
         # In case of episodic intrinsic rewards rewards are directly augmented with intrinsic reward
         if self.use_episodic_intrinsic_rewards:
-            if len(terminal_ids):
-                augmented_reward_terminal = terminal_steps.reward + episodic_intrinsic_reward
-            else:
-                augmented_reward_terminal = terminal_steps.reward
-            #augmented_reward_terminal = terminal_steps.reward + episodic_intrinsic_reward
+            augmented_reward_terminal = terminal_steps.reward + episodic_intrinsic_reward
             augmented_reward_decision = decision_steps.reward + episodic_intrinsic_reward
             self.local_buffer.add_new_steps(terminal_steps.obs, augmented_reward_terminal,
                                             [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
