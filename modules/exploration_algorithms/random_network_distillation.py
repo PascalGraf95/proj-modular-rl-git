@@ -154,6 +154,12 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
                                                                          self.action_shape, self.sequence_length)
+
+            # Only use last 5 time steps of sequences for training
+            state_batch = [state_input[:, -5:] for state_input in state_batch]
+            next_state_batch = [next_state_input[:, -5:] for next_state_input in next_state_batch]
+            action_batch = [action_sequence[-5:] for action_sequence in action_batch]
+
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes,
@@ -231,8 +237,7 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         return self.intrinsic_reward
 
     def get_logs(self):
-        return {"Exploration/RNDLoss": self.loss,
-                "Exploration/Reward_Act{:02d}_{:.4f}".format(self.index, self.reward_scaling_factor): self.intrinsic_reward}
+        return {"Exploration/RNDLoss": self.loss}
 
     def prevent_checkpoint(self):
         return False

@@ -452,11 +452,11 @@ class Actor:
             with tf.device(self.device):
                 # Calculate episodic intrinsic reward and scale by exploration policies' beta
                 episodic_intrinsic_reward = self.exploration_algorithm.act(decision_steps, terminal_steps)
-                # TODO: Replace index with meta-controller output
-                episodic_intrinsic_reward *= self.exploration_policies[self.exploration_algorithm.index]['beta']
 
                 # Add additional inputs to the observation
                 if self.additional_network_inputs:
+                    # TODO: Replace index with meta-controller output
+                    episodic_intrinsic_reward *= self.exploration_policies[self.exploration_algorithm.index]['beta']
                     # Augment decision and terminal steps 'globally' with additional inputs
                     if self.action_type == "CONTINUOUS":
                         decision_steps.obs.append(np.array([[self.prior_action[0], self.prior_action[1]]],
@@ -467,10 +467,6 @@ class Actor:
                     decision_steps.obs.append(np.array([[self.prior_intrinsic_reward]], dtype=np.float32))
                     # TODO: Replace index with meta-controller output
                     decision_steps.obs.append(np.array([[self.exploration_algorithm.index]], dtype=np.float32))
-                    '''decision_steps.obs.append(np.array([[self.exploration_algorithm.reward_scaling_factor]],
-                                                       dtype=np.float32))
-                    decision_steps.obs.append(np.array([[self.exploration_algorithm.exploration_policy_gamma]],
-                                                       dtype=np.float32))'''
 
                     if len(terminal_steps.obs[0]):
                         if self.action_type == "CONTINUOUS":
@@ -482,25 +478,26 @@ class Actor:
                         terminal_steps.obs.append(np.array([[self.prior_intrinsic_reward]], dtype=np.float32))
                         # TODO: Replace index with meta-controller output
                         terminal_steps.obs.append(np.array([[self.exploration_algorithm.index]], dtype=np.float32))
-                        '''terminal_steps.obs.append(np.array([[self.exploration_algorithm.reward_scaling_factor]],
-                                                           dtype=np.float32))
-                        terminal_steps.obs.append(np.array([[self.exploration_algorithm.exploration_policy_gamma]],
-                                                           dtype=np.float32))'''
 
-                # Use epsilon-greedy to act
-                actions = self.exploration_algorithm.epsilon_greedy(decision_steps)
-            if actions is None:
-                actions = self.act(decision_steps.obs,
-                                   agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
-                                   mode=self.mode)
+                    # Use epsilon-greedy to act (must be the case when using NGU and ENM and therefore additional inputs)
+                    actions = self.exploration_algorithm.epsilon_greedy(decision_steps)
+                    if actions is None:
+                        actions = self.act(decision_steps.obs,
+                                           agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                           mode=self.mode)
 
-            # Track 'prior'-metrics
-            self.prior_intrinsic_reward = episodic_intrinsic_reward
-            if not len(terminal_steps.obs[0]):
-                self.prior_extrinsic_reward = decision_steps.reward[0]
-                self.prior_action = actions[0]
-            else:
-                self.prior_extrinsic_reward = terminal_steps.reward[0]
+                    # Track 'prior'-metrics
+                    self.prior_intrinsic_reward = episodic_intrinsic_reward
+                    if not len(terminal_steps.obs[0]):
+                        self.prior_extrinsic_reward = decision_steps.reward[0]
+                        self.prior_action = actions[0]
+                    else:
+                        self.prior_extrinsic_reward = terminal_steps.reward[0]
+                # RND for example does not use additional network inputs
+                else:
+                    actions = self.act(decision_steps.obs,
+                                       agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                       mode=self.mode)
 
         else:
             actions = self.exploration_algorithm.act(decision_steps, terminal_steps)
