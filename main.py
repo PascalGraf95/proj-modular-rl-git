@@ -31,7 +31,7 @@ def main():
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
     mode = "training"
-    model_path = None #r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220601_155820_SAC_3DBall_agent57Branch_wRND"
+    model_path = None #r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220620_095122_SAC_3DBall_NGU"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()

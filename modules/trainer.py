@@ -153,12 +153,14 @@ class Trainer:
         if actor_num == 1 and mode == "training":
             if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
                 self.exploration_policies = get_exploration_policies(num_policies=self.trainer_configuration["ActorNum"])
+                self.trainer_configuration["ExplorationPolicies"] = self.exploration_policies
                 exploration_degree = self.exploration_policies
             else:
                 exploration_degree = [1.0]
         else:
             if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
                 self.exploration_policies = get_exploration_policies(num_policies=self.trainer_configuration["ActorNum"])
+                self.trainer_configuration["ExplorationPolicies"] = self.exploration_policies
                 exploration_degree = self.exploration_policies
             else:
                 exploration_degree = np.linspace(0, 1, actor_num)
@@ -291,8 +293,7 @@ class Trainer:
         [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True), total_episodes)
          for actor in self.actors]
         # endregion
-        # TODO: Make gamma sampleable within trainer_configuration - Needs to be pushed with samples
-        # TODO: Add additional inputs to network constructor in case of intrinsic reward feedback-loop and j
+
         while True:
             # region --- Acting ---
             # Receiving the latest state from its environment each actor chooses an action according to its policy
@@ -336,12 +337,10 @@ class Trainer:
 
             # Train the learner networks with the batch and observe the resulting metrics.
             training_metrics, sample_errors, training_step = self.learner.learn.remote(samples)
-
             # In case of a PER update the buffer priorities with the temporal difference errors
             self.global_buffer.update.remote(indices, sample_errors)
 
             # Train the actor's exploration algorithm with the same batch
-            # TODO: Sync network weights between actors as they hold the exploration algorithms
             [actor.exploration_learning_step.remote(samples) for actor in self.actors]
 
             # If the training algorithm is constructed to act and learn by utilizing a recurrent neural network a

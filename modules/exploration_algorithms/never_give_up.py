@@ -41,30 +41,35 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.action_space = action_space
         self.action_shape = action_shape
         self.observation_shapes = observation_shapes
-
-        # Modify observation shapes to add additional Inputs
-        # Override observation shapes
-        modified_observation_shapes = []
-        for obs_shape in self.observation_shapes:
-            modified_observation_shapes.append(obs_shape)
-        modified_observation_shapes.append((1,))
-        modified_observation_shapes.append((1,))
-        self.observation_shapes = modified_observation_shapes
+        self.observation_shapes_modified = observation_shapes
 
         self.index = idx
         self.device = '/cpu:0'
-        self.episodic_novelty_module_built = False
 
+        # Epsilon-Greedy Parameters
+        self.epsilon = self.get_epsilon_greedy_parameters(self.index, training_parameters["ActorNum"])
+        self.epsilon_decay = exploration_parameters["EpsilonDecay"]
+        self.epsilon_min = exploration_parameters["EpsilonMin"]
+        self.step_down = exploration_parameters["StepDown"]
+        self.training_step = 0
+
+        # TODO: Use separate function
+        # Modify observation shapes to use modified shape for sampling
+        modified_observation_shapes = []
+        for obs_shape in self.observation_shapes:
+            modified_observation_shapes.append(obs_shape)
+        modified_observation_shapes.append((self.action_shape,))
+        modified_observation_shapes.append((1,))
+        modified_observation_shapes.append((1,))
+        modified_observation_shapes.append((1,))
+        #modified_observation_shapes.append((1,))
+        self.observation_shapes_modified = modified_observation_shapes
+
+        # Parameters required during network build-up
+        self.episodic_novelty_module_built = False
         self.recurrent = training_parameters["Recurrent"]
         self.sequence_length = training_parameters["SequenceLength"]
-
         self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
-        self.reward_scaling_factor = exploration_parameters["ExplorationDegree"]["beta"]
-
-        print('******************************************************************')
-        print('Actor Index:', self.index)
-        print('Exploration Policy:', exploration_parameters["ExplorationDegree"])
-        print('******************************************************************')
 
         # Categorical Cross-Entropy for discrete action spaces
         # Mean Squared Error for continuous action spaces
@@ -78,7 +83,7 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.episodic_loss = 0
         self.intrinsic_reward = 0
 
-        # region Episodic novelty module
+        # region Episodic novelty module parameters
         self.k = exploration_parameters["kNearest"]
         self.cluster_distance = exploration_parameters["ClusterDistance"]
         self.eps = exploration_parameters["KernelEpsilon"]
@@ -91,7 +96,7 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.episodic_novelty_module_built = True
         # endregion
 
-        # region Lifelong novelty module
+        # region Lifelong novelty module parameters
         self.normalize_observations = exploration_parameters["ObservationNormalization"]
         self.observation_deque = deque(maxlen=1000)
         self.observation_mean = 0
@@ -301,19 +306,39 @@ class NeverGiveUp(ExplorationAlgorithm):
         # region --- Batch Reshaping ---
         if self.recurrent:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-                = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
+                = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes_modified,
                                                                          self.action_shape, self.sequence_length)
+
+            # Only use last 5 time steps of sequences for training
+            state_batch = [state_input[:, -5:] for state_input in state_batch]
+            next_state_batch = [next_state_input[:, -5:] for next_state_input in next_state_batch]
+            action_batch = [action_sequence[-5:] for action_sequence in action_batch]
+
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-                = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes,
+                = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes_modified,
                                                                self.action_shape)
 
         if np.any(np.isnan(action_batch)):
             return replay_batch
+
+        # Clear extra state parts added during acting as they must not be used by the exploration algorithms
+        state_batch = state_batch[:-4]
+        next_state_batch = next_state_batch[:-4]
         # endregion
 
+        # region Epsilon-Greedy learning step
+        self.training_step += 1
+        if self.epsilon >= self.epsilon_min and not self.step_down:
+            self.epsilon *= self.epsilon_decay
+
+        if self.training_step >= self.step_down and self.step_down:
+            self.epsilon = self.epsilon_min
+        # endregion
+
+        # region Episodic and Lifelong Novelty Modules learning step
         with tf.device(self.device):
-            # region RND
+            # region Lifelong Novelty Module
             with tf.GradientTape() as tape:
                 target_features = self.target_model(next_state_batch)
                 prediction_features = self.prediction_model(next_state_batch)
@@ -324,7 +349,7 @@ class NeverGiveUp(ExplorationAlgorithm):
             self.optimizer.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
             # endregion
 
-            # region ENM
+            # region Episodic Novelty Module
             with tf.GradientTape() as tape:
                 # Calculate features of current and next state
                 state_features = self.feature_extractor(state_batch)
@@ -352,6 +377,7 @@ class NeverGiveUp(ExplorationAlgorithm):
             self.optimizer.apply_gradients(zip(grad[0], self.embedding_classifier.trainable_weights))
             self.optimizer.apply_gradients(zip(grad[1], self.feature_extractor.trainable_weights))
             # endregion
+        # endregion
         return
 
     def get_intrinsic_reward(self, replay_batch):
@@ -453,17 +479,46 @@ class NeverGiveUp(ExplorationAlgorithm):
             enm_reward = 0
         else:
             # 1/similarity to encourage visiting states with lower similarity
-            enm_reward = self.reward_scaling_factor * (1 / similarity)
+            #enm_reward = self.reward_scaling_factor * (1 / similarity)
+            enm_reward = (1 / similarity)
         # endregion
 
         # Calculate final and combined intrinsic reward
         self.intrinsic_reward = enm_reward * min(max(rnd_reward, 1), self.alpha_max)
         return self.intrinsic_reward
 
+    def epsilon_greedy(self, decision_steps):
+        if len(decision_steps.agent_id):
+            if np.random.rand() <= self.epsilon:
+                if self.action_space == "DISCRETE":
+                    return np.random.randint(0, self.action_shape, (len(decision_steps.agent_id), 1))
+                else:
+                    return np.random.uniform(-1.0, 1.0, (len(decision_steps.agent_id), self.action_shape))
+        return None
+
+    def get_epsilon_greedy_parameters(self, actor_idx, num_actors):
+        """
+        Calculate this actors' epsilon for epsilon-greedy acting behaviour.
+
+        Parameters
+        ----------
+        actor_idx: int
+            The index of this actor.
+        num_actors: int
+            Total number of actors used.
+
+        Returns
+        ----------
+        epsilon: float
+            Epsilon-Greedy's initial epsilon value.
+        """
+        epsilon = 0.4**(1 + 8 * (actor_idx / (num_actors - 1)))
+        return epsilon
+
     def get_logs(self):
         return {"Exploration/EpisodicLoss": self.episodic_loss,
                 "Exploration/LifeLongLoss": self.lifelong_loss,
-                "Exploration/Reward_Act{:02d}_{:.4f}".format(self.index, self.reward_scaling_factor): self.intrinsic_reward}
+                "Exploration/Agent{:03d}Epsilon".format(self.index): self.epsilon}
 
     def reset(self):
         """Empty episodic memory and clear euclidean distance metrics."""

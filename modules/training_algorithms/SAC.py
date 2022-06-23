@@ -86,6 +86,10 @@ class SACActor(Actor):
             critic_prediction = self.critic_network([*next_state_batch, next_actions])
             critic_target = critic_prediction * (1 - done_batch)
 
+            # Use gamma given through exploration policy index (is equal for entire sequence)
+            if self.additional_network_inputs:
+                self.gamma = self.exploration_policies[state_batch[-1][0][0][0]]['gamma']
+
             # Train Both Critic Networks
             y = reward_batch + (self.gamma ** self.n_steps) * critic_target
             sample_errors = np.abs(y - self.critic_network([*state_batch, action_batch]))
@@ -379,7 +383,11 @@ class SACLearner(Learner):
 
         # Training Target Calculation with standard TD-Error + Temperature Parameter
         critic_target = (critic_target_prediction - self.alpha * next_log_prob) * (1 - done_batch)
-        # TODO: Sample gamma with exploration policy index
+
+        # Use gamma given through exploration policy index (is equal for entire sequence)
+        if self.additional_network_inputs:
+            self.gamma = self.exploration_policies[state_batch[-1][0][0][0]]['gamma']
+
         y = reward_batch + (self.gamma ** self.n_steps) * critic_target
 
         # Possible Reward Normalization
