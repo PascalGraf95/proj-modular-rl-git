@@ -51,7 +51,13 @@ dqn:
         KernelEpsilon: 0.0001
         KernelConstant: 0.001
         MaximumSimilarity: 8
-        EpisodicMemoryCapacity: 1000
+        EpisodicMemoryCapacity: 600
+    MetaLearningParameters:
+        Epsilon: 0.99
+        EpsilonDecay: 0.995
+        EpsilonMin: 0.02
+        StepDown: false
+        UCBWindowSize: 90
     Gamma: 0.99
     LearningRate: 0.0005
     NSteps: 4
@@ -74,20 +80,20 @@ dqn:
     TrainingInterval: 1
 sac:
     Recurrent: true
-    BurnIn: 4
+    BurnIn: 10
     AdaptiveSequenceLength: false
-    SequenceLength: 15
-    Overlap: 6
-    ActorNum: 6
+    SequenceLength: 60
+    Overlap: 5
+    ActorNum: 8
     BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
-        FeatureSpaceSize: 16
+        FeatureSpaceSize: 18
         CuriosityScalingFactor: 0.02
         LearningRate: 0.0005
         Epsilon: 0.99
-        EpsilonDecay: 0.9995
-        EpsilonMin: 0.0001
+        EpsilonDecay: 0.999
+        EpsilonMin: 0.02
         StepDown: false
         ObservationNormalization: false
         kNearest: 10
@@ -95,7 +101,72 @@ sac:
         KernelEpsilon: 0.0001
         KernelConstant: 0.001
         MaximumSimilarity: 8
-        EpisodicMemoryCapacity: 1000
+        EpisodicMemoryCapacity: 600
+    MetaLearningParameters:
+        Epsilon: 0.3
+        EpsilonDecay: 0.999
+        EpsilonMin: 0.02
+        StepDown: false
+        UCBWindowSize: 90
+        UCBAlpha: 1.0
+        NumExplorationPolicies: 12
+    Gamma: 0.99
+    LearningRateActor: 0.0005
+    LearningRateCritic: 0.0005
+    LogAlpha: -3.0
+    NSteps: 5
+    AdaptiveExploration: true
+    NetworkUpdateFrequency: 50
+    SelfPlayNetworkUpdateFrequency: 1000
+    NetworkParameters:
+        Filters: 32
+        Units: 128
+        ActorVectorNetworkArchitecture: Dense
+        ActorVisualNetworkArchitecture: CNN
+        CriticVectorNetworkArchitecture: Dense
+        CriticVisualNetworkArchitecture: CNN
+    PrioritizedReplay: false
+    PriorityAlpha: 0.8
+    RewardNormalization: false
+    ReplayCapacity: 100000
+    ReplayMinSize: 30
+    SyncMode: soft_sync
+    SyncSteps: 200
+    Tau: 0.005
+    TrainingID: SAC_Hallway_Agent57
+    TrainingInterval: 10
+sac3D:
+    Recurrent: true
+    BurnIn: 4
+    AdaptiveSequenceLength: false
+    SequenceLength: 15
+    Overlap: 6
+    ActorNum: 8
+    BatchSize: 32
+    ClipGrad: 10.0
+    ExplorationParameters:
+        FeatureSpaceSize: 16
+        CuriosityScalingFactor: 0.02
+        LearningRate: 0.0005
+        Epsilon: 0.99
+        EpsilonDecay: 0.999
+        EpsilonMin: 0.02
+        StepDown: false
+        ObservationNormalization: false
+        kNearest: 10
+        ClusterDistance: 0.008
+        KernelEpsilon: 0.0001
+        KernelConstant: 0.001
+        MaximumSimilarity: 8
+        EpisodicMemoryCapacity: 600
+    MetaLearningParameters:
+        Epsilon: 0.3
+        EpsilonDecay: 0.999
+        EpsilonMin: 0.02
+        StepDown: false
+        NumExplorationPolicies: 6
+        UCBWindowSize: 90
+        UCBAlpha: 1.0
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
@@ -105,7 +176,7 @@ sac:
     NetworkUpdateFrequency: 50
     SelfPlayNetworkUpdateFrequency: 1000
     NetworkParameters:
-        Filters: 16
+        Filters: 32
         Units: 64
         ActorVectorNetworkArchitecture: Dense
         ActorVisualNetworkArchitecture: CNN
@@ -119,8 +190,9 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: 0_SAC_3DBall_NGU
+    TrainingID: SAC_3DBall_NGU_MC
     TrainingInterval: 4
+
 cql:
     Recurrent: false
     BurnIn: 0

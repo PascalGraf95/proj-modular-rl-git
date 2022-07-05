@@ -297,10 +297,10 @@ def get_network_component(net_inp, net_architecture, network_parameters, units=3
         if network_parameters["Recurrent"]:
             if not multi_branch:
                 if network_parameters.get("ReturnStates"):
-                    x, hidden_state, cell_state = LSTM(2*units, return_sequences=network_parameters["ReturnSequences"],
+                    x, hidden_state, cell_state = LSTM(4*units, return_sequences=network_parameters["ReturnSequences"],
                                                        stateful=network_parameters["Stateful"], return_state=True)(x)
                 else:
-                    x = LSTM(2*units, return_sequences=network_parameters["ReturnSequences"],
+                    x = LSTM(4*units, return_sequences=network_parameters["ReturnSequences"],
                              stateful=network_parameters["Stateful"])(x)
         else:
             x = Dense(2*units, activation='selu')(x)

@@ -60,6 +60,11 @@ class Trainer:
         self.exploration_algorithm = None
         self.exploration_policies = None
 
+        # - Meta Learning Algorithm -
+        # The meta learning algorithm has its own set of parameters defining the extent of meta learning.
+        self.meta_learning_configuration = None
+        self.meta_learning_algorithm = None
+
         # - Curriculum Learning Strategy -
         # The curriculum strategy determines when an agent has solved the current task level and is ready to proceed
         # to a higher difficulty.
@@ -133,6 +138,7 @@ class Trainer:
 
     # region Instantiation
     def async_instantiate_agent(self, mode: str, preprocessing_algorithm: str, exploration_algorithm: str,
+                                meta_learning_algorithm: str,
                                 environment_path: str = None, model_path: str = None,
                                 preprocessing_path: str = None, demonstration_path: str = None):
         """ Instantiate the agent consisting of learner and actor(s) and their respective submodules in an asynchronous
@@ -152,21 +158,34 @@ class Trainer:
         # returns 0.
         if actor_num == 1 and mode == "training":
             if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
-                self.exploration_policies = get_exploration_policies(num_policies=self.trainer_configuration["ActorNum"])
+                if meta_learning_algorithm == "MetaController":
+                    # Meta-Controller chooses from a range of exploration policies
+                    self.exploration_policies = get_exploration_policies(
+                        num_policies=self.trainer_configuration["MetaLearningParameters"].get("NumExplorationPolicies"))
+                else:
+                    # One fixed exploration policy as there is only one actor
+                    self.exploration_policies = get_exploration_policies(num_policies=1)
                 self.trainer_configuration["ExplorationPolicies"] = self.exploration_policies
                 exploration_degree = self.exploration_policies
             else:
                 exploration_degree = [1.0]
         else:
             if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
-                self.exploration_policies = get_exploration_policies(num_policies=self.trainer_configuration["ActorNum"])
+                if meta_learning_algorithm == "MetaController":
+                    # Meta-Controller chooses from a range of exploration policies
+                    self.exploration_policies = get_exploration_policies(
+                        num_policies=self.trainer_configuration["MetaLearningParameters"].get("NumExplorationPolicies"))
+                else:
+                    # One fixed exploration policy per actor
+                    self.exploration_policies = get_exploration_policies(
+                        num_policies=self.trainer_configuration["ActorNum"])
                 self.trainer_configuration["ExplorationPolicies"] = self.exploration_policies
                 exploration_degree = self.exploration_policies
             else:
                 exploration_degree = np.linspace(0, 1, actor_num)
 
-        # If NeverGiveUp or EpisodicNoveltyModule are used as exploration algorithms, use additional network inputs
-        # like the intrinsic reward
+        # If NeverGiveUp or EpisodicNoveltyModule are used as exploration algorithms, additional network inputs will be
+        # added to support the usage of metrics like intrinsic rewards
         if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
             self.trainer_configuration["AdditionalNetworkInputs"] = True
         else:
@@ -182,6 +201,7 @@ class Trainer:
                                     preprocessing_algorithm,
                                     preprocessing_path,
                                     exploration_algorithm,
+                                    meta_learning_algorithm,
                                     environment_path,
                                     demonstration_path,
                                     '/cpu:0') for idx in range(actor_num)]
@@ -194,7 +214,11 @@ class Trainer:
 
         # For each actor instantiate the necessary modules
         for i, actor in enumerate(self.actors):
-            actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree[i])
+            if meta_learning_algorithm == "MetaController":
+                # Exploration degree only a placeholder in this case
+                actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree[0])
+            else:
+                actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree[i])
             # In case of Unity Environments set the rendering and simulation parameters.
             if self.interface == "MLAgentsV18":
                 if mode == "training":
@@ -208,13 +232,15 @@ class Trainer:
                 else:
                     actor.set_unity_parameters.remote(time_scale=1, width=500, height=500)
 
-        # Get the environment and exploration configuration from the first actor.
+        # Get the environment, exploration and meta learning configuration from the first actor.
         # NOTE: ray remote-functions return IDs only. If you want the actual returned value of the function you need to
         # call ray.get() on the ID.
         environment_configuration = self.actors[0].get_environment_configuration.remote()
         self.environment_configuration = ray.get(environment_configuration)
         exploration_configuration = self.actors[0].get_exploration_configuration.remote()
         self.exploration_configuration = ray.get(exploration_configuration)
+        meta_learning_configuration = self.actors[0].get_meta_learning_configuration.remote()
+        self.meta_learning_configuration = ray.get(meta_learning_configuration)
 
         # - Learner Instantiation -
         # Create one actor capable of learning according to the selected algorithm utilizing the buffered actor
@@ -260,6 +286,7 @@ class Trainer:
                 _ = yaml.dump(self.trainer_configuration, file)
                 _ = yaml.dump(self.environment_configuration, file)
                 _ = yaml.dump(self.exploration_configuration, file)
+                _ = yaml.dump(self.meta_learning_configuration, file)
     # endregion
 
     # region Misc
@@ -371,6 +398,8 @@ class Trainer:
             for idx, actor in enumerate(self.actors):
                 self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(), training_step,
                                                    self.logging_frequency)
+                self.global_logger.log_dict.remote(actor.get_meta_learning_logs.remote(), training_step,
+                                                   10)
             # endregion
 
             # region --- Waiting ---

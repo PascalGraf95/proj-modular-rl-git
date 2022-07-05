@@ -46,6 +46,8 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         self.sequence_length = training_parameters["SequenceLength"]
         self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
 
+        self.reset_counter = 0
+
         # Epsilon-Greedy Parameters
         self.epsilon = self.get_epsilon_greedy_parameters(self.index, training_parameters["ActorNum"])
         self.epsilon_decay = exploration_parameters["EpsilonDecay"]
@@ -150,49 +152,6 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
 
             return feature_extractor, embedding_classifier
 
-            '''# List with two dictionaries in it, one for each network.
-            network_parameters = [{}, {}]
-            # region --- Feature Extraction Model ---
-            # This model outputs an embedding vector consisting of observation components the agent can influence
-            # through its actions.
-            # - Network Name -
-            network_parameters[0]['NetworkName'] = "ENM_FeatureExtractor"
-            # - Network Architecture-
-            network_parameters[0]['VectorNetworkArchitecture'] = "Dense"
-            network_parameters[0]['VisualNetworkArchitecture'] = "CNN"
-            network_parameters[0]['Filters'] = 32
-            network_parameters[0]['Units'] = 32
-            network_parameters[0]['TargetNetwork'] = False
-            # - Input / Output / Initialization -
-            network_parameters[0]['Input'] = self.observation_shapes
-            network_parameters[0]['Output'] = [self.feature_space_size]
-            #network_parameters[0]['OutputActivation'] = [None]
-            network_parameters[0]['OutputActivation'] = ["relu"]
-            # - Recurrent Parameters -
-            network_parameters[0]['Recurrent'] = False
-
-            # region --- Embedding Classifier Model ---
-            # This model tries to predict the action used for the transition between two states.
-            # - Network Name -
-            network_parameters[1] = network_parameters[0].copy()
-            network_parameters[1]['NetworkName'] = "ENM_EmbeddingClassifier"
-            # - Network Architecture-
-            network_parameters[1]['VectorNetworkArchitecture'] = "SingleDense"
-            network_parameters[1]['Units'] = 64
-            # - Input / Output / Initialization -
-            network_parameters[1]['Input'] = [self.feature_space_size, self.feature_space_size]
-            if self.action_space == "DISCRETE":
-                network_parameters[1]['Output'] = [self.action_shape[0]]
-                network_parameters[1]['OutputActivation'] = ["softmax"]
-            elif self.action_space == "CONTINUOUS":
-                network_parameters[1]['Output'] = [self.action_shape]
-                network_parameters[1]['OutputActivation'] = ["tanh"]
-
-            feature_extractor = construct_network(network_parameters[0], plot_network_model=True)
-            embedding_classifier = construct_network(network_parameters[1], plot_network_model=True)
-
-            return feature_extractor, embedding_classifier'''
-
     def learning_step(self, replay_batch):
         # region --- Batch Reshaping ---
         if self.recurrent:
@@ -200,9 +159,9 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes_modified,
                                                                          self.action_shape, self.sequence_length)
             # Only use last 5 time steps of sequences for training
-            state_batch = [state_input[:, -5:] for state_input in state_batch]
+            '''state_batch = [state_input[:, -5:] for state_input in state_batch]
             next_state_batch = [next_state_input[:, -5:] for next_state_input in next_state_batch]
-            action_batch = [action_sequence[-5:] for action_sequence in action_batch]
+            action_batch = [action_sequence[-5:] for action_sequence in action_batch]'''
 
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
@@ -322,14 +281,13 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             self.episodic_intrinsic_reward = 0
         else:
             # 1/similarity to encourage visiting states with lower similarity
-            #self.episodic_intrinsic_reward = self.reward_scaling_factor * (1 / similarity)
             self.episodic_intrinsic_reward = (1 / similarity)
 
         return self.episodic_intrinsic_reward
 
     def epsilon_greedy(self, decision_steps):
         if len(decision_steps.agent_id):
-            if np.random.rand() <= self.epsilon:
+            if np.random.rand() < self.epsilon:
                 if self.action_space == "DISCRETE":
                     return np.random.randint(0, self.action_shape, (len(decision_steps.agent_id), 1))
                 else:
@@ -348,21 +306,22 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             Total number of actors used.
 
         Returns
-        ----------
+        -------
         epsilon: float
             Epsilon-Greedy's initial epsilon value.
         """
         epsilon = 0.4**(1 + 8 * (actor_idx / (num_actors - 1)))
+        if epsilon < self.epsilon_min:
+            epsilon = self.epsilon_min
         return epsilon
 
     def get_logs(self):
-        return {"Exploration/EpisodicLoss": self.loss,
-                "Exploration/Agent{:03d}Epsilon".format(self.index): self.epsilon}
+        return {"Exploration/EpisodicLoss": self.loss}
 
     def reset(self):
         """Empty episodic memory and clear euclidean distance metrics."""
-        #self.mean_distances.clear()
-        #self.episodic_memory.clear()
+        self.mean_distances.clear()
+        self.episodic_memory.clear()
         return
 
     def prevent_checkpoint(self):

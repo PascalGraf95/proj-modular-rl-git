@@ -31,7 +31,7 @@ def main():
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
     mode = "training"
-    model_path = None #r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220620_095122_SAC_3DBall_NGU"
+    model_path = None #r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220627_081420_SAC_Hallway_NGU"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
@@ -41,8 +41,9 @@ def main():
     # If you want a CQL agent to learn from demonstrations, an environment can be used to evaluate the model on a
     # regular basis. Please provide a path or type None to connect directly to the Unity Editor. Otherwise, type
     # 'NoEnv' to proceed without evaluation.
-    environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\3DBall_singleAgent\Skiing.exe"
-    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\minimHallway\Hallway.exe"
+    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\3DBall\Skiing.exe"
+    environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\minimHallway\Hallway.exe"
+    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\Crawler\Crawler.exe"
 
     # - Training Algorithm -
     # This is the core learning algorithm behind the RL Agent. While Deep Q-Learning / Deep Q Networks (DQN) presumably
@@ -59,6 +60,11 @@ def main():
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
     # Choose from "None", "EpsilonGreedy", "ICM", "RND", "ENM", "NGU"
     exploration_algorithm = "NGU"
+
+    # - Meta Learning Algorithm -
+    # The meta learning algorithm helps the RL Agent to learn the most efficient way of learning.
+    # Choose from "None", "MetaController"
+    meta_learning_algorithm = "MetaController"
 
     # - Curriculum Strategy -
     # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for
@@ -87,7 +93,7 @@ def main():
     # Parse the trainer configuration (make sure to select the right key)
     trainer.parse_training_parameters("trainer_configs/trainer_config.yaml", "sac")
     # Instantiate the agent which consists of a learner and one or multiple actors
-    trainer.async_instantiate_agent(mode, preprocessing_algorithm, exploration_algorithm,
+    trainer.async_instantiate_agent(mode, preprocessing_algorithm, exploration_algorithm, meta_learning_algorithm,
                                     environment_path, model_path, preprocessing_path, demonstration_path)
     # If you are trying to understand this project, the next place to continue exploring it would be the trainer file
     # in the respective directory (./modules/trainer.py)

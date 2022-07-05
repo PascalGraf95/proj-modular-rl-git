@@ -1,7 +1,6 @@
 import tensorflow as tf
 import numpy as np
 import time
-
 from tensorflow.keras.losses import MeanSquaredError, CategoricalCrossentropy
 from tensorflow.keras.optimizers import Adam, SGD
 import tensorflow as tf
@@ -65,13 +64,34 @@ class Mooodel():
         # endregion
 
 if __name__ == '__main__':
-    state = [np.array([[0., 0., 0., 0., 1., 0., 0.5393357, 0., 0., 0., 0., 1., 0., 0.41818592, 0., 0., 0., 0.,
+    '''state = [np.array([[0., 0., 0., 0., 1., 0., 0.5393357, 0., 0., 0., 0., 1., 0., 0.41818592, 0., 0., 0., 0.,
                         1., 0., 0.5442544, 0., 0., 0., 0., 1., 0., 0.32862315, 0., 0., 0., 0., 1., 0.,
                         0.8650164]], dtype=np.float32), np.array([[0.8650164]], dtype=np.float32)]
-    state.append(np.array([[0.69]], dtype=np.float32))
-    state = [tf.expand_dims(single_state, axis=1) for single_state in state]
+    state.append(np.array([[0.69]], dtype=np.float32))'''
+
+    temp_buffer = deque(maxlen=3000)
+    global_buffer = deque(maxlen=90)
+
+    num_arms = 32
+
+    arm_play_count = np.zeros(num_arms)
+    empirical_mean = np.zeros(num_arms)
+
+    for x in range(20):
+        temp_buffer.append([np.random.randint(num_arms), np.array(np.random.rand())])
+    for x in range(100):
+        global_buffer.append(temp_buffer)
+
+    for episode in global_buffer:
+        for j, reward in episode:
+            arm_play_count[j] += 1
+            empirical_mean[j] += reward
+    chosen_arm = np.argmax(empirical_mean + 1 * np.sqrt(1 / (arm_play_count + 1e-6)))
+    print(chosen_arm)
+
+    '''state = [tf.expand_dims(single_state, axis=1) for single_state in state]
     mdl = Mooodel()
     time.sleep(3)
     state_embedding = mdl.feature_extractor(state)[0]
     action_prediction = mdl.embedding_classifier([state_embedding, state_embedding])
-    print(state_embedding)
+    print(state_embedding)'''

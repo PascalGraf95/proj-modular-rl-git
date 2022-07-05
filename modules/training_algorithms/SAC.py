@@ -24,11 +24,12 @@ class SACActor(Actor):
                  preprocessing_algorithm: str,
                  preprocessing_path: str,
                  exploration_algorithm: str,
+                 meta_learning_algorithm: str,
                  environment_path: str = "",
                  demonstration_path: str = "",
                  device: str = '/cpu:0'):
         super().__init__(idx, port, mode, interface, preprocessing_algorithm, preprocessing_path,
-                         exploration_algorithm, environment_path, demonstration_path, device)
+                         exploration_algorithm, meta_learning_algorithm, environment_path, demonstration_path, device)
 
     def act(self, states, agent_ids=None, mode="training", clone=False):
         # Check if any agent in the environment is not in a terminal state

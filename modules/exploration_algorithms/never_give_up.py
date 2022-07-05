@@ -46,11 +46,13 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.index = idx
         self.device = '/cpu:0'
 
+        self.reset_counter = 0
+
         # Epsilon-Greedy Parameters
-        self.epsilon = self.get_epsilon_greedy_parameters(self.index, training_parameters["ActorNum"])
         self.epsilon_decay = exploration_parameters["EpsilonDecay"]
         self.epsilon_min = exploration_parameters["EpsilonMin"]
         self.step_down = exploration_parameters["StepDown"]
+        self.epsilon = self.get_epsilon_greedy_parameters(self.index, training_parameters["ActorNum"])
         self.training_step = 0
 
         # TODO: Use separate function
@@ -171,46 +173,6 @@ class NeverGiveUp(ExplorationAlgorithm):
                 embedding_classifier.summary()
                 # endregion
 
-                '''# List with two dictionaries in it, one for each network.
-                network_parameters = [{}, {}]
-                # region --- Feature Extraction Model ---
-                # This model outputs an embedding vector consisting of observation components the agent can influence
-                # through its actions.
-                # - Network Name -
-                network_parameters[0]['NetworkName'] = "ENM_FeatureExtractor"
-                # - Network Architecture-
-                network_parameters[0]['VectorNetworkArchitecture'] = "Dense"
-                network_parameters[0]['VisualNetworkArchitecture'] = "CNN"
-                network_parameters[0]['Filters'] = 32
-                network_parameters[0]['Units'] = 32
-                network_parameters[0]['TargetNetwork'] = False
-                # - Input / Output / Initialization -
-                network_parameters[0]['Input'] = self.observation_shapes
-                network_parameters[0]['Output'] = [self.feature_space_size]
-                network_parameters[0]['OutputActivation'] = ["relu"]
-                # - Recurrent Parameters -
-                network_parameters[0]['Recurrent'] = False
-
-                # region --- Embedding Classifier Model ---
-                # This model tries to predict the action used for the transition between two states.
-                # - Network Name -
-                network_parameters[1] = network_parameters[0].copy()
-                network_parameters[1]['NetworkName'] = "ENM_EmbeddingClassifier"
-                # - Network Architecture-
-                network_parameters[1]['VectorNetworkArchitecture'] = "SingleDense"
-                network_parameters[1]['Units'] = 64
-                # - Input / Output / Initialization -
-                network_parameters[1]['Input'] = [self.feature_space_size, self.feature_space_size]
-                if self.action_space == "DISCRETE":
-                    network_parameters[1]['Output'] = [self.action_shape[0]]
-                    network_parameters[1]['OutputActivation'] = ["softmax"]
-                elif self.action_space == "CONTINUOUS":
-                    network_parameters[1]['Output'] = [self.action_shape]
-                    network_parameters[1]['OutputActivation'] = ["tanh"]
-
-                feature_extractor = construct_network(network_parameters[0], plot_network_model=True)
-                embedding_classifier = construct_network(network_parameters[1], plot_network_model=True)'''
-
                 return feature_extractor, embedding_classifier
             # endregion
 
@@ -260,7 +222,7 @@ class NeverGiveUp(ExplorationAlgorithm):
                 target_model = Model(feature_input, x, name="RND_TargetModel")
                 # endregion
 
-                # Model plots
+                # region Model plots
                 try:
                     plot_model(prediction_model, "plots/RND_PredictionModel.png", show_shapes=True)
                     plot_model(target_model, "plots/RND_TargetModel.png", show_shapes=True)
@@ -272,35 +234,8 @@ class NeverGiveUp(ExplorationAlgorithm):
                 target_model.summary()
                 # endregion
 
-                '''# List with two dictionaries in it, one for each network.
-                network_parameters = [{}, {}]
-                # region --- Prediction Model ---
-                # This model tries to mimic the target model for every state in the environment
-                # - Network Name -
-                network_parameters[0]['NetworkName'] = "RND_PredictionModel"
-                # - Network Architecture-
-                network_parameters[0]['VectorNetworkArchitecture'] = "SmallDense"
-                network_parameters[0]['VisualNetworkArchitecture'] = "CNN"
-                network_parameters[0]['Filters'] = 32
-                network_parameters[0]['Units'] = 32
-                network_parameters[0]['TargetNetwork'] = False
-                # - Input / Output / Initialization -
-                network_parameters[0]['Input'] = self.observation_shapes
-                network_parameters[0]['Output'] = [self.feature_space_size]
-                network_parameters[0]['OutputActivation'] = [None]
-                # - Recurrent Parameters -
-                network_parameters[0]['Recurrent'] = False
-                # endregion
-
-                # region --- TargetModel ---
-                network_parameters[1] = network_parameters[0].copy()
-                network_parameters[1]['NetworkName'] = "RND_TargetModel"
-
-                prediction_model = construct_network(network_parameters[0], plot_network_model=True)
-                target_model = construct_network(network_parameters[1], plot_network_model=True)'''
-
                 return prediction_model, target_model
-                # endregion
+            # endregion
 
     def learning_step(self, replay_batch):
         # region --- Batch Reshaping ---
@@ -310,9 +245,9 @@ class NeverGiveUp(ExplorationAlgorithm):
                                                                          self.action_shape, self.sequence_length)
 
             # Only use last 5 time steps of sequences for training
-            state_batch = [state_input[:, -5:] for state_input in state_batch]
+            '''state_batch = [state_input[:, -5:] for state_input in state_batch]
             next_state_batch = [next_state_input[:, -5:] for next_state_input in next_state_batch]
-            action_batch = [action_sequence[-5:] for action_sequence in action_batch]
+            action_batch = [action_sequence[-5:] for action_sequence in action_batch]'''
 
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
@@ -390,10 +325,12 @@ class NeverGiveUp(ExplorationAlgorithm):
 
     def act(self, decision_steps, terminal_steps):
         if not len(decision_steps.obs[0]):
-            self.rnd_reward_deque.append(0)
+            current_state = terminal_steps.obs
+            '''self.rnd_reward_deque.append(0)
             self.mean_distances.append(0)
-            return 0
-        current_state = decision_steps.obs
+            return 0'''
+        else:
+            current_state = decision_steps.obs
 
         # region Lifelong Novelty Module
         if self.normalize_observations:
@@ -411,7 +348,7 @@ class NeverGiveUp(ExplorationAlgorithm):
         # Calculate the features for the current state with the target and the prediction model.
         if self.recurrent:
             # Add additional time dimension if recurrent networks are used
-            current_state = [tf.expand_dims(state, axis=1) for state in decision_steps.obs]
+            current_state = [tf.expand_dims(state, axis=1) for state in current_state]
             # '[0]' -> to get rid of time dimension directly after network inference
             target_features = self.target_model(current_state)[0]
             prediction_features = self.prediction_model(current_state)[0]
@@ -479,17 +416,17 @@ class NeverGiveUp(ExplorationAlgorithm):
             enm_reward = 0
         else:
             # 1/similarity to encourage visiting states with lower similarity
-            #enm_reward = self.reward_scaling_factor * (1 / similarity)
             enm_reward = (1 / similarity)
         # endregion
 
         # Calculate final and combined intrinsic reward
         self.intrinsic_reward = enm_reward * min(max(rnd_reward, 1), self.alpha_max)
+
         return self.intrinsic_reward
 
     def epsilon_greedy(self, decision_steps):
         if len(decision_steps.agent_id):
-            if np.random.rand() <= self.epsilon:
+            if np.random.rand() < self.epsilon:
                 if self.action_space == "DISCRETE":
                     return np.random.randint(0, self.action_shape, (len(decision_steps.agent_id), 1))
                 else:
@@ -508,22 +445,23 @@ class NeverGiveUp(ExplorationAlgorithm):
             Total number of actors used.
 
         Returns
-        ----------
+        -------
         epsilon: float
             Epsilon-Greedy's initial epsilon value.
         """
         epsilon = 0.4**(1 + 8 * (actor_idx / (num_actors - 1)))
+        if epsilon < self.epsilon_min:
+            epsilon = self.epsilon_min
         return epsilon
 
     def get_logs(self):
         return {"Exploration/EpisodicLoss": self.episodic_loss,
-                "Exploration/LifeLongLoss": self.lifelong_loss,
-                "Exploration/Agent{:03d}Epsilon".format(self.index): self.epsilon}
+                "Exploration/LifeLongLoss": self.lifelong_loss}
 
     def reset(self):
         """Empty episodic memory and clear euclidean distance metrics."""
-        #self.mean_distances.clear()
-        #self.episodic_memory.clear()
+        self.mean_distances.clear()
+        self.episodic_memory.clear()
         return
 
     def prevent_checkpoint(self):

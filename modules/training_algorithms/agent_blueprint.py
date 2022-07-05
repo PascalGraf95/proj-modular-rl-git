@@ -17,6 +17,7 @@ class Actor:
                  preprocessing_algorithm: str,
                  preprocessing_path: str,
                  exploration_algorithm: str,
+                 meta_learning_algorithm: str,
                  environment_path: str = "",
                  demonstration_path: str = "",
                  device: str = '/cpu:0'):
@@ -94,6 +95,15 @@ class Actor:
         self.prior_intrinsic_reward = 0
         self.prior_extrinsic_reward = 0
         self.prior_action = None
+        self.exploration_policies = None
+        self.exploration_policy_idx = 0
+
+        # - Meta Learning Algorithm -
+        self.meta_learning_configuration = None
+        self.meta_learning_algorithm = None
+        self.use_meta_controller = False
+
+        self.episode_begin = True
 
         # - Curriculum Learning Strategy & Engine Side Channel -
         self.engine_configuration_channel = None
@@ -110,6 +120,7 @@ class Actor:
         # preprocessing algorithm.
         self.select_agent_interface(interface)
         self.select_exploration_algorithm(exploration_algorithm)
+        self.select_meta_learning_algorithm(meta_learning_algorithm)
         self.select_preprocessing_algorithm(preprocessing_algorithm)
 
         # Prediction Parameters
@@ -170,6 +181,9 @@ class Actor:
     def get_exploration_logs(self):
         return self.exploration_algorithm.get_logs()
 
+    def get_meta_learning_logs(self):
+        return self.meta_learning_algorithm.get_logs()
+
     def get_environment_configuration(self):
         return self.environment_configuration
 
@@ -194,6 +208,13 @@ class Actor:
         """
         self.exploration_configuration = ExplorationAlgorithm.get_config()
         return self.exploration_configuration
+
+    def get_meta_learning_configuration(self):
+        """Gather the parameters requested by the selectet meta-controller algorithm.
+        :return: None
+        """
+        self.meta_learning_configuration = MetaLearning.get_config()
+        return self.meta_learning_configuration
     # endregion
 
     # region Algorithm Selection
@@ -231,6 +252,17 @@ class Actor:
             self.use_episodic_intrinsic_rewards = True
         else:
             raise ValueError("There is no {} exploration algorithm.".format(exploration_algorithm))
+
+    def select_meta_learning_algorithm(self, meta_learning_algorithm):
+        global MetaLearning
+
+        if meta_learning_algorithm == "MetaController":
+            from ..meta_learning.meta_controller import MetaController as MetaLearning
+            self.use_meta_controller = True
+        elif meta_learning_algorithm == "None":
+            from ..meta_learning.meta_learning_blueprint import MetaLearning
+        else:
+            raise ValueError("There is no {} meta controller algorithm.".format(meta_learning_algorithm))
 
     def select_preprocessing_algorithm(self, preprocessing_algorithm):
         global PreprocessingAlgorithm
@@ -291,8 +323,22 @@ class Actor:
                                                           trainer_configuration,
                                                           self.index)
 
-        # If necessary update the observation shapes through adding additional network inputs
+        # Instantiate the Meta Learning Algorithm according to the environment and training configuration.
+        self.meta_learning_algorithm = MetaLearning(self.environment_configuration["ActionShape"],
+                                                    self.environment_configuration["ObservationShapes"],
+                                                    self.environment_configuration["ActionType"],
+                                                    trainer_configuration["ExplorationParameters"],
+                                                    trainer_configuration["MetaLearningParameters"],
+                                                    trainer_configuration,
+                                                    self.index)
+
+        # If separate metrics are added to the environmental observation values
         if trainer_configuration["AdditionalNetworkInputs"]:
+            # Use different fixed gammas per actor (must be done before local buffer is initialized)
+            if not self.use_meta_controller:
+                trainer_configuration["Gamma"] = exploration_degree["gamma"]
+                self.gamma = trainer_configuration["Gamma"]
+
             self.additional_network_inputs = True
             self.exploration_policies = trainer_configuration.get("ExplorationPolicies")
 
@@ -373,7 +419,7 @@ class Actor:
 
     def register_terminal_agents(self, terminal_ids, clone=False):
         if not self.recurrent:
-            return
+            return None
         # Reset the hidden and cell state for agents that are in a terminal episode state
         if clone:
             for agent_id in terminal_ids:
@@ -385,6 +431,8 @@ class Actor:
                 self.lstm_state[1][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
         if self.use_episodic_intrinsic_rewards:
             return terminal_ids
+        else:
+            return None
 
     def set_lstm_states(self, agent_ids, clone=False):
         active_agent_number = len(agent_ids)
@@ -430,75 +478,51 @@ class Actor:
         # Preprocess steps if a respective algorithm has been activated
         decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
                                                                                               terminal_steps)
-        # Register terminal agents, so the hidden LSTM state is reset
+
+        # Register terminal agents, so for example the hidden LSTM state is reset
+        terminal_ids = self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
+
         # If episodic intrinsic rewards are used (e.g. with NGU-Rewards), specific algorithm metrics need to be reset
         if self.use_episodic_intrinsic_rewards:
-            terminal_ids = self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
-            if len(terminal_ids):
-                # Reset exploration algorithm metrics in the episode beginning
-                self.prior_intrinsic_reward = 0
-                self.prior_extrinsic_reward = 0
-                if self.action_type == "DISCRETE":
-                    self.prior_action = np.random.randint(0, self.action_shape, (1,))
-                else:
-                    self.prior_action = np.random.uniform(-1.0, 1.0, (self.action_shape,))
-                with tf.device(self.device):
-                    self.exploration_algorithm.reset()
-        else:
-            self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
+            #  Set/Reset variables and algorithms when agent reaches episodic borders
+            self.episodic_border_routine(decision_steps, terminal_steps)
 
-        # Choose the next action either by exploring or exploiting
-        if self.use_episodic_intrinsic_rewards:
+            # Meta-controller learning function is called every step
+            if not self.episode_begin and self.use_meta_controller:
+                if len(decision_steps.reward):
+                    with tf.device(self.device):
+                        self.meta_learning_algorithm.learning_step(self.exploration_policy_idx, decision_steps.reward)
+                else:
+                    with tf.device(self.device):
+                        self.meta_learning_algorithm.learning_step(self.exploration_policy_idx, terminal_steps.reward)
+
+            # Choose next action either by exploring or exploiting
+            # Usage of episodic-based intrinsic rewards requires additional algorithmic steps.
             with tf.device(self.device):
-                # Calculate episodic intrinsic reward and scale by exploration policies' beta
+                # Calculate episodic intrinsic reward
                 episodic_intrinsic_reward = self.exploration_algorithm.act(decision_steps, terminal_steps)
 
-                # Add additional inputs to the observation
+                # Add additional inputs to the current agent observation (currently only done for NGU and ENM)
                 if self.additional_network_inputs:
-                    # TODO: Replace index with meta-controller output
-                    episodic_intrinsic_reward *= self.exploration_policies[self.exploration_algorithm.index]['beta']
-                    # Augment decision and terminal steps 'globally' with additional inputs
-                    if self.action_type == "CONTINUOUS":
-                        decision_steps.obs.append(np.array([[self.prior_action[0], self.prior_action[1]]],
-                                                           dtype=np.float32))
-                    else:
-                        decision_steps.obs.append(np.array([[self.prior_action[0]]], dtype=np.float32))
-                    decision_steps.obs.append(np.array([[self.prior_extrinsic_reward]], dtype=np.float32))
-                    decision_steps.obs.append(np.array([[self.prior_intrinsic_reward]], dtype=np.float32))
-                    # TODO: Replace index with meta-controller output
-                    decision_steps.obs.append(np.array([[self.exploration_algorithm.index]], dtype=np.float32))
+                    # Scale the intrinsic reward through exploration policies' beta when using NGU and ENM.
+                    episodic_intrinsic_reward *= self.exploration_policies[self.exploration_policy_idx]['beta']
 
-                    if len(terminal_steps.obs[0]):
-                        if self.action_type == "CONTINUOUS":
-                            terminal_steps.obs.append(np.array([[self.prior_action[0], self.prior_action[1]]],
-                                                               dtype=np.float32))
-                        else:
-                            terminal_steps.obs.append(np.array([[self.prior_action[0]]], dtype=np.float32))
-                        terminal_steps.obs.append(np.array([[self.prior_extrinsic_reward]], dtype=np.float32))
-                        terminal_steps.obs.append(np.array([[self.prior_intrinsic_reward]], dtype=np.float32))
-                        # TODO: Replace index with meta-controller output
-                        terminal_steps.obs.append(np.array([[self.exploration_algorithm.index]], dtype=np.float32))
-
-                    # Use epsilon-greedy to act (must be the case when using NGU and ENM and therefore additional inputs)
+                    # Extend step observation values with prior action, extrinsic reward, intrinsic reward and policy
+                    # idx
+                    decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
+                    # Act through epsilon-greedy
                     actions = self.exploration_algorithm.epsilon_greedy(decision_steps)
                     if actions is None:
                         actions = self.act(decision_steps.obs,
                                            agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                            mode=self.mode)
 
-                    # Track 'prior'-metrics
-                    self.prior_intrinsic_reward = episodic_intrinsic_reward
-                    if not len(terminal_steps.obs[0]):
-                        self.prior_extrinsic_reward = decision_steps.reward[0]
-                        self.prior_action = actions[0]
-                    else:
-                        self.prior_extrinsic_reward = terminal_steps.reward[0]
-                # RND for example does not use additional network inputs
+                    # Save current metrics for next iteration
+                    self.save_current_metrics(episodic_intrinsic_reward, actions, decision_steps, terminal_steps)
                 else:
                     actions = self.act(decision_steps.obs,
                                        agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                        mode=self.mode)
-
         else:
             actions = self.exploration_algorithm.act(decision_steps, terminal_steps)
             if actions is None:
@@ -528,7 +552,6 @@ class Actor:
             clone_actions = None
 
         # Append steps and actions to the local replay buffer
-        # In case of episodic intrinsic rewards rewards are directly augmented with intrinsic reward
         if self.use_episodic_intrinsic_rewards:
             augmented_reward_terminal = terminal_steps.reward + episodic_intrinsic_reward
             augmented_reward_decision = decision_steps.reward + episodic_intrinsic_reward
@@ -613,6 +636,112 @@ class Actor:
 
     def get_local_buffer(self):
         return self.local_buffer.sample(1, reset_buffer=False, random_samples=True)
+
+    def episodic_border_routine(self, decision_steps, terminal_steps):
+        """
+        Reset specific variables and algorithms when agent reaches episodic begin or ending.
+
+        Parameters
+        ----------
+        decision_steps:
+            Contains the observation values, reward value and further information about the current step if not
+            terminal.
+        terminal_steps:
+            Contains the observation values, reward value and further information about the current step if terminal.
+        """
+        if self.episode_begin and self.additional_network_inputs:
+            # Reset exploration algorithm metrics in the episode beginning
+            self.prior_intrinsic_reward = 0
+            self.prior_extrinsic_reward = 0
+            # Set prior action randomly for first episode step
+            if self.action_type == "DISCRETE":
+                self.prior_action = np.random.randint(0, self.action_shape, (1,))
+            else:
+                self.prior_action = np.random.uniform(-1.0, 1.0, (self.action_shape,))
+            self.episode_begin = False
+
+            # Get current exploration policy index (will be used as network input throughout episode)
+            if self.use_meta_controller:
+                # Through meta_controller
+                with tf.device(self.device):
+                    self.exploration_policy_idx = self.meta_learning_algorithm.act()
+            else:
+                # Through agent index
+                self.exploration_policy_idx = self.exploration_algorithm.index
+
+        # Episode ending reached, reset begin flag and algorithms
+        if len(terminal_steps.obs[0]):
+            self.episode_begin = True
+            with tf.device(self.device):
+                # Reset exploration algorithm
+                self.exploration_algorithm.reset()
+                # Reset meta learning algorithm
+                self.meta_learning_algorithm.reset()
+
+    def extend_observations(self, decision_steps, terminal_steps):
+        """
+        Augment decision and terminal steps 'globally' with additional inputs. Those additional inputs are the prior
+        action, the prior extrinsic reward, the prior intrinsic reward and the exploration policy used throughout
+        the current episode.
+
+        Parameters
+        ----------
+        decision_steps:
+            Contains the observation values, reward value and further information about the current step if not
+            terminal.
+        terminal_steps:
+            Contains the observation values, reward value and further information about the current step if terminal.
+
+        Returns
+        -------
+        decision_steps:
+            Decision step but with extended observation values.
+        terminal_steps:
+            Terminal step but with extended observation values.
+        """
+        if self.action_type == "CONTINUOUS":
+            decision_steps.obs.append(np.array([[self.prior_action[0], self.prior_action[1]]],
+                                               dtype=np.float32))
+        else:
+            decision_steps.obs.append(np.array([[self.prior_action[0]]], dtype=np.float32))
+        decision_steps.obs.append(np.array([[self.prior_extrinsic_reward]], dtype=np.float32))
+        decision_steps.obs.append(np.array([[self.prior_intrinsic_reward]], dtype=np.float32))
+        decision_steps.obs.append(np.array([[self.exploration_policy_idx]], dtype=np.float32))
+
+        if len(terminal_steps.obs[0]):
+            if self.action_type == "CONTINUOUS":
+                terminal_steps.obs.append(np.array([[self.prior_action[0], self.prior_action[1]]],
+                                                   dtype=np.float32))
+            else:
+                terminal_steps.obs.append(np.array([[self.prior_action[0]]], dtype=np.float32))
+            terminal_steps.obs.append(np.array([[self.prior_extrinsic_reward]], dtype=np.float32))
+            terminal_steps.obs.append(np.array([[self.prior_intrinsic_reward]], dtype=np.float32))
+            terminal_steps.obs.append(np.array([[self.exploration_policy_idx]], dtype=np.float32))
+        return decision_steps, terminal_steps
+
+    def save_current_metrics(self, current_intrinsic_reward, actions, decision_steps, terminal_steps):
+        """
+        Save values from current step that will be used within next step as inputs.
+
+        Parameters
+        ----------
+        current_intrinsic_reward:
+            Reward calculated by exploration algorithm this step.
+        actions:
+            Actions used by agent this step.
+        decision_steps:
+            Contains the observation values, reward value and further information about the current step if not
+            terminal.
+        terminal_steps:
+            Contains the observation values, reward value and further information about the current step if terminal.
+        """
+        self.prior_intrinsic_reward = current_intrinsic_reward
+        if not len(terminal_steps.obs[0]):
+            self.prior_extrinsic_reward = decision_steps.reward[0]
+            self.prior_action = actions[0]
+        else:
+            self.prior_extrinsic_reward = terminal_steps.reward[0]
+
     # endregion
 
 

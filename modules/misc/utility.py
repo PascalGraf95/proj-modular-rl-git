@@ -2,6 +2,7 @@ import sys
 from types import ModuleType, FunctionType
 from gc import get_referents
 import numpy as np
+import matplotlib.pyplot as plt
 
 # Custom objects know their class.
 # Function objects seem to know way too much, including modules.
@@ -48,7 +49,7 @@ def get_exploration_policies(num_policies: int = 1, beta_max: float = 0.3, gamma
         Minimum gamma value
 
     Returns
-    ----------
+    -------
     dict_exploration_policies: dict
         Dictionary containing the respective beta and gamma values.
         Data structure: {0: {'beta': _BETA_VALUE_MIN, 'gamma': _GAMMA_VALUE_MAX},
@@ -90,7 +91,7 @@ def get_beta(num_policies, beta_max, policy_idx):
         Index of the current policy. A value between 0...Total number of policies.
 
     Returns
-    ----------
+    -------
     beta: float
         beta of the respective exploration policy.
     """
@@ -126,7 +127,7 @@ def get_gamma(num_policies, gamma_max, gamma_middle, gamma_min, policy_idx):
         Index of the current policy. A value between 0...Total number of policies.
 
     Returns
-    ----------
+    -------
     gamma: float
         gamma of the respective exploration policy.
     """
@@ -159,11 +160,7 @@ def get_gamma(num_policies, gamma_max, gamma_middle, gamma_min, policy_idx):
     return gamma
 
 
-# Just for Debugging purposes
 def print_policy_functions(dict_exploration_policies: dict):
-    import matplotlib.pyplot as plt
-    # print_policy_functions(get_exploration_policies(32))
-
     betas = []
     gammas = []
 
@@ -172,7 +169,6 @@ def print_policy_functions(dict_exploration_policies: dict):
     for idx in range(len(dict_exploration_policies)):
         betas.append(dict_exploration_policies[idx]['beta'])
         gammas.append(dict_exploration_policies[idx]['gamma'])
-
     plt.plot(num_policies, betas)
     plt.xlabel("policy")
     plt.ylabel("betas")
