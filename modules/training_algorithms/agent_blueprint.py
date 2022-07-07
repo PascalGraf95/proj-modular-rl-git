@@ -104,6 +104,7 @@ class Actor:
         self.use_meta_controller = False
 
         self.episode_begin = True
+        self.first_iteration = True
 
         # - Curriculum Learning Strategy & Engine Side Channel -
         self.engine_configuration_channel = None
@@ -358,7 +359,8 @@ class Actor:
                 for obs_shape in self.environment_configuration["ObservationShapes"]:
                     modified_observation_shapes.append(obs_shape)
                 # Prior action
-                modified_observation_shapes.append((self.environment_configuration["ActionShape"],))
+                # TODO: CHANGED
+                '''modified_observation_shapes.append((self.environment_configuration["ActionShape"],))'''
                 # Prior extrinsic reward
                 modified_observation_shapes.append((1,))
                 # Prior intrinsic reward
@@ -429,10 +431,6 @@ class Actor:
             for agent_id in terminal_ids:
                 self.lstm_state[0][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
                 self.lstm_state[1][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
-        if self.use_episodic_intrinsic_rewards:
-            return terminal_ids
-        else:
-            return None
 
     def set_lstm_states(self, agent_ids, clone=False):
         active_agent_number = len(agent_ids)
@@ -480,7 +478,7 @@ class Actor:
                                                                                               terminal_steps)
 
         # Register terminal agents, so for example the hidden LSTM state is reset
-        terminal_ids = self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
+        self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
 
         # If episodic intrinsic rewards are used (e.g. with NGU-Rewards), specific algorithm metrics need to be reset
         if self.use_episodic_intrinsic_rewards:
@@ -510,6 +508,7 @@ class Actor:
                     # Extend step observation values with prior action, extrinsic reward, intrinsic reward and policy
                     # idx
                     decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
+
                     # Act through epsilon-greedy
                     actions = self.exploration_algorithm.epsilon_greedy(decision_steps)
                     if actions is None:
@@ -654,10 +653,11 @@ class Actor:
             self.prior_intrinsic_reward = 0
             self.prior_extrinsic_reward = 0
             # Set prior action randomly for first episode step
-            if self.action_type == "DISCRETE":
+            # TODO: Changed
+            '''if self.action_type == "DISCRETE":
                 self.prior_action = np.random.randint(0, self.action_shape, (1,))
             else:
-                self.prior_action = np.random.uniform(-1.0, 1.0, (self.action_shape,))
+                self.prior_action = np.random.uniform(-1.0, 1.0, (self.action_shape,))'''
             self.episode_begin = False
 
             # Get current exploration policy index (will be used as network input throughout episode)
@@ -665,9 +665,19 @@ class Actor:
                 # Through meta_controller
                 with tf.device(self.device):
                     self.exploration_policy_idx = self.meta_learning_algorithm.act()
+                # Update local_buffers gamma and calculate its gamma list based on meta-controller output
+                self.local_buffer.gamma = self.exploration_policies[self.exploration_policy_idx]["gamma"]
+                temp_gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
+                self.local_buffer.gamma_list = temp_gamma_list
             else:
                 # Through agent index
                 self.exploration_policy_idx = self.exploration_algorithm.index
+                # Set local_buffers gamma and calculate its gamma list based on agent_index (never updated)
+                if self.first_iteration:
+                    self.local_buffer.gamma = self.exploration_policies[self.exploration_policy_idx]["gamma"]
+                    temp_gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
+                    self.local_buffer.gamma_list = temp_gamma_list
+                    self.first_iteration = False
 
         # Episode ending reached, reset begin flag and algorithms
         if len(terminal_steps.obs[0]):
@@ -699,21 +709,23 @@ class Actor:
         terminal_steps:
             Terminal step but with extended observation values.
         """
-        if self.action_type == "CONTINUOUS":
+        # TODO: CHANGED
+        '''if self.action_type == "CONTINUOUS":
             decision_steps.obs.append(np.array([[self.prior_action[0], self.prior_action[1]]],
                                                dtype=np.float32))
         else:
-            decision_steps.obs.append(np.array([[self.prior_action[0]]], dtype=np.float32))
+            decision_steps.obs.append(np.array([[self.prior_action[0]]], dtype=np.float32))'''
         decision_steps.obs.append(np.array([[self.prior_extrinsic_reward]], dtype=np.float32))
         decision_steps.obs.append(np.array([[self.prior_intrinsic_reward]], dtype=np.float32))
         decision_steps.obs.append(np.array([[self.exploration_policy_idx]], dtype=np.float32))
 
         if len(terminal_steps.obs[0]):
-            if self.action_type == "CONTINUOUS":
+            # TODO: CHANGED
+            '''if self.action_type == "CONTINUOUS":
                 terminal_steps.obs.append(np.array([[self.prior_action[0], self.prior_action[1]]],
                                                    dtype=np.float32))
             else:
-                terminal_steps.obs.append(np.array([[self.prior_action[0]]], dtype=np.float32))
+                terminal_steps.obs.append(np.array([[self.prior_action[0]]], dtype=np.float32))'''
             terminal_steps.obs.append(np.array([[self.prior_extrinsic_reward]], dtype=np.float32))
             terminal_steps.obs.append(np.array([[self.prior_intrinsic_reward]], dtype=np.float32))
             terminal_steps.obs.append(np.array([[self.exploration_policy_idx]], dtype=np.float32))
@@ -738,7 +750,8 @@ class Actor:
         self.prior_intrinsic_reward = current_intrinsic_reward
         if not len(terminal_steps.obs[0]):
             self.prior_extrinsic_reward = decision_steps.reward[0]
-            self.prior_action = actions[0]
+            # TODO: Changed
+            '''self.prior_action = actions[0]'''
         else:
             self.prior_extrinsic_reward = terminal_steps.reward[0]
 
@@ -903,6 +916,7 @@ class Learner:
                 action_batch[idx_seq][idx_trans] = transition['action']
                 reward_batch[idx_seq][idx_trans] = transition['reward']
                 done_batch[idx_seq][idx_trans] = transition['done']
+
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch
     # endregion
 

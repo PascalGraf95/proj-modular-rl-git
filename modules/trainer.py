@@ -399,7 +399,7 @@ class Trainer:
                 self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(), training_step,
                                                    self.logging_frequency)
                 self.global_logger.log_dict.remote(actor.get_meta_learning_logs.remote(), training_step,
-                                                   10)
+                                                   self.logging_frequency)
             # endregion
 
             # region --- Waiting ---

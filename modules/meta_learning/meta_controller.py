@@ -16,7 +16,11 @@ from tensorflow.keras.utils import plot_model
 
 class MetaController(MetaLearning):
     Name = "MetaController"
-    ParameterSpace = {}
+
+    ParameterSpace = {
+        "WindowSize": int,
+        "Alpha": float
+    }
 
     def __init__(self, action_shape, observation_shapes, action_space, exploration_parameters, meta_learning_parameters,
                  training_parameters, idx):

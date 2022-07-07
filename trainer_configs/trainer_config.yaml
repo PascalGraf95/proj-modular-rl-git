@@ -78,14 +78,14 @@ dqn:
     PriorityAlpha: 0.8
     TrainingID: DQN_PushBlock
     TrainingInterval: 1
-sac:
+sacWalker:
     Recurrent: true
-    BurnIn: 10
+    BurnIn: 8
     AdaptiveSequenceLength: false
-    SequenceLength: 60
+    SequenceLength: 30
     Overlap: 5
     ActorNum: 8
-    BatchSize: 32
+    BatchSize: 64
     ClipGrad: 10.0
     ExplorationParameters:
         FeatureSpaceSize: 18
@@ -102,6 +102,7 @@ sac:
         KernelConstant: 0.001
         MaximumSimilarity: 8
         EpisodicMemoryCapacity: 600
+        ResetEpisodicMemory: true
     MetaLearningParameters:
         Epsilon: 0.3
         EpsilonDecay: 0.999
@@ -116,10 +117,10 @@ sac:
     LogAlpha: -3.0
     NSteps: 5
     AdaptiveExploration: true
-    NetworkUpdateFrequency: 50
+    NetworkUpdateFrequency: 100
     SelfPlayNetworkUpdateFrequency: 1000
     NetworkParameters:
-        Filters: 32
+        Filters: 128
         Units: 128
         ActorVectorNetworkArchitecture: Dense
         ActorVisualNetworkArchitecture: CNN
@@ -128,14 +129,14 @@ sac:
     PrioritizedReplay: false
     PriorityAlpha: 0.8
     RewardNormalization: false
-    ReplayCapacity: 100000
-    ReplayMinSize: 30
-    SyncMode: soft_sync
-    SyncSteps: 200
+    ReplayCapacity: 300000
+    ReplayMinSize: 100
+    SyncMode: hard_sync
+    SyncSteps: 1500
     Tau: 0.005
-    TrainingID: SAC_Hallway_Agent57
+    TrainingID: SAC_Walker_Agent57rGaFix
     TrainingInterval: 10
-sac3D:
+sac:
     Recurrent: true
     BurnIn: 4
     AdaptiveSequenceLength: false
@@ -145,7 +146,7 @@ sac3D:
     BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
-        FeatureSpaceSize: 16
+        FeatureSpaceSize: 32
         CuriosityScalingFactor: 0.02
         LearningRate: 0.0005
         Epsilon: 0.99
@@ -159,12 +160,13 @@ sac3D:
         KernelConstant: 0.001
         MaximumSimilarity: 8
         EpisodicMemoryCapacity: 600
+        ResetEpisodicMemory: true
     MetaLearningParameters:
         Epsilon: 0.3
         EpsilonDecay: 0.999
         EpsilonMin: 0.02
         StepDown: false
-        NumExplorationPolicies: 6
+        NumExplorationPolicies: 8
         UCBWindowSize: 90
         UCBAlpha: 1.0
     Gamma: 0.99
@@ -190,7 +192,7 @@ sac3D:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_3DBall_NGU_MC
+    TrainingID: SAC_3DBall_Ag57
     TrainingInterval: 4
 
 cql:

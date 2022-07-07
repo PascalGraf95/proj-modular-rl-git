@@ -87,9 +87,18 @@ class SACActor(Actor):
             critic_prediction = self.critic_network([*next_state_batch, next_actions])
             critic_target = critic_prediction * (1 - done_batch)
 
-            # Use gamma given through exploration policy index (is equal for entire sequence)
+            # Use gamma given through exploration policy index (same value for entire sequence)
             if self.additional_network_inputs:
-                self.gamma = self.exploration_policies[state_batch[-1][0][0][0]]['gamma']
+                # state_batch is sampled component-based for first index. The saved exploration policy index within the
+                # observation is always the last observation component -> therefore state_batch[-1] is used to get it.
+                # Get gammas through saved exploration policy indices within the sequences
+                self.gamma = np.zeros(len(critic_target))
+                for idx, sequence in enumerate(state_batch[-1]):
+                    self.gamma[idx] = self.exploration_policies[int(sequence[0][0])]['gamma']
+                # Add two pseudo dimensions to gamma for proper shape calculations regarding critic_target
+                y = reward_batch + (self.gamma[:, None, None] ** self.n_steps) * critic_target
+            else:
+                y = reward_batch + (self.gamma ** self.n_steps) * critic_target
 
             # Train Both Critic Networks
             y = reward_batch + (self.gamma ** self.n_steps) * critic_target
@@ -366,6 +375,7 @@ class SACLearner(Learner):
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = self.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes, self.action_shape)
+
         if np.any(action_batch is None):
             return None, None, self.training_step
         # endregion
@@ -385,11 +395,18 @@ class SACLearner(Learner):
         # Training Target Calculation with standard TD-Error + Temperature Parameter
         critic_target = (critic_target_prediction - self.alpha * next_log_prob) * (1 - done_batch)
 
-        # Use gamma given through exploration policy index (is equal for entire sequence)
+        # Use gamma given through exploration policy index (same value for entire sequence)
         if self.additional_network_inputs:
-            self.gamma = self.exploration_policies[state_batch[-1][0][0][0]]['gamma']
-
-        y = reward_batch + (self.gamma ** self.n_steps) * critic_target
+            # state_batch is sampled component-based for first index. The saved exploration policy index within the
+            # observation is always the last observation component -> therefore state_batch[-1] is used to get it.
+            # Get gammas through saved exploration policy indices within the sequences
+            self.gamma = np.zeros(len(critic_target))
+            for idx, sequence in enumerate(state_batch[-1]):
+                self.gamma[idx] = self.exploration_policies[int(sequence[0][0])]['gamma']
+            # Add two pseudo dimensions to gamma for proper shape calculations regarding critic_target
+            y = reward_batch + (self.gamma[:, None, None] ** self.n_steps) * critic_target
+        else:
+            y = reward_batch + (self.gamma ** self.n_steps) * critic_target
 
         # Possible Reward Normalization
         if self.reward_normalization:

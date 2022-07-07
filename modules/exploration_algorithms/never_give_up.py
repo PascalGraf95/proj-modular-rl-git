@@ -60,7 +60,8 @@ class NeverGiveUp(ExplorationAlgorithm):
         modified_observation_shapes = []
         for obs_shape in self.observation_shapes:
             modified_observation_shapes.append(obs_shape)
-        modified_observation_shapes.append((self.action_shape,))
+        # TODO: CHANGED
+        '''modified_observation_shapes.append((self.action_shape,))'''
         modified_observation_shapes.append((1,))
         modified_observation_shapes.append((1,))
         modified_observation_shapes.append((1,))
@@ -93,6 +94,7 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.similarity_max = exploration_parameters["MaximumSimilarity"]
         self.episodic_memory = deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
         self.mean_distances = deque(maxlen=self.episodic_memory.maxlen)
+        self.reset_episodic_memory = exploration_parameters["ResetEpisodicMemory"]
 
         self.feature_extractor, self.embedding_classifier = self.build_network()
         self.episodic_novelty_module_built = True
@@ -257,9 +259,12 @@ class NeverGiveUp(ExplorationAlgorithm):
         if np.any(np.isnan(action_batch)):
             return replay_batch
 
+        # TODO: CHANGED
         # Clear extra state parts added during acting as they must not be used by the exploration algorithms
-        state_batch = state_batch[:-4]
-        next_state_batch = next_state_batch[:-4]
+        '''state_batch = state_batch[:-4]
+        next_state_batch = next_state_batch[:-4]'''
+        state_batch = state_batch[:-3]
+        next_state_batch = next_state_batch[:-3]
         # endregion
 
         # region Epsilon-Greedy learning step
@@ -455,13 +460,20 @@ class NeverGiveUp(ExplorationAlgorithm):
         return epsilon
 
     def get_logs(self):
-        return {"Exploration/EpisodicLoss": self.episodic_loss,
-                "Exploration/LifeLongLoss": self.lifelong_loss}
+        if self.index == 0:
+            return {"Exploration/EpisodicLoss": self.episodic_loss,
+                    "Exploration/LifeLongLoss": self.lifelong_loss,
+                    "Exploration/IntrinsicReward": self.intrinsic_reward}
+        else:
+            return {"Exploration/EpisodicLoss": self.episodic_loss,
+                    "Exploration/LifeLongLoss": self.lifelong_loss}
+
 
     def reset(self):
         """Empty episodic memory and clear euclidean distance metrics."""
-        self.mean_distances.clear()
-        self.episodic_memory.clear()
+        if self.reset_episodic_memory:
+            self.mean_distances.clear()
+            self.episodic_memory.clear()
         return
 
     def prevent_checkpoint(self):
