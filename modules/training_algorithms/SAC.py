@@ -105,13 +105,13 @@ class SACActor(Actor):
             self.actor_prediction_network.set_weights(network_weights[0])
         if (self.is_clone_network_update_requested(total_episodes)) and self.behavior_clone_name:
             self.clone_actor_network.set_weights(network_weights[0])
-            print("Clone Network has been updated")
+            print("Clone Network has been updated at step {}".format(total_episodes))
             self.steps_taken_since_clone_network_update = 0
         self.steps_taken_since_network_update = 0
 
     def build_network(self, network_settings, environment_parameters):
         # Create a list of dictionaries with 4 entries, one for each network
-        network_parameters = [{}, {}, {}, {}]
+        network_parameters = [{}, {}, {}]
         # region --- Actor ---
         # - Network Name -
         network_parameters[0]['NetworkName'] = 'SAC_ActorCopy{}'.format(self.index)
@@ -180,14 +180,20 @@ class SACActor(Actor):
             self.critic_network = construct_network(network_parameters[1])
             if self.recurrent:
                 self.actor_prediction_network = construct_network(network_parameters[2])
-                # In case of recurrent neural networks, the lstm layers need to be accessible so that the hidden and
-                # cell states can be modified manually.
-                self.get_lstm_layers()
             # If there is a clone agent in the environment, instantiate another actor network for self-play.
             if self.behavior_clone_name:
                 network_parameters.append(network_parameters[0].copy())
-                network_parameters[3]['NetworkName'] = 'ActorCloneCopy{}'.format(self.index)
-                self.clone_actor_network = construct_network(network_parameters[3])
+                if self.recurrent:
+                    network_parameters[3]['NetworkName'] = 'ActorCloneCopy{}'.format(self.index)
+                    print(network_parameters[3])
+                    self.clone_actor_network = construct_network(network_parameters[3], plot_network_model=True)
+                else:
+                    network_parameters[2]['NetworkName'] = 'ActorCloneCopy{}'.format(self.index)
+                    self.clone_actor_network = construct_network(network_parameters[2], plot_network_model=True)
+            if self.recurrent:
+                # In case of recurrent neural networks, the lstm layers need to be accessible so that the hidden and
+                # cell states can be modified manually.
+                self.get_lstm_layers()
         # endregion
         return True
 

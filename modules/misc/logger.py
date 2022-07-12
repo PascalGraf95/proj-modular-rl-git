@@ -154,6 +154,9 @@ class GlobalLogger:
             max_agent_average_length = np.mean(list(self.episode_length_deque[self.best_actor])[-average_num:])
         return max_agent_average_length, max_agent_average_reward, self.total_episodes_played
 
+    def get_total_episodes(self):
+        return self.total_episodes_played
+
     @ray.method(num_returns=2)
     def get_new_sequence_length(self, sequence_length, burn_in, training_step):
         # Only check for an updated sequence length every 100 training steps
@@ -189,6 +192,7 @@ class GlobalLogger:
         if self.periodic_model_saving:
             if training_step - self.last_save_time_step >= 10000:
                 self.last_save_time_step = training_step
+                print("Periodic Model Saving at Step {}".format(training_step))
                 return True
             if training_step - self.last_save_time_step > 1000 and self.total_episodes_played > 10:
                 max_average_reward = self.average_rewards[self.best_actor]

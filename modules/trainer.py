@@ -195,6 +195,7 @@ class Trainer:
         # call ray.get() on the ID.
         environment_configuration = self.actors[0].get_environment_configuration.remote()
         self.environment_configuration = ray.get(environment_configuration)
+        print(self.environment_configuration.get("BehaviorCloneName"))
         exploration_configuration = self.actors[0].get_exploration_configuration.remote()
         self.exploration_configuration = ray.get(exploration_configuration)
 
@@ -230,10 +231,12 @@ class Trainer:
         # browser. This will only be done, if the agent is in training mode.
         self.logging_name = \
             datetime.strftime(datetime.now(), '%y%m%d_%H%M%S_') + self.trainer_configuration['TrainingID']
-        self.global_logger = GlobalLogger.remote(os.path.join("training/summaries", self.logging_name),
-                                                 actor_num=self.trainer_configuration["ActorNum"],
-                                                 tensorboard=(mode == 'training'),
-                                                 periodic_model_saving=(self.training_algorithm == 'CQL'))
+        self.global_logger = GlobalLogger.remote(
+            os.path.join("training/summaries", self.logging_name),
+            actor_num=self.trainer_configuration["ActorNum"],
+            tensorboard=(mode == 'training'),
+            periodic_model_saving=(self.training_algorithm == 'CQL' or
+                                   self.environment_configuration.get("BehaviorCloneName")))
         # If training mode is enabled all configs are stored into a yaml file in the summaries folder
         if mode == 'training':
             if not os.path.isdir(os.path.join("./training/summaries", self.logging_name)):
@@ -291,9 +294,6 @@ class Trainer:
             for idx, actor in enumerate(self.actors):
                 # Gather samples from the local buffer of an actor.
                 samples, indices = actor.get_new_samples.remote()
-                ind = ray.get([indices])
-                if np.any(ind):
-                    print(ind)
                 # Calculate an initial priority based on the temporal difference error of the critic network.
                 if self.trainer_configuration["PrioritizedReplay"]:
                     sample_errors = actor.get_sample_errors.remote(samples)
@@ -338,7 +338,7 @@ class Trainer:
             # region --- Network Update and Checkpoint Saving ---
             # Check if the actor networks request to be updated with the latest network weights from the learner.
             [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
-                actor.is_network_update_requested.remote(training_step)), total_episodes)
+                actor.is_network_update_requested.remote(training_step)), self.global_logger.get_total_episodes.remote())
                 for actor in self.actors]
 
             # Check if a new best reward has been achieved, if so save the models

@@ -87,27 +87,27 @@ sac:
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -1.0
+    LogAlpha: -3.0
     NSteps: 4
     AdaptiveExploration: true
     NetworkUpdateFrequency: 50
-    SelfPlayNetworkUpdateFrequency: 1000
+    SelfPlayNetworkUpdateFrequency: 500
     NetworkParameters:
         Filters: 16
-        Units: 32
+        Units: 64
         ActorVectorNetworkArchitecture: Dense
         ActorVisualNetworkArchitecture: CNN
         CriticVectorNetworkArchitecture: Dense
         CriticVisualNetworkArchitecture: CNN
     PrioritizedReplay: true
-    PriorityAlpha: 0.8
+    PriorityAlpha: 0.7
     RewardNormalization: false
     ReplayCapacity: 300000
     ReplayMinSize: 100
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_3DBall
+    TrainingID: SAC_Airhockey_Selfplay
     TrainingInterval: 10
 cql:
     Recurrent: false

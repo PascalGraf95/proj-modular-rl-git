@@ -308,7 +308,7 @@ class Actor:
         self.lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                            np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
         if self.behavior_clone_name:
-            self.clone_lstm = self.clone_actor_network.get_layer("lstm_2")
+            self.clone_lstm = self.clone_actor_network.get_layer("lstm_3")
             self.clone_lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                                      np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
 
