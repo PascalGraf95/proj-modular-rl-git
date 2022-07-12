@@ -5,6 +5,7 @@ from tensorflow.keras.losses import MeanSquaredError, CategoricalCrossentropy
 from tensorflow.keras.optimizers import Adam, SGD
 from ..misc.network_constructor import construct_network
 import tensorflow as tf
+from ..misc.utility import modify_observation_shapes
 from ..training_algorithms.agent_blueprint import Learner
 import itertools
 from tensorflow.keras import Input, Model
@@ -49,23 +50,15 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         self.reset_counter = 0
 
         # Epsilon-Greedy Parameters
-        self.epsilon = self.get_epsilon_greedy_parameters(self.index, training_parameters["ActorNum"])
         self.epsilon_decay = exploration_parameters["EpsilonDecay"]
         self.epsilon_min = exploration_parameters["EpsilonMin"]
         self.step_down = exploration_parameters["StepDown"]
+        self.epsilon = self.get_epsilon_greedy_parameters(self.index, training_parameters["ActorNum"])
         self.training_step = 0
 
-        # TODO: Use separate function
-        # Modify observation shapes to use modified shape for sampling
-        modified_observation_shapes = []
-        for obs_shape in self.observation_shapes:
-            modified_observation_shapes.append(obs_shape)
-        modified_observation_shapes.append((self.action_shape,))
-        modified_observation_shapes.append((1,))
-        modified_observation_shapes.append((1,))
-        modified_observation_shapes.append((1,))
-        # modified_observation_shapes.append((1,))
-        self.observation_shapes_modified = modified_observation_shapes
+        # Modify observation shapes for sampling later on
+        self.observation_shapes_modified = modify_observation_shapes(self.observation_shapes, self.action_shape)
+        self.num_additional_obs_values = len(self.observation_shapes_modified) - len(self.observation_shapes)
 
         # Categorical Cross-Entropy for discrete action spaces
         # Mean Squared Error for continuous action spaces
@@ -87,6 +80,7 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         self.similarity_max = exploration_parameters["MaximumSimilarity"]
         self.episodic_memory = deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
         self.mean_distances = deque(maxlen=self.episodic_memory.maxlen)
+        self.reset_episodic_memory = exploration_parameters["ResetEpisodicMemory"]
 
         self.feature_extractor, self.embedding_classifier = self.build_network()
 
@@ -172,8 +166,8 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             return replay_batch
 
         # Clear extra state parts added during acting as they must not be used by the exploration algorithms
-        state_batch = state_batch[:-4]
-        next_state_batch = next_state_batch[:-4]
+        state_batch = state_batch[:-self.num_additional_obs_values]
+        next_state_batch = next_state_batch[:-self.num_additional_obs_values]
         # endregion
 
         # region Epsilon-Greedy learning step
@@ -226,22 +220,20 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         return ExplorationAlgorithm.get_config(config_dict)
 
     def act(self, decision_steps, terminal_steps):
-        """Calculate intrinsically-based episodic reward through similarity comparison of current state embedding
-        with prior ones present within episodic memory. Needs to be calculated on every actor step and therefore within
-        this function and not get_intrinsic_reward().
-
-        Notes:
-        - The code within this function is called from play_one_step() within agent_blueprint.py
-        - Computed intrinsic reward must be returned to actor and from there sent to replay_buffer
+        """
+        Calculate intrinsically-based episodic reward through similarity comparison of current state embedding with
+        the content of the episodic memory. Needs to be calculated on every actor step and therefore within this
+        function and not get_intrinsic_reward().
         """
         if not len(decision_steps.obs[0]):
-            self.mean_distances.append(0)
-            return 0
+            current_state = terminal_steps.obs
+        else:
+            current_state = decision_steps.obs
 
         # Extract relevant features from current state
         if self.recurrent:
             # Add additional time dimension if recurrent networks are used
-            current_state = [tf.expand_dims(state, axis=1) for state in decision_steps.obs]
+            current_state = [tf.expand_dims(state, axis=1) for state in current_state]
             # Calculate state embedding and get rid of additional time dimension through index 0
             state_embedding = self.feature_extractor(current_state)[0]
         else:
@@ -316,12 +308,17 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         return epsilon
 
     def get_logs(self):
-        return {"Exploration/EpisodicLoss": self.loss}
+        if self.index == 0:
+            return {"Exploration/EpisodicLoss": self.loss,
+                    "Exploration/IntrinsicReward": self.episodic_intrinsic_reward}
+        else:
+            return {"Exploration/EpisodicLoss": self.loss}
 
     def reset(self):
         """Empty episodic memory and clear euclidean distance metrics."""
-        self.mean_distances.clear()
-        self.episodic_memory.clear()
+        if self.reset_episodic_memory:
+            self.mean_distances.clear()
+            self.episodic_memory.clear()
         return
 
     def prevent_checkpoint(self):

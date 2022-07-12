@@ -12,17 +12,14 @@ from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatena
 import time
 from collections import deque
 from tensorflow.keras.utils import plot_model
+from ..misc.utility import modify_observation_shapes
+
 
 class NeverGiveUp(ExplorationAlgorithm):
     """
-    Basic implementation of Never Give Up (NGU) (-> Incorporates ENM and RND)
-    The computation of intrinsic episodic rewards is done for each actor and for every environment step.
+    Basic implementation of NeverGiveUp's intrinsic reward generator. (-> Incorporates ENM and RND)
+    The computation of intrinsic rewards is done for each actor and for every environment step.
 
-    ***NOTE about naming***
-    - RND is described as the lifelong novelty module of the NGU reward generator
-    - ENM is described as the episodic novelty module of the NGU reward generator
-
-    Logic can be compared to pseudo code within the respective paper:
     https://openreview.net/pdf?id=Sye57xStvB
     """
     Name = "NeverGiveUp"
@@ -34,6 +31,7 @@ class NeverGiveUp(ExplorationAlgorithm):
         "LearningRate": float,
         "EpisodicMemoryCapacity": int
     }
+
     def __init__(self, action_shape, observation_shapes,
                  action_space,
                  exploration_parameters,
@@ -55,18 +53,9 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.epsilon = self.get_epsilon_greedy_parameters(self.index, training_parameters["ActorNum"])
         self.training_step = 0
 
-        # TODO: Use separate function
-        # Modify observation shapes to use modified shape for sampling
-        modified_observation_shapes = []
-        for obs_shape in self.observation_shapes:
-            modified_observation_shapes.append(obs_shape)
-        # TODO: CHANGED
-        '''modified_observation_shapes.append((self.action_shape,))'''
-        modified_observation_shapes.append((1,))
-        modified_observation_shapes.append((1,))
-        modified_observation_shapes.append((1,))
-        #modified_observation_shapes.append((1,))
-        self.observation_shapes_modified = modified_observation_shapes
+        # Modify observation shapes for sampling later on
+        self.observation_shapes_modified = modify_observation_shapes(self.observation_shapes, self.action_shape)
+        self.num_additional_obs_values = len(self.observation_shapes_modified) - len(self.observation_shapes)
 
         # Parameters required during network build-up
         self.episodic_novelty_module_built = False
@@ -259,12 +248,9 @@ class NeverGiveUp(ExplorationAlgorithm):
         if np.any(np.isnan(action_batch)):
             return replay_batch
 
-        # TODO: CHANGED
-        # Clear extra state parts added during acting as they must not be used by the exploration algorithms
-        '''state_batch = state_batch[:-4]
-        next_state_batch = next_state_batch[:-4]'''
-        state_batch = state_batch[:-3]
-        next_state_batch = next_state_batch[:-3]
+        # Clear additional observation parts added during acting as they must not be used by the exploration algorithms
+        state_batch = state_batch[:-self.num_additional_obs_values]
+        next_state_batch = next_state_batch[:-self.num_additional_obs_values]
         # endregion
 
         # region Epsilon-Greedy learning step
@@ -331,9 +317,6 @@ class NeverGiveUp(ExplorationAlgorithm):
     def act(self, decision_steps, terminal_steps):
         if not len(decision_steps.obs[0]):
             current_state = terminal_steps.obs
-            '''self.rnd_reward_deque.append(0)
-            self.mean_distances.append(0)
-            return 0'''
         else:
             current_state = decision_steps.obs
 
@@ -424,7 +407,7 @@ class NeverGiveUp(ExplorationAlgorithm):
             enm_reward = (1 / similarity)
         # endregion
 
-        # Calculate final and combined intrinsic reward
+        # Modulate episodic novelty module output by lifelong novelty module output
         self.intrinsic_reward = enm_reward * min(max(rnd_reward, 1), self.alpha_max)
 
         return self.intrinsic_reward
@@ -467,7 +450,6 @@ class NeverGiveUp(ExplorationAlgorithm):
         else:
             return {"Exploration/EpisodicLoss": self.episodic_loss,
                     "Exploration/LifeLongLoss": self.lifelong_loss}
-
 
     def reset(self):
         """Empty episodic memory and clear euclidean distance metrics."""

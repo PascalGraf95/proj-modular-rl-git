@@ -110,7 +110,7 @@ sacWalker:
         StepDown: false
         UCBWindowSize: 90
         UCBAlpha: 1.0
-        NumExplorationPolicies: 12
+        NumExplorationPolicies: 8
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
@@ -131,10 +131,10 @@ sacWalker:
     RewardNormalization: false
     ReplayCapacity: 300000
     ReplayMinSize: 100
-    SyncMode: hard_sync
-    SyncSteps: 1500
-    Tau: 0.005
-    TrainingID: SAC_Walker_Agent57rGaFix
+    SyncMode: soft_sync
+    SyncSteps: 500
+    Tau: 0.01
+    TrainingID: SAC_Walker_Agent57
     TrainingInterval: 10
 sac:
     Recurrent: true
@@ -192,7 +192,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_3DBall_Ag57
+    TrainingID: SAC_3DBall_Ag57_wActfeed
     TrainingInterval: 4
 
 cql:

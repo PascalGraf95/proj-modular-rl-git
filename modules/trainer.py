@@ -58,7 +58,6 @@ class Trainer:
         # possible decay over time.
         self.exploration_configuration = None
         self.exploration_algorithm = None
-        self.exploration_policies = None
 
         # - Meta Learning Algorithm -
         # The meta learning algorithm has its own set of parameters defining the extent of meta learning.
@@ -155,37 +154,41 @@ class Trainer:
         # If there is only one actor in training mode the degree of exploration should start at maximum. Otherwise,
         # each actor will be instantiated with a different degree of exploration. This only has an effect if the
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
-        # returns 0.
+        # returns 0. If the Meta-Controller is used, a family of exploration policies is created, where the controller
+        # later on can dynamically choose from.
+        agent57_related_exploration_algorithms = ["NGU", "ENM", "RND"]
         if actor_num == 1 and mode == "training":
-            if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
+            if exploration_algorithm in agent57_related_exploration_algorithms:
                 if meta_learning_algorithm == "MetaController":
                     # Meta-Controller chooses from a range of exploration policies
-                    self.exploration_policies = get_exploration_policies(
-                        num_policies=self.trainer_configuration["MetaLearningParameters"].get("NumExplorationPolicies"))
+                    number_of_policies = self.trainer_configuration["MetaLearningParameters"].get("NumExplorationPolicies")
                 else:
                     # One fixed exploration policy as there is only one actor
-                    self.exploration_policies = get_exploration_policies(num_policies=1)
-                self.trainer_configuration["ExplorationPolicies"] = self.exploration_policies
-                exploration_degree = self.exploration_policies
+                    number_of_policies = 1
+                # Calculate exploration policy values based on agent57's concept
+                exploration_degree = get_exploration_policies(num_policies=number_of_policies)
             else:
                 exploration_degree = [1.0]
-        else:
-            if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
+        elif mode == "training":
+            if exploration_algorithm in agent57_related_exploration_algorithms:
                 if meta_learning_algorithm == "MetaController":
                     # Meta-Controller chooses from a range of exploration policies
-                    self.exploration_policies = get_exploration_policies(
-                        num_policies=self.trainer_configuration["MetaLearningParameters"].get("NumExplorationPolicies"))
+                    number_of_policies = self.trainer_configuration["MetaLearningParameters"].get("NumExplorationPolicies")
                 else:
-                    # One fixed exploration policy per actor
-                    self.exploration_policies = get_exploration_policies(
-                        num_policies=self.trainer_configuration["ActorNum"])
-                self.trainer_configuration["ExplorationPolicies"] = self.exploration_policies
-                exploration_degree = self.exploration_policies
+                    # One fixed exploration policy per actor if there is no meta-controller for adaptation
+                    number_of_policies = self.trainer_configuration["ActorNum"]
+                # Calculate exploration policy values based on agent57's concept
+                exploration_degree = get_exploration_policies(num_policies=number_of_policies)
             else:
                 exploration_degree = np.linspace(0, 1, actor_num)
+        else:
+            exploration_degree = np.linspace(0, 1, actor_num)
+
+        # Paste the exploration degree into the trainer configuration
+        self.trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
 
         # If NeverGiveUp or EpisodicNoveltyModule are used as exploration algorithms, additional network inputs will be
-        # added to support the usage of metrics like intrinsic rewards
+        # added.
         if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
             self.trainer_configuration["AdditionalNetworkInputs"] = True
         else:
@@ -214,11 +217,7 @@ class Trainer:
 
         # For each actor instantiate the necessary modules
         for i, actor in enumerate(self.actors):
-            if meta_learning_algorithm == "MetaController":
-                # Exploration degree only a placeholder in this case
-                actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree[0])
-            else:
-                actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree[i])
+            actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree)
             # In case of Unity Environments set the rendering and simulation parameters.
             if self.interface == "MLAgentsV18":
                 if mode == "training":

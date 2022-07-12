@@ -45,6 +45,9 @@ class ExplorationAlgorithm:
     def reset(self):
         return
 
+    def epsilon_greedy(self, decision_steps):
+        return None
+
     @staticmethod
     def calculate_intrinsic_reward(replay_buffer: FIFOBuffer):
         return True

@@ -183,3 +183,37 @@ def print_policy_functions(dict_exploration_policies: dict):
 def sigmoid(x):
     sig = 1 / (1 + np.exp(-x))
     return sig
+
+
+def modify_observation_shapes(observation_shapes, action_shape):
+    """
+    Modify observation shapes through adding additional observation shapes. Those additional shapes will be used to feed
+    inputs that are not coming directly from the interface (Unity, Gym). Such inputs would be for example the prior
+    action of the agent and the prior extrinsic reward ('prior' means the prior environment step).
+
+    -> Necessary for intrinsic reward algorithms NGU and ENM.
+
+    Parameters
+    ----------
+    observation_shapes:
+        Observation shapes given through the interface (Unity, Gym)
+
+    Returns
+    -------
+    modified_observation_shapes:
+        Extended version of the original observation shapes.
+    """
+    modified_observation_shapes = []
+    for obs_shape in observation_shapes:
+        modified_observation_shapes.append(obs_shape)
+
+    # Prior action
+    modified_observation_shapes.append((action_shape,))
+    # Prior extrinsic reward
+    modified_observation_shapes.append((1,))
+    # Prior intrinsic reward
+    modified_observation_shapes.append((1,))
+    # j (index of exploration policy (beta, gamma))
+    modified_observation_shapes.append((1,))
+
+    return modified_observation_shapes

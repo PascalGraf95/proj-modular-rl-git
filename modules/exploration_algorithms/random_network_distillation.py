@@ -38,12 +38,10 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         self.index = idx
         self.device = '/cpu:0'
 
-        #if self.index == 0:
         self.recurrent = training_parameters["Recurrent"]
         self.sequence_length = training_parameters["SequenceLength"]
 
         self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
-        #self.reward_scaling_factor = exploration_parameters["CuriosityScalingFactor"]
         self.reward_scaling_factor = exploration_parameters["ExplorationDegree"]
         self.normalize_observations = exploration_parameters["ObservationNormalization"]
         self.mse = MeanSquaredError()
@@ -156,9 +154,9 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
                                                                          self.action_shape, self.sequence_length)
 
             # Only use last 5 time steps of sequences for training
-            state_batch = [state_input[:, -5:] for state_input in state_batch]
+            '''state_batch = [state_input[:, -5:] for state_input in state_batch]
             next_state_batch = [next_state_input[:, -5:] for next_state_input in next_state_batch]
-            action_batch = [action_sequence[-5:] for action_sequence in action_batch]
+            action_batch = [action_sequence[-5:] for action_sequence in action_batch]'''
 
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
@@ -189,9 +187,9 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
 
     def act(self, decision_steps, terminal_steps):
         if not len(decision_steps.obs[0]):
-            self.reward_deque.append(0)
-            return 0
-        current_state = decision_steps.obs
+            current_state = terminal_steps.obs
+        else:
+            current_state = decision_steps.obs
 
         # region Lifelong Novelty Module
         if self.normalize_observations:
@@ -231,13 +229,14 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         if self.reward_std:
             self.intrinsic_reward /= self.reward_std
 
-        # Scale intrinsic reward by exploration degree
-        self.intrinsic_reward *= self.reward_scaling_factor
-
         return self.intrinsic_reward
 
     def get_logs(self):
-        return {"Exploration/RNDLoss": self.loss}
+        if self.index == 0:
+            return {"Exploration/LifeLongLoss": self.loss,
+                    "Exploration/IntrinsicReward": self.intrinsic_reward}
+        else:
+            return {"Exploration/LifeLongLoss": self.loss}
 
     def prevent_checkpoint(self):
         return False

@@ -94,7 +94,7 @@ class SACActor(Actor):
                 # Get gammas through saved exploration policy indices within the sequences
                 self.gamma = np.zeros(len(critic_target))
                 for idx, sequence in enumerate(state_batch[-1]):
-                    self.gamma[idx] = self.exploration_policies[int(sequence[0][0])]['gamma']
+                    self.gamma[idx] = self.exploration_degree[int(sequence[0][0])]['gamma']
                 # Add two pseudo dimensions to gamma for proper shape calculations regarding critic_target
                 y = reward_batch + (self.gamma[:, None, None] ** self.n_steps) * critic_target
             else:
@@ -402,7 +402,7 @@ class SACLearner(Learner):
             # Get gammas through saved exploration policy indices within the sequences
             self.gamma = np.zeros(len(critic_target))
             for idx, sequence in enumerate(state_batch[-1]):
-                self.gamma[idx] = self.exploration_policies[int(sequence[0][0])]['gamma']
+                self.gamma[idx] = self.exploration_degree[int(sequence[0][0])]['gamma']
             # Add two pseudo dimensions to gamma for proper shape calculations regarding critic_target
             y = reward_batch + (self.gamma[:, None, None] ** self.n_steps) * critic_target
         else:

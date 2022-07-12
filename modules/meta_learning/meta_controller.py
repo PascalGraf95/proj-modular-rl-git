@@ -69,8 +69,9 @@ class MetaController(MetaLearning):
                 empirical_mean = np.zeros(self.num_arms)
                 for episode in self.global_buffer:
                     for j, reward in episode:
-                        arm_play_count[j] += 1
+                        #arm_play_count[j] += 1
                         empirical_mean[j] += reward
+                    arm_play_count[j] += 1
                 empirical_mean = empirical_mean / (arm_play_count + 1e-6)
                 self.arm_index = np.argmax(empirical_mean + self.alpha * np.sqrt(1 / (arm_play_count + 1e-6)))
 
