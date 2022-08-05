@@ -156,7 +156,7 @@ class Trainer:
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
         # returns 0. If the Meta-Controller is used, a family of exploration policies is created, where the controller
         # later on can dynamically choose from.
-        agent57_related_exploration_algorithms = ["NGU", "ENM", "RND"]
+        agent57_related_exploration_algorithms = ["NGU", "ENM", "RND", "ECR", "NGUr"]
         if actor_num == 1 and mode == "training":
             if exploration_algorithm in agent57_related_exploration_algorithms:
                 if meta_learning_algorithm == "MetaController":
@@ -166,7 +166,8 @@ class Trainer:
                     # One fixed exploration policy as there is only one actor
                     number_of_policies = 1
                 # Calculate exploration policy values based on agent57's concept
-                exploration_degree = get_exploration_policies(num_policies=number_of_policies)
+                exploration_degree = get_exploration_policies(num_policies=number_of_policies,
+                                                              beta_max=self.trainer_configuration["ExplorationParameters"].get("MaxIntRewardScaling"))
             else:
                 exploration_degree = [1.0]
         elif mode == "training":
@@ -178,7 +179,8 @@ class Trainer:
                     # One fixed exploration policy per actor if there is no meta-controller for adaptation
                     number_of_policies = self.trainer_configuration["ActorNum"]
                 # Calculate exploration policy values based on agent57's concept
-                exploration_degree = get_exploration_policies(num_policies=number_of_policies)
+                exploration_degree = get_exploration_policies(num_policies=number_of_policies,
+                                                              beta_max=self.trainer_configuration["ExplorationParameters"].get("MaxIntRewardScaling"))
             else:
                 exploration_degree = np.linspace(0, 1, actor_num)
         else:
@@ -189,7 +191,8 @@ class Trainer:
 
         # If NeverGiveUp or EpisodicNoveltyModule are used as exploration algorithms, additional network inputs will be
         # added.
-        if exploration_algorithm == "NGU" or exploration_algorithm == "ENM":
+        if exploration_algorithm == "NGU" or exploration_algorithm == "ENM" or exploration_algorithm == "ECR" or \
+                exploration_algorithm == "NGUr":
             self.trainer_configuration["AdditionalNetworkInputs"] = True
         else:
             self.trainer_configuration["AdditionalNetworkInputs"] = False

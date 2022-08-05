@@ -8,6 +8,7 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 from ..sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
 from ..curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
+from collections import deque
 import time
 import ray
 
@@ -98,6 +99,9 @@ class Actor:
         self.prior_action = None
         self.exploration_degree = None
         self.exploration_policy_idx = 0
+        self.reward_ratio_deque = deque(maxlen=1000)
+        self.reward_correction_factor = 1
+        self.steps_since_update = 0
 
         # - Meta Learning Algorithm -
         self.meta_learning_configuration = None
@@ -251,6 +255,12 @@ class Actor:
             self.intrinsic_exploration = True
         elif exploration_algorithm == "NGU":
             from ..exploration_algorithms.never_give_up import NeverGiveUp as ExplorationAlgorithm
+            self.intrinsic_exploration = True
+        elif exploration_algorithm == "ECR":
+            from ..exploration_algorithms.episodic_curiosity_through_reachability import EpisodicCuriosity as ExplorationAlgorithm
+            self.intrinsic_exploration = True
+        elif exploration_algorithm == "NGUr":
+            from ..exploration_algorithms.never_give_up_reach import NeverGiveUpReach as ExplorationAlgorithm
             self.intrinsic_exploration = True
         else:
             raise ValueError("There is no {} exploration algorithm.".format(exploration_algorithm))
@@ -482,6 +492,8 @@ class Actor:
                 intrinsic_reward = self.exploration_algorithm.act(decision_steps, terminal_steps)
                 # Scale the intrinsic reward through exploration policies' beta.
                 intrinsic_reward *= self.exploration_degree[self.exploration_policy_idx]['beta']
+                '''if len(decision_steps.reward):
+                    self.adaptive_intrinsic_reward_scaling(intrinsic_reward, decision_steps.reward)'''
                 # Extend step observation values with prior action, extrinsic reward, intrinsic reward, policy idx
                 if self.additional_network_inputs:
                     decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
@@ -522,8 +534,8 @@ class Actor:
 
         # Append steps and actions to the local replay buffer
         if self.intrinsic_exploration:
-            augmented_reward_terminal = terminal_steps.reward + intrinsic_reward
-            augmented_reward_decision = decision_steps.reward + intrinsic_reward
+            augmented_reward_terminal = terminal_steps.reward + intrinsic_reward #* self.reward_correction_factor
+            augmented_reward_decision = decision_steps.reward + intrinsic_reward #* self.reward_correction_factor
             self.local_buffer.add_new_steps(terminal_steps.obs, augmented_reward_terminal,
                                             [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
                                             step_type="terminal")
@@ -718,6 +730,34 @@ class Actor:
             self.prior_action = actions[0]
         else:
             self.prior_extrinsic_reward = terminal_steps.reward[0]
+
+    def adaptive_intrinsic_reward_scaling(self, intrinsic_reward, extrinsic_reward):
+        """
+        Calculate the ratio between extrinsic and intrinsic rewards. The ratio is later used to scale the intrinsic
+        rewards with respect to the range of the extrinsic rewards.
+
+        Parameters
+        ----------
+        intrinsic_reward:
+            Latest intrinsic reward.
+        extrinsic_reward:
+            Latest extrinsic reward.
+        """
+        self.steps_since_update += 1
+
+        # Calculate ratio between current extrinsic and intrinsic reward and clip it between 0 and 1
+        if extrinsic_reward == 0:
+            self.reward_ratio_deque.append(1)
+        elif intrinsic_reward <= 1e-6:
+            return
+        else:
+            reward_ratio = np.clip(abs(extrinsic_reward/(intrinsic_reward+1e-6)), 0, 1)
+            self.reward_ratio_deque.append(reward_ratio)
+
+        # Update reward correction factor
+        if self.steps_since_update % 100:
+            self.steps_since_update = 0
+            self.reward_correction_factor = np.mean(self.reward_ratio_deque)
 
     # endregion
 

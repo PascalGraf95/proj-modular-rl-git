@@ -80,7 +80,7 @@ dqn:
     TrainingInterval: 1
 sacWalker:
     Recurrent: true
-    BurnIn: 8
+    BurnIn: 5
     AdaptiveSequenceLength: false
     SequenceLength: 30
     Overlap: 5
@@ -97,6 +97,7 @@ sacWalker:
         StepDown: false
         ObservationNormalization: false
         kNearest: 10
+        MaxIntRewardScaling: 1.0
         ClusterDistance: 0.008
         KernelEpsilon: 0.0001
         KernelConstant: 0.001
@@ -117,7 +118,7 @@ sacWalker:
     LogAlpha: -3.0
     NSteps: 5
     AdaptiveExploration: true
-    NetworkUpdateFrequency: 100
+    NetworkUpdateFrequency: 50
     SelfPlayNetworkUpdateFrequency: 1000
     NetworkParameters:
         Filters: 128
@@ -129,12 +130,12 @@ sacWalker:
     PrioritizedReplay: false
     PriorityAlpha: 0.8
     RewardNormalization: false
-    ReplayCapacity: 300000
+    ReplayCapacity: 100000
     ReplayMinSize: 100
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_Walker_Agent57
+    TrainingID: SAC_Walker_ECR
     TrainingInterval: 10
 sac:
     Recurrent: true
@@ -155,6 +156,7 @@ sac:
         StepDown: false
         ObservationNormalization: false
         kNearest: 10
+        MaxIntRewardScaling: 1.0
         ClusterDistance: 0.008
         KernelEpsilon: 0.0001
         KernelConstant: 0.001
@@ -192,7 +194,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_3DBall_Ag57_wActfeed
+    TrainingID: SAC_3DBall_NGUr
     TrainingInterval: 4
 
 cql:

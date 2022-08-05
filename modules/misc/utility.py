@@ -170,13 +170,15 @@ def print_policy_functions(dict_exploration_policies: dict):
         betas.append(dict_exploration_policies[idx]['beta'])
         gammas.append(dict_exploration_policies[idx]['gamma'])
     plt.plot(num_policies, betas)
-    plt.xlabel("policy")
-    plt.ylabel("betas")
+    plt.title(r'$\beta$', fontsize=18, fontweight='bold')
+    plt.xlabel("exploration policy", fontsize=12)
+    plt.ylabel("value", fontsize=12)
     plt.show()
 
     plt.plot(num_policies, gammas)
-    plt.xlabel("policy")
-    plt.ylabel("gammas")
+    plt.title(r'$\gamma$', fontsize=18, fontweight='bold')
+    plt.xlabel("exploration policy", fontsize=12)
+    plt.ylabel("value", fontsize=12)
     plt.show()
 
 
@@ -185,7 +187,7 @@ def sigmoid(x):
     return sig
 
 
-def modify_observation_shapes(observation_shapes, action_shape):
+def modify_observation_shapes(observation_shapes, action_shapes):
     """
     Modify observation shapes through adding additional observation shapes. Those additional shapes will be used to feed
     inputs that are not coming directly from the interface (Unity, Gym). Such inputs would be for example the prior
@@ -197,6 +199,8 @@ def modify_observation_shapes(observation_shapes, action_shape):
     ----------
     observation_shapes:
         Observation shapes given through the interface (Unity, Gym)
+    action_shapes:
+        Action shapes given through the interface (Unity, Gym)
 
     Returns
     -------
@@ -208,7 +212,7 @@ def modify_observation_shapes(observation_shapes, action_shape):
         modified_observation_shapes.append(obs_shape)
 
     # Prior action
-    modified_observation_shapes.append((action_shape,))
+    modified_observation_shapes.append((action_shapes,))
     # Prior extrinsic reward
     modified_observation_shapes.append((1,))
     # Prior intrinsic reward

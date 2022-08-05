@@ -1,7 +1,7 @@
 import numpy as np
 from ..misc.replay_buffer import FIFOBuffer
 from .exploration_algorithm_blueprint import ExplorationAlgorithm
-from tensorflow.keras.losses import MeanSquaredError, CategoricalCrossentropy
+from tensorflow.keras.losses import MeanSquaredError, CategoricalCrossentropy, BinaryCrossentropy
 from tensorflow.keras.optimizers import Adam, SGD
 from ..misc.network_constructor import construct_network
 import tensorflow as tf
@@ -15,13 +15,15 @@ from tensorflow.keras.utils import plot_model
 from ..misc.utility import modify_observation_shapes
 
 
-class NeverGiveUp(ExplorationAlgorithm):
+class NeverGiveUpReach(ExplorationAlgorithm):
     """
-    Basic implementation of NeverGiveUp's intrinsic reward generator. (-> Incorporates ENM and RND)
+    Basic implementation of NeverGiveUp's intrinsic reward generator but with the algorithm 'Episodic Curiosity through
+    reachability' instead of the 'Episodic Novelty Module'. (-> Incorporates ECR and RND)
 
-    https://openreview.net/pdf?id=Sye57xStvB
+    NGU: https://openreview.net/pdf?id=Sye57xStvB
+    ECR: https://arxiv.org/abs/1810.02274
     """
-    Name = "NeverGiveUp"
+    Name = "NeverGiveUpReach"
     ActionAltering = False
     IntrinsicReward = True
 
@@ -57,35 +59,32 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.num_additional_obs_values = len(self.observation_shapes_modified) - len(self.observation_shapes)
 
         # Parameters required during network build-up
-        self.episodic_novelty_module_built = False
+        self.episodic_curiosity_built = False
         self.recurrent = training_parameters["Recurrent"]
         self.sequence_length = training_parameters["SequenceLength"]
         self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
 
-        # Categorical Cross-Entropy for discrete action spaces
-        # Mean Squared Error for continuous action spaces
-        if self.action_space == "DISCRETE":
-            self.cce = CategoricalCrossentropy()
-        elif self.action_space == "CONTINUOUS":
-            self.mse = MeanSquaredError()
+        # Binary Cross-Entropy for discrete action spaces
+        # Mean Squared Error for Lifelong Novelty Module
+        self.bce = BinaryCrossentropy()
+        self.mse = MeanSquaredError()
 
         self.optimizer = Adam(exploration_parameters["LearningRate"])
         self.lifelong_loss = 0
         self.episodic_loss = 0
         self.intrinsic_reward = 0
 
-        # region Episodic novelty module parameters
-        self.k = exploration_parameters["kNearest"]
-        self.cluster_distance = exploration_parameters["ClusterDistance"]
-        self.eps = exploration_parameters["KernelEpsilon"]
-        self.c = exploration_parameters["KernelConstant"]
-        self.similarity_max = exploration_parameters["MaximumSimilarity"]
+        # region ECR parameters
+        self.k = 5
+        self.novelty_threshold = 0
+        self.beta = 1  # For envs with fixed-length episodes: 0.5 else 1.0
+        self.alpha = 1
+        self.gamma = 2
         self.episodic_memory = deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
-        self.mean_distances = deque(maxlen=self.episodic_memory.maxlen)
         self.reset_episodic_memory = exploration_parameters["ResetEpisodicMemory"]
 
-        self.feature_extractor, self.embedding_classifier = self.build_network()
-        self.episodic_novelty_module_built = True
+        self.feature_extractor, self.comparator_network = self.build_network()
+        self.episodic_curiosity_built = True
         # endregion
 
         # region Lifelong novelty module parameters
@@ -103,9 +102,9 @@ class NeverGiveUp(ExplorationAlgorithm):
 
     def build_network(self):
         with tf.device(self.device):
-            # region Episodic Novelty Module
-            if not self.episodic_novelty_module_built:
-                # region Feature Extractor
+            # region Episodic Curiosity Module
+            if not self.episodic_curiosity_built:
+                # region Embedding Network
                 if len(self.observation_shapes) == 1:
                     if self.recurrent:
                         feature_input = Input((None, *self.observation_shapes[0]))
@@ -125,10 +124,10 @@ class NeverGiveUp(ExplorationAlgorithm):
                 x = Dense(32, activation="relu")(x)
                 x = Dense(32, activation="relu")(x)
                 x = Dense(self.feature_space_size, activation="relu")(x)
-                feature_extractor = Model(feature_input, x, name="ENM Feature Extractor")
+                feature_extractor = Model(feature_input, x, name="ECR Feature Extractor")
                 # endregion
 
-                # region Classifier
+                # region Comparator
                 if self.recurrent:
                     # Add additional time dimension if networks work with recurrent replay batches
                     current_state_features = Input((None, *(self.feature_space_size,)))
@@ -137,33 +136,28 @@ class NeverGiveUp(ExplorationAlgorithm):
                     current_state_features = Input(self.feature_space_size)
                     next_state_features = Input(self.feature_space_size)
                 x = Concatenate(axis=-1)([current_state_features, next_state_features])
-                x = Dense(64, 'relu')(x)
-                if self.action_space == "DISCRETE":
-                    x = Dense(self.action_shape[0], 'softmax')(x)
-                elif self.action_space == "CONTINUOUS":
-                    x = Dense(self.action_shape, 'tanh')(x)
-                embedding_classifier = Model([current_state_features, next_state_features], x, name="ENM Classifier")
+                x = Dense(32, activation="relu")(x)
+                x = Dense(32, activation="relu")(x)
+                x = Dense(1, activation='sigmoid')(x)
+                comparator_network = Model([current_state_features, next_state_features], x, name="ECR Comparator")
                 # endregion
 
                 # region Model compilation and plotting
-                if self.action_space == "DISCRETE":
-                    embedding_classifier.compile(loss=self.cce, optimizer=self.optimizer)
-                elif self.action_space == "CONTINUOUS":
-                    embedding_classifier.compile(loss=self.mse, optimizer=self.optimizer)
+                comparator_network.compile(loss=self.bce, optimizer=self.optimizer)
 
                 # Model plots
                 try:
-                    plot_model(feature_extractor, "plots/ENM_FeatureExtractor.png", show_shapes=True)
-                    plot_model(embedding_classifier, "plots/ENM_EmbeddingClassifier.png", show_shapes=True)
+                    plot_model(feature_extractor, "plots/ECR_FeatureExtractor.png", show_shapes=True)
+                    plot_model(comparator_network, "plots/ECR_Comparator.png", show_shapes=True)
                 except ImportError:
-                    print("Could not create model plots for ENM.")
+                    print("Could not create model plots for ECR.")
 
                 # Summaries
                 feature_extractor.summary()
-                embedding_classifier.summary()
+                comparator_network.summary()
                 # endregion
 
-                return feature_extractor, embedding_classifier
+                return feature_extractor, comparator_network
             # endregion
 
             # region Lifelong Novelty Module
@@ -246,25 +240,24 @@ class NeverGiveUp(ExplorationAlgorithm):
 
         if np.any(np.isnan(action_batch)):
             return replay_batch
-
-        # Clear additional observation parts added during acting as they must not be used by the exploration algorithms
-        state_batch = state_batch[:-self.num_additional_obs_values]
-        next_state_batch = next_state_batch[:-self.num_additional_obs_values]
         # endregion
 
-        # region Epsilon-Greedy learning step
+        # Epsilon-Greedy learning step
         self.training_step += 1
         if self.epsilon >= self.epsilon_min and not self.step_down:
             self.epsilon *= self.epsilon_decay
 
         if self.training_step >= self.step_down and self.step_down:
             self.epsilon = self.epsilon_min
-        # endregion
 
-        # region Episodic and Lifelong Novelty Modules learning step
+        # region --- learning step ---
         with tf.device(self.device):
             # region Lifelong Novelty Module
             with tf.GradientTape() as tape:
+                # Clear additional observation parts added during acting as they must not be used by the exploration
+                # algorithms
+                next_state_batch = next_state_batch[:-self.num_additional_obs_values]
+
                 target_features = self.target_model(next_state_batch)
                 prediction_features = self.prediction_model(next_state_batch)
                 self.lifelong_loss = self.mse(target_features, prediction_features)
@@ -274,33 +267,36 @@ class NeverGiveUp(ExplorationAlgorithm):
             self.optimizer.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
             # endregion
 
-            # region Episodic Novelty Module
+            # region Episodic Curiosity Through Reachability
             with tf.GradientTape() as tape:
-                # Calculate features of current and next state
+                # Clear additional observation parts added during acting as they must not be used by the exploration
+                # algorithms
+                state_batch = state_batch[:-self.num_additional_obs_values]
+
+                # Calculate features
                 state_features = self.feature_extractor(state_batch)
-                next_state_features = self.feature_extractor(next_state_batch)
 
-                action_prediction = self.embedding_classifier([state_features, next_state_features])
+                # Create training data (unique feature-pairs with respective reachability information as labels)
+                x1_batch, x2_batch, y_true_batch = [], [], []
+                for sequence in state_features:
+                    x1, x2, y_true = self.get_training_data(sequence)
+                    x1_batch.append(x1)
+                    x2_batch.append(x2)
+                    y_true_batch.append(y_true)
 
-                # Calculate inverse loss
-                if self.action_space == "DISCRETE":
-                    # TODO: Turn into real and working code
-                    # Encode true action as one hot vector encoding
-                    num_actions = self.action_shape[:]
-                    true_actions_one_hot = tf.one_hot(action_batch, num_actions).numpy()
-                    # Compute Loss via Categorical Cross Entropy
-                    self.episodic_loss = self.cce(true_actions_one_hot, action_prediction)
+                # Cast arrays for comparator to output correct shape
+                x1_batch = np.array(x1_batch)
+                x2_batch = np.array(x2_batch)
 
-                elif self.action_space == "CONTINUOUS":
-                    # Compute Loss via Mean Squared Error
-                    self.episodic_loss = self.mse(action_batch, action_prediction)
+                # Calculate reachability between observation pairs
+                y_pred = self.comparator_network([x1_batch, x2_batch])
 
-            # Calculate Gradients
-            grad = tape.gradient(self.episodic_loss, [self.embedding_classifier.trainable_weights,
-                                                      self.feature_extractor.trainable_weights])
-            # Apply Gradients to all models
-            self.optimizer.apply_gradients(zip(grad[0], self.embedding_classifier.trainable_weights))
-            self.optimizer.apply_gradients(zip(grad[1], self.feature_extractor.trainable_weights))
+                # Calculate Binary Cross-Entropy Loss
+                self.episodic_loss = self.bce(y_true_batch, y_pred)
+
+            # Calculate Gradients and apply the weight updates to the comparator model.
+            grad = tape.gradient(self.episodic_loss, self.comparator_network.trainable_weights)
+            self.optimizer.apply_gradients(zip(grad, self.comparator_network.trainable_weights))
             # endregion
         # endregion
         return
@@ -310,7 +306,7 @@ class NeverGiveUp(ExplorationAlgorithm):
 
     @staticmethod
     def get_config():
-        config_dict = NeverGiveUp.__dict__
+        config_dict = NeverGiveUpReach.__dict__
         return ExplorationAlgorithm.get_config(config_dict)
 
     def act(self, decision_steps, terminal_steps):
@@ -361,7 +357,7 @@ class NeverGiveUp(ExplorationAlgorithm):
             rnd_reward = 1
         # endregion
 
-        # region Episodic Novelty Module
+        # region Episodic Curiosity Through Reachability
         # Extract relevant features from current state
         if self.recurrent:
             # '[0]' -> to get rid of time dimension directly after network inference
@@ -369,45 +365,30 @@ class NeverGiveUp(ExplorationAlgorithm):
         else:
             state_embedding = self.feature_extractor(current_state)
 
-        # Calculate the euclidean distances between current state embedding and the ones within episodic memory (N_k)
-        embedding_distances = [np.linalg.norm(mem_state_embedding - state_embedding)
-                               for mem_state_embedding in self.episodic_memory]
-
-        # Add state to episodic memory
-        self.episodic_memory.append(state_embedding)
-
-        # Get list of top k distances (d_k)
-        topk_emb_distances = np.sort(embedding_distances)[:self.k]  # ascending order
-
-        # Calculate mean distance value of current top k distances (d_m)
-        if np.any(topk_emb_distances):
-            self.mean_distances.append(np.mean(topk_emb_distances))
-        else:
-            # Mean distance will be zero for first iteration, as episodic memory is empty
-            self.mean_distances.append(0)
+        # First observation must be added to episodic memory before executing further calculations
+        if not self.episodic_memory.__len__():
+            self.episodic_memory.append(state_embedding)
             return 0
 
-        # Normalize the distances with moving average of mean distance
-        topk_emb_distances_normalized = topk_emb_distances / np.mean(self.mean_distances)
+        # Create array with length of the current episodic memory containing same copies of the current state embedding
+        state_embedding_array = np.empty([self.episodic_memory.__len__(), state_embedding.shape[0],
+                                          state_embedding.shape[1]])
+        state_embedding_array[:] = state_embedding
 
-        # Cluster the normalized distances
-        topk_emb_distances = np.where(topk_emb_distances_normalized - self.cluster_distance > 0,
-                                      topk_emb_distances_normalized - self.cluster_distance, 0)
+        # Get reachability buffer
+        reachability_buffer = self.comparator_network([state_embedding_array, np.array(self.episodic_memory)])
 
-        # Calculate similarity (will increase as agent collects more and more states similar to each other)
-        K = self.eps / (topk_emb_distances + self.eps)
-        similarity = np.sqrt(np.sum(K)) + self.c
+        # Aggregate the content of the reachability buffer to calculate similarity-score of current embedding
+        similarity_score = np.percentile(reachability_buffer, 90)
+        ecr_reward = self.alpha * (self.beta - similarity_score)
 
-        # Check for similarity boundaries and return intrinsic episodic reward
-        if np.isnan(similarity) or (similarity > self.similarity_max):
-            enm_reward = 0
-        else:
-            # 1/similarity to encourage visiting states with lower similarity
-            enm_reward = (1 / similarity)
+        # Add state to episodic memory if similarity score is large enough
+        if ecr_reward > self.novelty_threshold:
+            self.episodic_memory.append(state_embedding)
         # endregion
 
         # Modulate episodic novelty module output by lifelong novelty module output
-        self.intrinsic_reward = enm_reward * min(max(rnd_reward, 1), self.alpha_max)
+        self.intrinsic_reward = ecr_reward * min(max(rnd_reward, 1), self.alpha_max)
 
         return self.intrinsic_reward
 
@@ -441,6 +422,48 @@ class NeverGiveUp(ExplorationAlgorithm):
             epsilon = self.epsilon_min
         return epsilon
 
+    def get_training_data(self, sequence):
+        """
+        Create ECR's training data through forming of random observation pairs and calculating whether the elements of those
+        pairs are reachable from one to each other within k-steps. Allocation process is done randomly and differs from
+        the original paper where a sliding window based approach is used.
+
+        Parameters
+        ----------
+        sequence:
+            Contains the observation values of a sequence from the state_batch.
+
+        Returns
+        -------
+        x1:
+            First elements of the observation index pairs.
+        x2:
+            Second elements of the observation index pairs.
+        labels: int
+            Reachability between x1 and x2 elements and therefore the ground truth of the training data. (0 == not
+            reachable within k-steps, 1 == reachable within k-steps)
+        """
+        # Create Index Array
+        sequence_len = len(sequence)
+        sequence_indices = np.arange(sequence_len)
+
+        # Shuffle sequence indices randomly
+        np.random.shuffle(sequence_indices)
+        # Get middle index
+        sequence_middle = sequence_len // 2
+        # Divide Index-Array into two equally sized parts (Right half gets cutoff if sequence length is odd)
+        sequence_indices_left, sequence_indices_right = sequence_indices[:sequence_middle], \
+                                                        sequence_indices[sequence_middle:2 * sequence_middle]
+        idx_differences = np.abs(sequence_indices_left - sequence_indices_right)
+        x1 = sequence.numpy()[sequence_indices_left]
+        x2 = sequence.numpy()[sequence_indices_right]
+
+        # States are reachable (== 1) one from each other if step-difference between them is smaller than k
+        labels = np.where(idx_differences < self.k, 1, 0)
+        labels = tf.expand_dims(labels, axis=-1)  # necessary as comparator output is 3D
+
+        return x1, x2, labels
+
     def get_logs(self):
         if self.index == 0:
             return {"Exploration/EpisodicLoss": self.episodic_loss,
@@ -453,7 +476,6 @@ class NeverGiveUp(ExplorationAlgorithm):
     def reset(self):
         """Empty episodic memory and clear euclidean distance metrics."""
         if self.reset_episodic_memory:
-            self.mean_distances.clear()
             self.episodic_memory.clear()
         return
 

@@ -31,7 +31,7 @@ def main():
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
     mode = "training"
-    model_path = None #r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220627_081420_SAC_Hallway_NGU"
+    model_path = None #r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\0_SAC_3DBall_Agent57_iRSc"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
@@ -59,8 +59,8 @@ def main():
     # - Exploration Algorithm -
     # The exploration algorithm helps the RL Agent to explore the environment by occasionally choosing suboptimal
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
-    # Choose from "None", "EpsilonGreedy", "ICM", "RND", "ENM", "NGU"
-    exploration_algorithm = "RND"
+    # Choose from "None", "EpsilonGreedy", "ICM", "RND", "ENM", "NGU", "ECR", "NGUr"
+    exploration_algorithm = "NGUr"
 
     # - Meta Learning Algorithm -
     # The meta learning algorithm helps the RL Agent to learn the most efficient way of learning.
