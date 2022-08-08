@@ -63,11 +63,18 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         self.intrinsic_reward = 0
 
         # region Episodic Curiosity module parameters
-        self.k = 5
-        self.novelty_threshold = 0
-        self.beta = 1
-        self.alpha = 1
-        self.gamma = 2
+        self.k = exploration_parameters["kECR"]
+        self.beta = exploration_parameters["BetaECR"]  # For envs with fixed-length episodes: 0.5 else 1.0
+        self.alpha = exploration_parameters["AlphaECR"]
+
+        # Calculate left and right limits of the value range of the output and get median, which represents the novelty
+        # threshold
+        min_network_output = 0  # as output node of comparator is sigmoid
+        max_network_output = 1  # as output node of comparator is sigmoid
+        left_limit, right_limit = self.alpha * (self.beta - min_network_output), \
+                                  self.alpha * (self.beta - max_network_output)
+        self.novelty_threshold = np.median([left_limit, right_limit])
+
         # TODO: Currently episodic memory as ring-buffer, make overflow mechanic random?
         self.episodic_memory = deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
         self.reset_episodic_memory = exploration_parameters["ResetEpisodicMemory"]
@@ -145,7 +152,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         if np.any(np.isnan(action_batch)):
             return replay_batch
         # endregion
-
+        
         # region --- Learning Step ---
         with tf.device(self.device):
             with tf.GradientTape() as tape:
@@ -162,7 +169,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
                     x1_batch.append(x1)
                     x2_batch.append(x2)
                     y_true_batch.append(y_true)
-
+                
                 # Cast arrays for comparator to output correct shape
                 x1_batch = np.array(x1_batch)
                 x2_batch = np.array(x2_batch)
@@ -178,7 +185,6 @@ class EpisodicCuriosity(ExplorationAlgorithm):
 
             # Apply Gradients to all models
             self.optimizer.apply_gradients(zip(grad, self.comparator_network.trainable_weights))
-
         # endregion
         return
 
@@ -260,7 +266,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         similarity_score = np.percentile(reachability_buffer, 90)
         self.intrinsic_reward = self.alpha * (self.beta - similarity_score)
 
-        # Add state to episodic memory if similarity score is large enough
+        # Add state to episodic memory if intrinsic reward is large enough
         if self.intrinsic_reward > self.novelty_threshold:
             self.episodic_memory.append(state_embedding)
 

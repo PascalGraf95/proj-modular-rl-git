@@ -65,7 +65,7 @@ def main():
     # - Meta Learning Algorithm -
     # The meta learning algorithm helps the RL Agent to learn the most efficient way of learning.
     # Choose from "None", "MetaController"
-    meta_learning_algorithm = "None"
+    meta_learning_algorithm = "MetaController"
 
     # - Curriculum Strategy -
     # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for

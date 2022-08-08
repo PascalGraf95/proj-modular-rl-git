@@ -176,7 +176,7 @@ class Trainer:
                     # Meta-Controller chooses from a range of exploration policies
                     number_of_policies = self.trainer_configuration["MetaLearningParameters"].get("NumExplorationPolicies")
                 else:
-                    # One fixed exploration policy per actor if there is no meta-controller for adaptation
+                    # One fixed exploration policy per actor if there is no meta-controller
                     number_of_policies = self.trainer_configuration["ActorNum"]
                 # Calculate exploration policy values based on agent57's concept
                 exploration_degree = get_exploration_policies(num_policies=number_of_policies,
@@ -189,10 +189,9 @@ class Trainer:
         # Paste the exploration degree into the trainer configuration
         self.trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
 
-        # If NeverGiveUp or EpisodicNoveltyModule are used as exploration algorithms, additional network inputs will be
-        # added.
-        if exploration_algorithm == "NGU" or exploration_algorithm == "ENM" or exploration_algorithm == "ECR" or \
-                exploration_algorithm == "NGUr":
+        # If specific exploration algorithms are used, additional network inputs will be used.
+        additional_input_algorithms = ["NGU", "ENM", "ECR", "NGUr"]
+        if exploration_algorithm in additional_input_algorithms:
             self.trainer_configuration["AdditionalNetworkInputs"] = True
         else:
             self.trainer_configuration["AdditionalNetworkInputs"] = False

@@ -41,8 +41,8 @@ class Mooodel():
         modified_observation_shapes = []
         for obs_shape in self.observation_shapes:
             modified_observation_shapes.append(obs_shape)
-        modified_observation_shapes.append((1,))
-        modified_observation_shapes.append((1,))
+        '''modified_observation_shapes.append((1,))
+        modified_observation_shapes.append((1,))'''
         self.observation_shapes = modified_observation_shapes
 
         # region Embedding Network
@@ -126,9 +126,33 @@ if __name__ == '__main__':
     reachability_buffer = reachability_buffer[:, :, 1]'''
     #y_true = tf.convert_to_tensor(np.ones((32, 7)))
 
-    x1_embedding = np.random.random((32, 7, 32))
-    x2_embedding = np.random.random((32, 7, 32))
+    x1 = np.random.random((32, 15, 35))
+    #x1 = tf.expand_dims(x1, axis=0)
+    x2 = np.random.random((32, 15, 35))
+    #x2 = tf.expand_dims(x2, axis=0)
 
+    with tf.GradientTape() as tape:
+        # Calculate features
+        state_features1 = mdl.feature_extractor(x1)
+        state_features2 = mdl.feature_extractor(x2)
+
+        # Calculate reachability between observation pairs
+        y_pred = mdl.sigmoid_comparator_network([state_features1, state_features2])
+
+        y_true_batch = np.random.random((32, 15, 1))
+
+        # Calculate Binary Cross-Entropy Loss
+        mdl.loss = mdl.bce(y_true_batch, y_pred)
+
+    # Calculate Gradients
+    grad = tape.gradient(mdl.loss, [mdl.sigmoid_comparator_network.trainable_weights,
+                                    mdl.feature_extractor.trainable_weights])
+
+    # Apply Gradients to all models
+    mdl.optimizer.apply_gradients(zip(grad[0], mdl.sigmoid_comparator_network.trainable_weights))
+    mdl.optimizer.apply_gradients(zip(grad[1], mdl.feature_extractor.trainable_weights))
+
+    '''
     #y_pred = y_pred[:, :, 1]
     with tf.GradientTape() as tape:
         y_pred = mdl.comparator_network([x1_embedding, x2_embedding])
@@ -136,6 +160,6 @@ if __name__ == '__main__':
         y_true = np.random.random((32, 7, 2))
         loss_bce = mdl.bce(y_true, y_pred)
         loss_cce = mdl.cce(y_true, y_pred)
-        loss_bce_sig = mdl.bce(y_true, y_pred_sig[:, :, 0])
+        loss_bce_sig = mdl.bce(y_true, y_pred_sig[:, :, 0])'''
 
     print('debug')

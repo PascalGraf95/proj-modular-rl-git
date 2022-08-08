@@ -163,6 +163,9 @@ sac:
         MaximumSimilarity: 8
         EpisodicMemoryCapacity: 600
         ResetEpisodicMemory: true
+        kECR: 5
+        AlphaECR: 1.0
+        BetaECR: 1.0
     MetaLearningParameters:
         Epsilon: 0.3
         EpsilonDecay: 0.999
@@ -194,7 +197,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_3DBall_NGUr
+    TrainingID: SAC_3DBall_Ag57r
     TrainingInterval: 4
 
 cql:
