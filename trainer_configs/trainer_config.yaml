@@ -139,6 +139,7 @@ sacWalker:
     TrainingInterval: 10
 sac:
     Recurrent: true
+    IntrinsicDecoupling: false
     BurnIn: 4
     AdaptiveSequenceLength: false
     SequenceLength: 15
@@ -156,7 +157,7 @@ sac:
         StepDown: false
         ObservationNormalization: false
         kNearest: 10
-        MaxIntRewardScaling: 1.0
+        MaxIntRewardScaling: 0.3
         ClusterDistance: 0.008
         KernelEpsilon: 0.0001
         KernelConstant: 0.001
@@ -197,7 +198,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_3DBall_Ag57r
+    TrainingID: SAC_3DBall_NGUr_b1thr0cce
     TrainingInterval: 4
 
 cql:

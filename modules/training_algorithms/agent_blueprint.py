@@ -320,6 +320,7 @@ class Actor:
         self.gamma = trainer_configuration["Gamma"]
         self.n_steps = trainer_configuration["NSteps"]
         self.additional_network_inputs = trainer_configuration.get("AdditionalNetworkInputs")
+        self.intrinsic_networks_decoupling = trainer_configuration.get("IntrinsicDecoupling")
         # Exploration Parameters
         self.adaptive_exploration = trainer_configuration.get("AdaptiveExploration")
         trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree

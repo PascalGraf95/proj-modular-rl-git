@@ -64,9 +64,9 @@ class NeverGiveUpReach(ExplorationAlgorithm):
         self.sequence_length = training_parameters["SequenceLength"]
         self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
 
-        # Categorical Cross-Entropy
+        # Binary Cross-Entropy
         # Mean Squared Error for Lifelong Novelty Module
-        self.cce = CategoricalCrossentropy()
+        self.bce = BinaryCrossentropy()
         self.mse = MeanSquaredError()
 
         self.optimizer = Adam(exploration_parameters["LearningRate"])
@@ -85,7 +85,6 @@ class NeverGiveUpReach(ExplorationAlgorithm):
         max_network_output = 1  # as output node of comparator is sigmoid
         left_limit, right_limit = self.alpha * (self.beta - min_network_output), \
                                   self.alpha * (self.beta - max_network_output)
-        self.novelty_threshold = np.median([left_limit, right_limit])
 
         # A value of '0' for the novelty threshold is suggested by the authors of the original paper. However, combined
         # with self.beta = 1.0 this leads to every single state encountered being added to the episodic memory. This
@@ -151,12 +150,12 @@ class NeverGiveUpReach(ExplorationAlgorithm):
                 x = Concatenate(axis=-1)([current_state_features, next_state_features])
                 x = Dense(32, activation="relu")(x)
                 x = Dense(32, activation="relu")(x)
-                x = Dense(2, activation='softmax')(x)
+                x = Dense(1, activation='sigmoid')(x)
                 comparator_network = Model([current_state_features, next_state_features], x, name="ECR Comparator")
                 # endregion
 
                 # region Model compilation and plotting
-                comparator_network.compile(loss=self.cce, optimizer=self.optimizer)
+                comparator_network.compile(loss=self.bce, optimizer=self.optimizer)
 
                 # Model plots
                 try:
@@ -304,8 +303,8 @@ class NeverGiveUpReach(ExplorationAlgorithm):
                 # Calculate reachability between observation pairs
                 y_pred = self.comparator_network([x1_batch, x2_batch])
 
-                # Calculate Categorical Cross-Entropy Loss
-                self.episodic_loss = self.cce(y_true_batch, y_pred)
+                # Calculate Binary Cross-Entropy Loss
+                self.episodic_loss = self.bce(y_true_batch, y_pred)
 
             # Calculate Gradients and apply the weight updates to the comparator model.
             grad = tape.gradient(self.episodic_loss, self.comparator_network.trainable_weights)
@@ -389,7 +388,7 @@ class NeverGiveUpReach(ExplorationAlgorithm):
         state_embedding_array[:] = state_embedding
 
         # Get reachability buffer
-        reachability_buffer = self.comparator_network([state_embedding_array, np.array(self.episodic_memory)])[:, :, 1]
+        reachability_buffer = self.comparator_network([state_embedding_array, np.array(self.episodic_memory)])
 
         # Aggregate the content of the reachability buffer to calculate similarity-score of current embedding
         similarity_score = np.percentile(reachability_buffer, 90)
@@ -471,16 +470,9 @@ class NeverGiveUpReach(ExplorationAlgorithm):
         x1 = sequence.numpy()[sequence_indices_left]
         x2 = sequence.numpy()[sequence_indices_right]
 
-        # States are reachable (== [0, 1]) one from each other if step-difference between them is smaller than k
-        diffs = []
-        for diff in idx_differences:
-            if diff <= self.k:
-                # reachable
-                diffs.append([0, 1])
-            else:
-                # non-reachable
-                diffs.append([1, 0])
-        labels = diffs
+        # States are reachable (== 1) one from each other if step-difference between them is smaller than k
+        labels = np.where(idx_differences < self.k, 1, 0)
+        labels = tf.expand_dims(labels, axis=-1)  # necessary as comparator output is 3D
 
         return x1, x2, labels
 

@@ -57,6 +57,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
 
         # Loss metrics
         self.cce = CategoricalCrossentropy()
+        self.bce = BinaryCrossentropy()
         self.optimizer = Adam(exploration_parameters["LearningRate"])
         self.loss = 0
         self.intrinsic_reward = 0
@@ -78,7 +79,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         # with self.beta = 1.0 this leads to every single state encountered being added to the episodic memory. This
         # results in a larger training time overall. Therefore, the median of the value range is used for the novelty
         # threshold.
-        #self.novelty_threshold = 0
+        # self.novelty_threshold = 0
 
         self.episodic_memory = deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
         self.reset_episodic_memory = exploration_parameters["ResetEpisodicMemory"]
@@ -122,12 +123,12 @@ class EpisodicCuriosity(ExplorationAlgorithm):
             x = Concatenate(axis=-1)([current_state_features, next_state_features])
             x = Dense(32, activation="relu")(x)
             x = Dense(32, activation="relu")(x)
-            x = Dense(2, activation='softmax')(x)
+            x = Dense(1, activation='sigmoid')(x)
             comparator_network = Model([current_state_features, next_state_features], x, name="ECR Comparator")
             # endregion
 
             # region Model compilation and plotting
-            comparator_network.compile(loss=self.cce, optimizer=self.optimizer)
+            comparator_network.compile(loss=self.bce, optimizer=self.optimizer)
 
             # Model plots
             try:
@@ -181,11 +182,13 @@ class EpisodicCuriosity(ExplorationAlgorithm):
                 # Calculate reachability between observation pairs
                 y_pred = self.comparator_network([x1_batch, x2_batch])
 
-                # Calculate Categorical Cross-Entropy Loss
-                self.loss = self.cce(y_true_batch, y_pred)
+                # Calculate Binary Cross-Entropy Loss
+                self.loss = self.bce(y_true_batch, y_pred)
 
-            # Calculate Gradients and apply the weight updates to the comparator model.
+            # Calculate Gradients
             grad = tape.gradient(self.loss, self.comparator_network.trainable_weights)
+
+            # Apply Gradients to all models
             self.optimizer.apply_gradients(zip(grad, self.comparator_network.trainable_weights))
         # endregion
         return
@@ -226,16 +229,9 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         x1 = sequence.numpy()[sequence_indices_left]
         x2 = sequence.numpy()[sequence_indices_right]
 
-        # States are reachable (== [0, 1]) one from each other if step-difference between them is smaller than k
-        diffs = []
-        for diff in idx_differences:
-            if diff <= self.k:
-                # reachable
-                diffs.append([0, 1])
-            else:
-                # non-reachable
-                diffs.append([1, 0])
-        labels = diffs
+        # States are reachable (== 1) one from each other if step-difference between them is smaller than k
+        labels = np.where(idx_differences < self.k, 1, 0)
+        labels = tf.expand_dims(labels, axis=-1)  # necessary as comparator output is 3D
 
         return x1, x2, labels
 
@@ -269,7 +265,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         state_embedding_array[:] = state_embedding
 
         # Get reachability buffer
-        reachability_buffer = self.comparator_network([state_embedding_array, np.array(self.episodic_memory)])[:, :, 1]
+        reachability_buffer = self.comparator_network([state_embedding_array, np.array(self.episodic_memory)])
 
         # Aggregate the content of the reachability buffer to calculate similarity-score of current embedding
         similarity_score = np.percentile(reachability_buffer, 90)
