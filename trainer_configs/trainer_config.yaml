@@ -28,41 +28,48 @@ ddpg:
     TrainingInterval: 64
 dqn:
     Recurrent: true
-    BurnIn: 0
+    BurnIn: 4
     AdaptiveSequenceLength: false
-    SequenceLength: 20
-    Overlap: 5
-    ActorNum: 10
+    SequenceLength: 15
+    Overlap: 4
+    ActorNum: 8
     ClipGrad: 10.0
     BatchSize: 32
     DoubleLearning: true
     AdaptiveExploration: true
     ExplorationParameters:
-        Epsilon: 0.2
-        EpsilonDecay: 0.9995
-        EpsilonMin: 0.025
-        StepDown: false
-        FeatureSpaceSize: 8
-        CuriosityScalingFactor: 0.01
+        FeatureSpaceSize: 32
+        CuriosityScalingFactor: 0.02
         LearningRate: 0.0005
+        Epsilon: 0.99
+        EpsilonDecay: 0.999
+        EpsilonMin: 0.02
+        StepDown: false
         ObservationNormalization: false
         kNearest: 10
+        MaxIntRewardScaling: 0.3
         ClusterDistance: 0.008
         KernelEpsilon: 0.0001
         KernelConstant: 0.001
         MaximumSimilarity: 8
         EpisodicMemoryCapacity: 600
+        ResetEpisodicMemory: true
+        kECR: 5
+        AlphaECR: 1.0
+        BetaECR: 1.0
     MetaLearningParameters:
-        Epsilon: 0.99
-        EpsilonDecay: 0.995
+        Epsilon: 0.3
+        EpsilonDecay: 0.999
         EpsilonMin: 0.02
         StepDown: false
+        NumExplorationPolicies: 8
         UCBWindowSize: 90
+        UCBAlpha: 1.0
     Gamma: 0.99
     LearningRate: 0.0005
     NSteps: 4
     NetworkParameters:
-        DuelingNetworks: false
+        DuelingNetworks: true
         NoisyNetworks: false
         Filters: 16
         Units: 64
@@ -70,14 +77,14 @@ dqn:
         VisualNetworkArchitecture: CNN
     NetworkUpdateFrequency: 50
     ReplayCapacity: 100000
-    ReplayMinSize: 1000
+    ReplayMinSize: 50
     SyncMode: soft_sync
-    SyncSteps: 200
+    SyncSteps: 500
     Tau: 0.01
-    PrioritizedReplay: true
+    PrioritizedReplay: false
     PriorityAlpha: 0.8
-    TrainingID: DQN_PushBlock
-    TrainingInterval: 1
+    TrainingID: DQN_Ag57_Debug_HM
+    TrainingInterval: 4
 sacWalker:
     Recurrent: true
     BurnIn: 5

@@ -20,11 +20,12 @@ class DQNActor(Actor):
                  preprocessing_algorithm: str,
                  preprocessing_path: str,
                  exploration_algorithm: str,
+                 meta_learning_algorithm: str,
                  environment_path: str = "",
                  demonstration_path: str = "",
                  device: str = '/cpu:0'):
         super().__init__(idx, port, mode, interface, preprocessing_algorithm, preprocessing_path,
-                         exploration_algorithm, environment_path, demonstration_path, device)
+                         exploration_algorithm, meta_learning_algorithm, environment_path, demonstration_path, device)
 
     def act(self, states, agent_ids=None, mode="training", clone=False):
         # Check if any agent in the environment is not in a terminal state
@@ -245,6 +246,17 @@ class DQNLearner(Learner):
             return None, None, self.training_step
         # endregion
 
+        # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains an idx
+        # giving the information which exploration policy was used during acting. This exploration policy contains the
+        # parameters gamma (n-step learning) and beta (intrinsic reward scaling factor).
+        if self.additional_network_inputs:
+            self.gamma = np.empty(np.shape(state_batch[-1]))
+            # state_batch is sampled component-based for first index. The saved exploration policy index within the
+            # observation is always the last observation component -> therefore state_batch[-1] is used to get it.
+            # Get gammas through saved exploration policy indices within the sequences
+            for idx, sequence in enumerate(state_batch[-1]):
+                self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
+
         # If the state is not terminal:
         # t = 𝑟 + 𝛾 * 𝑚𝑎𝑥_𝑎′ 𝑄̂(𝑠′,𝑎′) else t = r
         # target_prediction: (batch_size, time_steps, action_size) or (batch_size, action_size)
@@ -254,19 +266,30 @@ class DQNLearner(Learner):
             model_prediction_argmax = np.argmax(self.critic(next_state_batch).numpy(), axis=-1)
             if self.recurrent:
                 # target_batch: (32, 10, 1) or (32, 1)
-                target_batch = reward_batch + \
-                               (self.gamma ** self.n_steps) * \
-                               np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1) * \
-                               (1 - done_batch)
+                if self.additional_network_inputs:
+                    target_batch = reward_batch + \
+                                   np.multiply(np.multiply((self.gamma ** self.n_steps),
+                                               np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1)),
+                                   (1 - done_batch))
+                else:
+                    target_batch = reward_batch + \
+                                   (self.gamma ** self.n_steps) * \
+                                   np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1) * \
+                                   (1 - done_batch)
             else:
                 target_batch = reward_batch + \
                                (self.gamma ** self.n_steps) * \
                                np.expand_dims(target_prediction[batch_array, model_prediction_argmax], axis=-1) * \
                                (1 - done_batch)
         else:
-            target_batch = reward_batch + \
-                           (self.gamma ** self.n_steps) * tf.reduce_max(target_prediction, axis=-1, keepdims=True) * (
-                                       1 - done_batch)
+            if self.additional_network_inputs:
+                target_batch = reward_batch + \
+                               np.multiply(np.multiply((self.gamma ** self.n_steps), tf.reduce_max(target_prediction, axis=-1,
+                                                                            keepdims=True)), (1 - done_batch))
+            else:
+                target_batch = reward_batch + \
+                               (self.gamma ** self.n_steps) * tf.reduce_max(target_prediction, axis=-1,
+                                                                            keepdims=True) * (1 - done_batch)
 
         # Set the Q value of the chosen action to the target.
         # y: (32, 10, 5) or (32, 5)
@@ -277,12 +300,15 @@ class DQNLearner(Learner):
         else:
             y[batch_array, action_batch[:, 0].astype(int)] = target_batch[:, 0]
 
-        # Train the network on the training batch.
-        sample_errors = np.sum(np.abs(y - self.critic(state_batch)), axis=1)
         if self.recurrent:
+            sample_errors = np.abs(y - self.critic(state_batch))
             eta = 0.9
             sample_errors = eta * np.max(sample_errors[:, self.burn_in:], axis=1) + \
                             (1 - eta) * np.mean(sample_errors[:, self.burn_in:], axis=1)
+        else:
+            sample_errors = np.sum(np.abs(y - self.critic(state_batch)), axis=1)
+
+        # Train the network on the training batch.
         value_loss = self.critic.train_on_batch(state_batch, y)
 
         # Update target network weights

@@ -361,7 +361,7 @@ class Actor:
 
             # Add additional network inputs to actor and learner network for proper training with NGU and ENM.
             modified_observation_shapes = modify_observation_shapes(self.environment_configuration["ObservationShapes"],
-                                                                    self.action_shape)
+                                                                    self.action_shape, self.action_type)
             self.environment_configuration["ObservationShapes"] = modified_observation_shapes
             self.observation_shapes = modified_observation_shapes
 
@@ -500,6 +500,7 @@ class Actor:
                     decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
                 # Some exploration algorithms use epsilon greedy on top
                 actions = self.exploration_algorithm.epsilon_greedy(decision_steps)
+                #actions = None
         else:
             actions = self.exploration_algorithm.act(decision_steps, terminal_steps)
 
@@ -691,19 +692,12 @@ class Actor:
         terminal_steps:
             Terminal step but with extended observation values.
         """
-        if self.action_type == "CONTINUOUS":
-            decision_steps.obs.append(np.array([self.prior_action], dtype=np.float32))
-        else:
-            decision_steps.obs.append(np.array([[self.prior_action[0]]], dtype=np.float32))
+        decision_steps.obs.append(np.array([self.prior_action], dtype=np.float32))
         decision_steps.obs.append(np.array([[self.prior_extrinsic_reward]], dtype=np.float32))
         decision_steps.obs.append(np.array([[self.prior_intrinsic_reward]], dtype=np.float32))
         decision_steps.obs.append(np.array([[self.exploration_policy_idx]], dtype=np.float32))
-
         if len(terminal_steps.obs[0]):
-            if self.action_type == "CONTINUOUS":
-                terminal_steps.obs.append(np.array([self.prior_action], dtype=np.float32))
-            else:
-                terminal_steps.obs.append(np.array([[self.prior_action[0]]], dtype=np.float32))
+            terminal_steps.obs.append(np.array([self.prior_action], dtype=np.float32))
             terminal_steps.obs.append(np.array([[self.prior_extrinsic_reward]], dtype=np.float32))
             terminal_steps.obs.append(np.array([[self.prior_intrinsic_reward]], dtype=np.float32))
             terminal_steps.obs.append(np.array([[self.exploration_policy_idx]], dtype=np.float32))

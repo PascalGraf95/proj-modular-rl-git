@@ -57,7 +57,8 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         self.training_step = 0
 
         # Modify observation shapes for sampling later on
-        self.observation_shapes_modified = modify_observation_shapes(self.observation_shapes, self.action_shape)
+        self.observation_shapes_modified = modify_observation_shapes(self.observation_shapes, self.action_shape,
+                                                                     self.action_space)
         self.num_additional_obs_values = len(self.observation_shapes_modified) - len(self.observation_shapes)
 
         # Categorical Cross-Entropy for discrete action spaces
@@ -128,8 +129,10 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
 
             # region Model compilation and plotting
             if self.action_space == "DISCRETE":
+                feature_extractor.compile(loss=self.cce, optimizer=self.optimizer)
                 embedding_classifier.compile(loss=self.cce, optimizer=self.optimizer)
             elif self.action_space == "CONTINUOUS":
+                feature_extractor.compile(loss=self.mse, optimizer=self.optimizer)
                 embedding_classifier.compile(loss=self.mse, optimizer=self.optimizer)
 
             # Model plots
@@ -168,6 +171,11 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         # Clear extra state parts added during acting as they must not be used by the exploration algorithms
         state_batch = state_batch[:-self.num_additional_obs_values]
         next_state_batch = next_state_batch[:-self.num_additional_obs_values]
+
+        # Action batch, if discrete, contains the index of the respective actions multiple times for every step, which
+        # is not necessary for further operations, therefore get the first element for every timestep.
+        if self.action_space == "DISCRETE":
+            action_batch = action_batch[:, :, 0]
         # endregion
 
         # region Epsilon-Greedy learning step
@@ -191,11 +199,8 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
 
                 # Calculate inverse loss
                 if self.action_space == "DISCRETE":
-                    # TODO: Turn into real and working code
                     # Encode true action as one hot vector encoding
-                    num_actions = self.action_shape[:]
-                    true_actions_one_hot = tf.one_hot(action_batch, num_actions).numpy()
-
+                    true_actions_one_hot = tf.one_hot(action_batch, self.action_shape[0])
                     # Compute Loss via Categorical Cross Entropy
                     self.loss = self.cce(true_actions_one_hot, action_prediction)
 
@@ -229,6 +234,9 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             current_state = terminal_steps.obs
         else:
             current_state = decision_steps.obs
+
+        if not current_state:
+            return 0
 
         # Extract relevant features from current state
         if self.recurrent:

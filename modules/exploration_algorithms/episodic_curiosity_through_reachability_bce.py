@@ -46,7 +46,8 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         self.device = '/cpu:0'
 
         # Modify observation shapes for sampling later on
-        self.observation_shapes_modified = modify_observation_shapes(self.observation_shapes, self.action_shape)
+        self.observation_shapes_modified = modify_observation_shapes(self.observation_shapes, self.action_shape,
+                                                                     self.action_space)
         self.num_additional_obs_values = len(self.observation_shapes_modified) - len(self.observation_shapes)
 
         # Parameters required during network build-up
@@ -243,6 +244,9 @@ class EpisodicCuriosity(ExplorationAlgorithm):
             current_state = terminal_steps.obs
         else:
             current_state = decision_steps.obs
+
+        if not current_state:
+            return 0
 
         # Extract relevant features from current state
         if self.recurrent:

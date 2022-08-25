@@ -41,10 +41,13 @@ def main():
     # If you want a CQL agent to learn from demonstrations, an environment can be used to evaluate the model on a
     # regular basis. Please provide a path or type None to connect directly to the Unity Editor. Otherwise, type
     # 'NoEnv' to proceed without evaluation.
-    environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\3DBall\Skiing.exe"
+    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\3DBall\Skiing.exe"
     #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\minimHallway\Hallway.exe"
     #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\Crawler\Crawler.exe"
     #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\Walker\Env.exe"
+    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\HallwayDQN\Env.exe"
+    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\BasicDQN\Env.exe"
+    environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\BasicDQNHard_\Env.exe"
 
     # - Training Algorithm -
     # This is the core learning algorithm behind the RL Agent. While Deep Q-Learning / Deep Q Networks (DQN) presumably
@@ -52,7 +55,8 @@ def main():
     # in their current implementation only support continuous action spaces. Of those three Soft Actor-Critic (SAC)
     # is the most recent and preferred option.
     # Choose from "DQN", "DDPG", "TD3", "SAC", "CQL"
-    trainer.select_training_algorithm('SAC')
+    training_algorithm = 'DQN'
+    trainer.select_training_algorithm(training_algorithm)
     # In case you want to train the agent offline via CQL please provide the path for demonstrations.
     demonstration_path = None  #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-robot-arm-environment\DemoSinglePendulum"
 
@@ -60,7 +64,7 @@ def main():
     # The exploration algorithm helps the RL Agent to explore the environment by occasionally choosing suboptimal
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
     # Choose from "None", "EpsilonGreedy", "ICM", "RND", "ENM", "NGU", "ECR", "NGUr"
-    exploration_algorithm = "NGUr"
+    exploration_algorithm = "NGU"
 
     # - Meta Learning Algorithm -
     # The meta learning algorithm helps the RL Agent to learn the most efficient way of learning.
@@ -92,7 +96,7 @@ def main():
     # region --- Initialization ---
 
     # Parse the trainer configuration (make sure to select the right key)
-    trainer.parse_training_parameters("trainer_configs/trainer_config.yaml", "sac")
+    trainer.parse_training_parameters("trainer_configs/trainer_config.yaml", training_algorithm.lower())
     # Instantiate the agent which consists of a learner and one or multiple actors
     trainer.async_instantiate_agent(mode, preprocessing_algorithm, exploration_algorithm, meta_learning_algorithm,
                                     environment_path, model_path, preprocessing_path, demonstration_path)

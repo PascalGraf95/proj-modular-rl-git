@@ -53,7 +53,8 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.training_step = 0
 
         # Modify observation shapes for sampling later on
-        self.observation_shapes_modified = modify_observation_shapes(self.observation_shapes, self.action_shape)
+        self.observation_shapes_modified = modify_observation_shapes(self.observation_shapes, self.action_shape,
+                                                                     self.action_space)
         self.num_additional_obs_values = len(self.observation_shapes_modified) - len(self.observation_shapes)
 
         # Parameters required during network build-up
@@ -62,12 +63,9 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.sequence_length = training_parameters["SequenceLength"]
         self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
 
-        # Categorical Cross-Entropy for discrete action spaces
-        # Mean Squared Error for continuous action spaces
-        if self.action_space == "DISCRETE":
-            self.cce = CategoricalCrossentropy()
-        elif self.action_space == "CONTINUOUS":
-            self.mse = MeanSquaredError()
+        # Loss functions
+        self.cce = CategoricalCrossentropy()
+        self.mse = MeanSquaredError()
 
         self.optimizer = Adam(exploration_parameters["LearningRate"])
         self.lifelong_loss = 0
@@ -147,8 +145,10 @@ class NeverGiveUp(ExplorationAlgorithm):
 
                 # region Model compilation and plotting
                 if self.action_space == "DISCRETE":
+                    feature_extractor.compile(loss=self.cce, optimizer=self.optimizer)
                     embedding_classifier.compile(loss=self.cce, optimizer=self.optimizer)
                 elif self.action_space == "CONTINUOUS":
+                    feature_extractor.compile(loss=self.mse, optimizer=self.optimizer)
                     embedding_classifier.compile(loss=self.mse, optimizer=self.optimizer)
 
                 # Model plots
@@ -250,6 +250,11 @@ class NeverGiveUp(ExplorationAlgorithm):
         # Clear additional observation parts added during acting as they must not be used by the exploration algorithms
         state_batch = state_batch[:-self.num_additional_obs_values]
         next_state_batch = next_state_batch[:-self.num_additional_obs_values]
+
+        # Action batch, if discrete, contains the index of the respective actions multiple times for every step, which
+        # is not necessary for further operations, therefore get the first element for every timestep.
+        if self.action_space == "DISCRETE":
+            action_batch = action_batch[:, :, 0]
         # endregion
 
         # region Epsilon-Greedy learning step
@@ -284,10 +289,8 @@ class NeverGiveUp(ExplorationAlgorithm):
 
                 # Calculate inverse loss
                 if self.action_space == "DISCRETE":
-                    # TODO: Turn into real and working code
                     # Encode true action as one hot vector encoding
-                    num_actions = self.action_shape[:]
-                    true_actions_one_hot = tf.one_hot(action_batch, num_actions).numpy()
+                    true_actions_one_hot = tf.one_hot(action_batch, self.action_shape[0])
                     # Compute Loss via Categorical Cross Entropy
                     self.episodic_loss = self.cce(true_actions_one_hot, action_prediction)
 
@@ -318,6 +321,9 @@ class NeverGiveUp(ExplorationAlgorithm):
             current_state = terminal_steps.obs
         else:
             current_state = decision_steps.obs
+
+        if not current_state:
+            return 0
 
         # region Lifelong Novelty Module
         if self.normalize_observations:

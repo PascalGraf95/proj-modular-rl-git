@@ -249,7 +249,6 @@ class Trainer:
         self.learner = Learner.remote(mode, self.trainer_configuration,
                                       self.environment_configuration,
                                       model_path)
-
         # Initialize the actor network for each actor
         network_ready = [actor.build_network.remote(self.trainer_configuration.get("NetworkParameters"),
                                                     self.environment_configuration)

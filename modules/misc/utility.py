@@ -187,7 +187,7 @@ def sigmoid(x):
     return sig
 
 
-def modify_observation_shapes(observation_shapes, action_shapes):
+def modify_observation_shapes(observation_shapes, action_shapes, action_type):
     """
     Modify observation shapes through adding additional observation shapes. Those additional shapes will be used to feed
     inputs that are not coming directly from the interface (Unity, Gym). Such inputs would be for example the prior
@@ -212,7 +212,13 @@ def modify_observation_shapes(observation_shapes, action_shapes):
         modified_observation_shapes.append(obs_shape)
 
     # Prior action
-    modified_observation_shapes.append((action_shapes,))
+    if action_type == "CONTINUOUS":
+        modified_observation_shapes.append((action_shapes,))
+    elif action_type == "DISCRETE":
+        modified_observation_shapes.append((1,))
+    else:
+        print("Used action type not implemented yet.")
+
     # Prior extrinsic reward
     modified_observation_shapes.append((1,))
     # Prior intrinsic reward
