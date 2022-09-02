@@ -151,6 +151,9 @@ class EpisodicCuriosity(ExplorationAlgorithm):
             state_batch, action_batch, _, _, _ \
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes_modified,
                                                                          self.action_shape, self.sequence_length)
+            # Only use last 5 time steps of sequences for training
+            '''state_batch = [state_input[:, -5:] for state_input in state_batch]
+            action_batch = action_batch[:, -5:]'''
         else:
             return "Exploration algorithm 'ECR' does not work with non-recurrent agents. Learning step NOT executed."
 
@@ -248,9 +251,6 @@ class EpisodicCuriosity(ExplorationAlgorithm):
             current_state = terminal_steps.obs
         else:
             current_state = decision_steps.obs
-
-        if not current_state:
-            return 0
 
         # Extract relevant features from current state
         if self.recurrent:

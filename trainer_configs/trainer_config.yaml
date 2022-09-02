@@ -28,17 +28,18 @@ ddpg:
     TrainingInterval: 64
 dqn:
     Recurrent: true
-    BurnIn: 4
+    IntrinsicDecoupling: false
+    BurnIn: 0
     AdaptiveSequenceLength: false
-    SequenceLength: 15
-    Overlap: 4
+    SequenceLength: 10
+    Overlap: 6
     ActorNum: 8
     ClipGrad: 10.0
-    BatchSize: 32
+    BatchSize: 64
     DoubleLearning: true
     AdaptiveExploration: true
     ExplorationParameters:
-        FeatureSpaceSize: 32
+        FeatureSpaceSize: 18
         CuriosityScalingFactor: 0.02
         LearningRate: 0.0005
         Epsilon: 0.99
@@ -49,9 +50,9 @@ dqn:
         kNearest: 10
         MaxIntRewardScaling: 0.3
         ClusterDistance: 0.008
-        KernelEpsilon: 0.0001
+        KernelEpsilon: 0.001
         KernelConstant: 0.001
-        MaximumSimilarity: 8
+        MaximumSimilarity: 2
         EpisodicMemoryCapacity: 600
         ResetEpisodicMemory: true
         kECR: 5
@@ -62,37 +63,40 @@ dqn:
         EpsilonDecay: 0.999
         EpsilonMin: 0.02
         StepDown: false
-        NumExplorationPolicies: 8
-        UCBWindowSize: 90
+        NumExplorationPolicies: 12
+        UCBWindowSize: 160
         UCBAlpha: 1.0
     Gamma: 0.99
     LearningRate: 0.0005
-    NSteps: 4
+    NSteps: 5
     NetworkParameters:
         DuelingNetworks: true
         NoisyNetworks: false
-        Filters: 16
+        Filters: 32
         Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    NetworkUpdateFrequency: 50
+    NetworkUpdateFrequency: 100
     ReplayCapacity: 100000
     ReplayMinSize: 50
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    PrioritizedReplay: false
+    PrioritizedReplay: true
     PriorityAlpha: 0.8
-    TrainingID: DQN_Ag57_Debug_HM
+    RewardNormalization: false
+    TrainingID: Cartpole_DQN_A57lite
     TrainingInterval: 4
-sacWalker:
+
+sac:
     Recurrent: true
+    IntrinsicDecoupling: false
     BurnIn: 5
     AdaptiveSequenceLength: false
-    SequenceLength: 30
-    Overlap: 5
+    SequenceLength: 20
+    Overlap: 6
     ActorNum: 8
-    BatchSize: 64
+    BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
         FeatureSpaceSize: 18
@@ -104,71 +108,11 @@ sacWalker:
         StepDown: false
         ObservationNormalization: false
         kNearest: 10
-        MaxIntRewardScaling: 1.0
-        ClusterDistance: 0.008
-        KernelEpsilon: 0.0001
-        KernelConstant: 0.001
-        MaximumSimilarity: 8
-        EpisodicMemoryCapacity: 600
-        ResetEpisodicMemory: true
-    MetaLearningParameters:
-        Epsilon: 0.3
-        EpsilonDecay: 0.999
-        EpsilonMin: 0.02
-        StepDown: false
-        UCBWindowSize: 90
-        UCBAlpha: 1.0
-        NumExplorationPolicies: 8
-    Gamma: 0.99
-    LearningRateActor: 0.0005
-    LearningRateCritic: 0.0005
-    LogAlpha: -3.0
-    NSteps: 5
-    AdaptiveExploration: true
-    NetworkUpdateFrequency: 50
-    SelfPlayNetworkUpdateFrequency: 1000
-    NetworkParameters:
-        Filters: 128
-        Units: 128
-        ActorVectorNetworkArchitecture: Dense
-        ActorVisualNetworkArchitecture: CNN
-        CriticVectorNetworkArchitecture: Dense
-        CriticVisualNetworkArchitecture: CNN
-    PrioritizedReplay: false
-    PriorityAlpha: 0.8
-    RewardNormalization: false
-    ReplayCapacity: 100000
-    ReplayMinSize: 100
-    SyncMode: soft_sync
-    SyncSteps: 500
-    Tau: 0.01
-    TrainingID: SAC_Walker_ECR
-    TrainingInterval: 10
-sac:
-    Recurrent: true
-    IntrinsicDecoupling: false
-    BurnIn: 4
-    AdaptiveSequenceLength: false
-    SequenceLength: 15
-    Overlap: 6
-    ActorNum: 8
-    BatchSize: 32
-    ClipGrad: 10.0
-    ExplorationParameters:
-        FeatureSpaceSize: 32
-        CuriosityScalingFactor: 0.02
-        LearningRate: 0.0005
-        Epsilon: 0.99
-        EpsilonDecay: 0.999
-        EpsilonMin: 0.02
-        StepDown: false
-        ObservationNormalization: false
-        kNearest: 10
         MaxIntRewardScaling: 0.3
         ClusterDistance: 0.008
-        KernelEpsilon: 0.0001
+        KernelEpsilon: 0.01
         KernelConstant: 0.001
-        MaximumSimilarity: 8
+        MaximumSimilarity: 2
         EpisodicMemoryCapacity: 600
         ResetEpisodicMemory: true
         kECR: 5
@@ -179,8 +123,8 @@ sac:
         EpsilonDecay: 0.999
         EpsilonMin: 0.02
         StepDown: false
-        NumExplorationPolicies: 8
-        UCBWindowSize: 90
+        NumExplorationPolicies: 12
+        UCBWindowSize: 160
         UCBAlpha: 1.0
     Gamma: 0.99
     LearningRateActor: 0.0005
@@ -205,7 +149,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_3DBall_NGUr_b1thr0cce
+    TrainingID: SAC_Reacher_DebugAg57
     TrainingInterval: 4
 
 cql:

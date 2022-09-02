@@ -326,7 +326,7 @@ class Trainer:
             # Receiving the latest state from its environment each actor chooses an action according to its policy
             # and/or its exploration algorithm. Furthermore, the reward and the info about the environment state (done)
             # is processed and stored in a local replay buffer for each actor.
-            actors_ready = [actor.play_one_step.remote(training_step) for actor in self.actors]
+            actors_ready = [actor.play_one_train_step.remote(training_step) for actor in self.actors]
             # endregion
 
             # region --- Global Buffer and Logger ---
@@ -477,7 +477,7 @@ class Trainer:
             # Receiving the latest state from its environment each actor chooses an action according to its policy
             # and/or its exploration algorithm. Furthermore, the reward and the info about the environment state (done)
             # is processed and stored in a local replay buffer for each actor.
-            actors_ready = [actor.play_one_step.remote() for actor in self.actors]
+            actors_ready = [actor.play_one_train_step.remote() for actor in self.actors]
             # endregion
 
             # region --- Curriculum Update ---
@@ -578,6 +578,6 @@ class Trainer:
 
         while True:
             # Receiving the latest state from its environment each actor chooses an action according to its policy.
-            actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]
+            actors_ready = [actor.play_one_test_step.remote(0) for actor in self.actors]
             ray.wait(actors_ready)
     # endregion

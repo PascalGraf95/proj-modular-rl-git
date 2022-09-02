@@ -245,7 +245,7 @@ class NeverGiveUpReach(ExplorationAlgorithm):
             # Only use last 5 time steps of sequences for training
             '''state_batch = [state_input[:, -5:] for state_input in state_batch]
             next_state_batch = [next_state_input[:, -5:] for next_state_input in next_state_batch]
-            action_batch = [action_sequence[-5:] for action_sequence in action_batch]'''
+            action_batch = action_batch[:, -5:]'''
 
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
@@ -328,9 +328,6 @@ class NeverGiveUpReach(ExplorationAlgorithm):
             current_state = terminal_steps.obs
         else:
             current_state = decision_steps.obs
-
-        if not current_state:
-            return 0
 
         # region Lifelong Novelty Module
         if self.normalize_observations:

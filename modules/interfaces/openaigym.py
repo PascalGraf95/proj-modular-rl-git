@@ -2,7 +2,10 @@
 
 import numpy as np
 import gym
+import rubiks_cube_gym
+import panda_gym
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
+
 
 
 class Steps:
@@ -36,8 +39,12 @@ class OpenAIGymInterface:
         return gym.make(environment_path)
 
     @staticmethod
+    def get_interface_name():
+        return "OpenAIGym"
+
+    @staticmethod
     def get_behavior_name(env: gym.Env):
-        return None
+        return None, None
 
     @staticmethod
     def get_observation_shapes(env: gym.Env):
@@ -48,7 +55,7 @@ class OpenAIGymInterface:
         return env.action_space.sample()
 
     @staticmethod
-    def get_action_shape(env: gym.Env):
+    def get_action_shape(env: gym.Env, _placeholder):
         action_type = env.action_space
         if type(action_type) == gym.spaces.Discrete:
             return (action_type.n, )
@@ -67,6 +74,10 @@ class OpenAIGymInterface:
 
     @staticmethod
     def get_agent_number(env: gym.Env, behavior_name: str):
+        OpenAIGymInterface.reset(env)
+        decision_steps, terminal_steps = OpenAIGymInterface.get_steps(env, behavior_name)
+        '''agent_id_offset = np.min(decision_steps.agent_id)
+        return len(decision_steps), agent_id_offset'''
         return 1, 0
 
     @staticmethod
@@ -98,17 +109,17 @@ class OpenAIGymInterface:
             OpenAIGymInterface.observation, OpenAIGymInterface.reward, \
                 OpenAIGymInterface.done, OpenAIGymInterface.info = env.step(actions[0])
 
-
 if __name__ == '__main__':
     print(gym.envs.registry.all())
-    env = gym.make('LunarLanderContinuous-v2')
+    env = gym.make('maze-random-10x10-v0')
     OpenAIGymInterface.reset(env)
-    print(OpenAIGymInterface.get_action_shape(env))
+    print(OpenAIGymInterface.get_action_shape(env, None))
     print(OpenAIGymInterface.get_action_type(env))
     print(OpenAIGymInterface.get_observation_shapes(env))
+    decision_step, terminal_step = OpenAIGymInterface.get_steps(env, None)
     while not OpenAIGymInterface.done:
         env.render()
         a = OpenAIGymInterface.get_random_action(env, 1)
-        OpenAIGymInterface.step_action(env, "", a)
+        OpenAIGymInterface.step_action(env, "", "", [[a]])
     env.close()
 

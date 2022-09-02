@@ -47,7 +47,78 @@ class CQLActor(Actor):
         self.network_update_frequency = trainer_configuration.get("NetworkUpdateFrequency")
         self.clone_network_update_frequency = trainer_configuration.get("SelfPlayNetworkUpdateFrequency")
 
-    def play_one_step(self, training_step):
+    def play_one_train_step(self, training_step):
+        if not self.samples_buffered:
+            # Loop over all .demo files in the given directory.
+            demonstration_paths = get_demo_files(self.demonstration_path)
+            print("The following Demonstration files have been found:", demonstration_paths)
+            for demo in demonstration_paths:
+                print("Extracting samples from ", demo)
+                behavior_spec, samples, _ = load_demonstration(demo)
+                print("SAMPLE LEN:", len(samples))
+
+                # Loop over all demo files to acquire decision and terminal steps.
+                for sample in samples:
+                    decision_steps, terminal_steps = steps_from_proto([sample.agent_info], behavior_spec)
+                    # Append steps and actions to the local replay buffer
+                    self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
+                                                    [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
+                                                    step_type="terminal")
+                    self.local_buffer.add_new_steps(decision_steps.obs, decision_steps.reward,
+                                                    [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                                    actions=sample.action_info.continuous_actions, step_type="decision")
+                    self.local_buffer.done_agents.clear()
+                print("Number of samples in the local buffer:", len(self.local_buffer))
+            self.samples_buffered = True
+            return True
+
+        # In the CQL Algorithm this method plays one whole episode each 100 training steps to evaluate the offline
+        # training progress
+        if training_step % 100 == 0 and self.environment_path != "NoEnv":
+            while True:
+                # Step acquisition (steps contain states, done_flags and rewards)
+                decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
+                # Preprocess steps if a respective algorithm has been activated
+                decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
+                                                                                                      terminal_steps)
+                # Register terminal agents, so the hidden LSTM state is reset
+                self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
+                # Choose the next action
+                actions = self.act(decision_steps.obs,
+                                   agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                   mode=self.mode)
+                clone_actions = None
+
+                # Track the rewards in a local logger
+                self.local_logger.track_episode(terminal_steps.reward,
+                                                [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
+                                                step_type="terminal")
+
+                self.local_logger.track_episode(decision_steps.reward,
+                                                [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                                step_type="decision")
+
+                # Append steps and actions to the local replay buffer
+                self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
+                                                [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
+                                                step_type="terminal")
+                # If all agents are in a terminal state reset the environment
+                if self.local_buffer.check_reset_condition():
+                    AgentInterface.reset(self.environment)
+                    self.local_buffer.done_agents.clear()
+                    break
+                # Otherwise, take a step in the environment according to the chosen action
+                else:
+                    try:
+                        AgentInterface.step_action(self.environment, self.action_type,
+                                                   self.behavior_name, actions, self.behavior_clone_name, clone_actions)
+                    except RuntimeError:
+                        print("RUNTIME ERROR")
+        return True
+
+    def play_one_test_step(self, training_step):
+        """NOTE: Function is identical to play_one_train_step(), separate function calls necessary due to Agent57-
+        related implementation."""
         if not self.samples_buffered:
             # Loop over all .demo files in the given directory.
             demonstration_paths = get_demo_files(self.demonstration_path)

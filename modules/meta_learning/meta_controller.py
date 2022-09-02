@@ -67,11 +67,16 @@ class MetaController(MetaLearning):
             else:
                 arm_play_count = np.zeros(self.num_arms)
                 empirical_mean = np.zeros(self.num_arms)
+                # Sum-up the rewards and determine the amount of episodes the respective arm has been used in
+                # episode[:,0] contains the arm indices each timestep, episode[:,1] contains the extr. rewards each
+                # timestep
                 for episode in self.global_buffer:
-                    for j, reward in episode:
-                        #arm_play_count[j] += 1
-                        empirical_mean[j] += reward
-                    arm_play_count[j] += 1
+                    episode = np.array(episode)
+                    empirical_mean[episode[0, 0]] += np.sum(episode[:, 1])
+                    # Counting per episode
+                    arm_play_count[episode[0, 0]] += 1
+                    # Alternative: Counting per timestep
+                    #arm_play_count[episode[0, 0]] += len(episode)
                 empirical_mean = empirical_mean / (arm_play_count + 1e-6)
                 self.arm_index = np.argmax(empirical_mean + self.alpha * np.sqrt(1 / (arm_play_count + 1e-6)))
 

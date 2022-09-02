@@ -150,6 +150,7 @@ class Actor:
 
     def connect_to_gym_environment(self):
         self.environment = AgentInterface.connect(self.environment_path)
+        AgentInterface.reset(self.environment)
 
     def set_unity_parameters(self, **kwargs):
         self.engine_configuration_channel.set_configuration_parameters(**kwargs)
@@ -321,6 +322,7 @@ class Actor:
         self.n_steps = trainer_configuration["NSteps"]
         self.additional_network_inputs = trainer_configuration.get("AdditionalNetworkInputs")
         self.intrinsic_networks_decoupling = trainer_configuration.get("IntrinsicDecoupling")
+        self.reward_normalization = trainer_configuration.get("RewardNormalization")
         # Exploration Parameters
         self.adaptive_exploration = trainer_configuration.get("AdaptiveExploration")
         trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
@@ -463,7 +465,7 @@ class Actor:
     # endregion
 
     # region Environment Interaction
-    def play_one_step(self, training_step):
+    def play_one_train_step(self, training_step):
         # Step acquisition (steps contain states, done_flags and rewards)
         decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
         # Preprocess steps if a respective algorithm has been activated
@@ -492,15 +494,13 @@ class Actor:
                 # Calculate intrinsic reward
                 intrinsic_reward = self.exploration_algorithm.act(decision_steps, terminal_steps)
                 # Scale the intrinsic reward through exploration policies' beta.
-                intrinsic_reward *= self.exploration_degree[self.exploration_policy_idx]['beta']
-                '''if len(decision_steps.reward):
-                    self.adaptive_intrinsic_reward_scaling(intrinsic_reward, decision_steps.reward)'''
+                if not self.intrinsic_networks_decoupling:
+                    intrinsic_reward *= self.exploration_degree[self.exploration_policy_idx]['beta']
                 # Extend step observation values with prior action, extrinsic reward, intrinsic reward, policy idx
                 if self.additional_network_inputs:
                     decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
                 # Some exploration algorithms use epsilon greedy on top
                 actions = self.exploration_algorithm.epsilon_greedy(decision_steps)
-                #actions = None
         else:
             actions = self.exploration_algorithm.act(decision_steps, terminal_steps)
 
@@ -562,11 +562,97 @@ class Actor:
 
         # If enough steps have been taken, mark agent ready for updated network
         self.steps_taken_since_network_update += len(decision_steps)
+
         # If all agents are in a terminal state reset the environment
         if self.local_buffer.check_reset_condition():
             AgentInterface.reset(self.environment)
             self.local_buffer.done_agents.clear()
             # self.reset_actor_state()
+        # Otherwise take a step in the environment according to the chosen action
+        else:
+            try:
+                AgentInterface.step_action(self.environment, self.action_type,
+                                           self.behavior_name, actions, self.behavior_clone_name, clone_actions)
+            except RuntimeError:
+                print("RUNTIME ERROR")
+        return True
+
+    def play_one_test_step(self, training_step):
+        # Step acquisition (steps contain states, done_flags and rewards)
+        decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
+        # Preprocess steps if a respective algorithm has been activated
+        decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
+                                                                                              terminal_steps)
+
+        # OpenAI's Gym environments require separate render() call
+        if AgentInterface.get_interface_name() == "OpenAIGym":
+            self.environment.render()
+
+        # Register terminal agents, so for example the hidden LSTM state is reset
+        self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
+
+        # There are several exploration algorithms that calculate intrinsic rewards in a "per-step" fashion.
+        if self.intrinsic_exploration:
+            # Set/Reset variables and algorithms when agent reaches episodic borders
+            self.episodic_border_routine(decision_steps, terminal_steps)
+            # Intrinsic reward stays 0 throughout test process
+            intrinsic_reward = 0
+            # Extend step observation values with prior action, extrinsic reward, intrinsic reward, policy idx
+            if self.additional_network_inputs:
+                decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
+
+        actions = self.act(decision_steps.obs,
+                           agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                           mode=self.mode)
+
+        # Save current metrics for next iteration
+        if self.additional_network_inputs:
+            self.save_current_metrics(intrinsic_reward, actions, decision_steps, terminal_steps)
+
+        # Do the same for the clone behavior if active
+        if self.behavior_clone_name:
+            # Step acquisition (steps contain states, done_flags and rewards)
+            clone_decision_steps, clone_terminal_steps = AgentInterface.get_steps(self.environment,
+                                                                                  self.behavior_clone_name)
+            # Preprocess steps if a respective algorithm has been activated
+            clone_decision_steps, clone_terminal_steps = self.preprocessing_algorithm.preprocess_observations(
+                clone_decision_steps,
+                clone_terminal_steps)
+
+            # Register terminal agents, so the hidden LSTM state is reset
+            self.register_terminal_agents([a_id - self.clone_agent_id_offset for a_id in clone_terminal_steps.agent_id],
+                                          clone=True)
+            # Choose the next action either by exploring or exploiting
+            clone_actions = self.act(clone_decision_steps.obs,
+                                     agent_ids=[a_id - self.clone_agent_id_offset for a_id in clone_decision_steps.agent_id],
+                                     mode=self.mode, clone=True)
+            self.steps_taken_since_clone_network_update += len(clone_decision_steps)
+        else:
+            clone_actions = None
+
+        self.local_buffer.add_new_steps(terminal_steps.obs, terminal_steps.reward,
+                                        [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
+                                        step_type="terminal")
+        self.local_buffer.add_new_steps(decision_steps.obs, decision_steps.reward,
+                                        [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                        actions=actions, step_type="decision")
+
+        # Track the rewards in a local logger
+        self.local_logger.track_episode(terminal_steps.reward,
+                                        [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
+                                        step_type="terminal")
+        self.local_logger.track_episode(decision_steps.reward,
+                                        [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
+                                        step_type="decision")
+
+        # If enough steps have been taken, mark agent ready for updated network
+        self.steps_taken_since_network_update += len(decision_steps)
+
+        # If all agents are in a terminal state reset the environment
+        if self.local_buffer.check_reset_condition():
+            AgentInterface.reset(self.environment)
+            self.local_buffer.done_agents.clear()
+
         # Otherwise take a step in the environment according to the chosen action
         else:
             try:
@@ -643,23 +729,17 @@ class Actor:
                     self.prior_action = np.random.uniform(-1.0, 1.0, (self.action_shape,))
 
             # Get current exploration policy index (will be used as network input throughout episode)
-            if self.use_meta_controller:
+            # In case of testing, the exploration policy index always stays 0, which means pure exploitation
+            if self.use_meta_controller and self.mode == "training":
                 with tf.device(self.device):
                     self.exploration_policy_idx = self.meta_learning_algorithm.act()
-                # Update local_buffers gamma and calculate its gamma list based on meta-controller output
-                self.local_buffer.gamma = self.exploration_degree[self.exploration_policy_idx]["gamma"]
-                temp_gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
-                self.local_buffer.gamma_list = temp_gamma_list
-            else:
+            elif self.mode == "training":
                 # Set local_buffers gamma and calculate its gamma list based on agent_index (never updated)
                 if self.first_iteration:
                     self.first_iteration = False
                     self.exploration_policy_idx = self.exploration_algorithm.index
-                    # Update local_buffers gamma and calculate its gamma list based on agent's index
-                    self.local_buffer.gamma = self.exploration_degree[self.exploration_policy_idx]["gamma"]
-                    temp_gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
-                    self.local_buffer.gamma_list = temp_gamma_list
 
+            # Routine for episode beginning finished
             self.episode_begin = False
 
         # Episode ending reached, reset begin flag and algorithms

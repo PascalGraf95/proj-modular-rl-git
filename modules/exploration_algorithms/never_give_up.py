@@ -233,11 +233,11 @@ class NeverGiveUp(ExplorationAlgorithm):
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes_modified,
                                                                          self.action_shape, self.sequence_length)
-
             # Only use last 5 time steps of sequences for training
-            '''state_batch = [state_input[:, -5:] for state_input in state_batch]
+            # state_batch and next_state_batch are sampled as lists, therefore a separate slicing method is necessary
+            state_batch = [state_input[:, -5:] for state_input in state_batch]
             next_state_batch = [next_state_input[:, -5:] for next_state_input in next_state_batch]
-            action_batch = [action_sequence[-5:] for action_sequence in action_batch]'''
+            action_batch = action_batch[:, -5:]
 
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
@@ -284,7 +284,6 @@ class NeverGiveUp(ExplorationAlgorithm):
                 # Calculate features of current and next state
                 state_features = self.feature_extractor(state_batch)
                 next_state_features = self.feature_extractor(next_state_batch)
-
                 action_prediction = self.embedding_classifier([state_features, next_state_features])
 
                 # Calculate inverse loss
@@ -322,9 +321,6 @@ class NeverGiveUp(ExplorationAlgorithm):
         else:
             current_state = decision_steps.obs
 
-        if not current_state:
-            return 0
-
         # region Lifelong Novelty Module
         if self.normalize_observations:
             # Track observation metrics
@@ -350,8 +346,8 @@ class NeverGiveUp(ExplorationAlgorithm):
             prediction_features = self.prediction_model(current_state)
 
         # The rnd reward is the L2 error between target and prediction features summed over all features.
-        rnd_reward = tf.math.sqrt(tf.math.reduce_sum(
-            tf.math.square(target_features - prediction_features), axis=-1)).numpy()
+        rnd_reward = tf.math.sqrt(tf.math.reduce_sum(tf.math.square(target_features - prediction_features),
+                                                     axis=-1)).numpy()
         # To prevent scalar related logging error
         rnd_reward = rnd_reward[0]
 
@@ -389,15 +385,15 @@ class NeverGiveUp(ExplorationAlgorithm):
         if np.any(topk_emb_distances):
             self.mean_distances.append(np.mean(topk_emb_distances))
         else:
-            # Mean distance will be zero for first iteration, as episodic memory is empty
-            self.mean_distances.append(0)
+            # Mean distance will be one for first iteration, as episodic memory is empty
+            self.mean_distances.append(1)
             return 0
 
         # Normalize the distances with moving average of mean distance
         topk_emb_distances_normalized = topk_emb_distances / np.mean(self.mean_distances)
 
         # Cluster the normalized distances
-        topk_emb_distances = np.where(topk_emb_distances_normalized - self.cluster_distance > 0,
+        topk_emb_distances = np.where(topk_emb_distances_normalized - self.cluster_distance >= 0,
                                       topk_emb_distances_normalized - self.cluster_distance, 0)
 
         # Calculate similarity (will increase as agent collects more and more states similar to each other)
@@ -406,6 +402,7 @@ class NeverGiveUp(ExplorationAlgorithm):
 
         # Check for similarity boundaries and return intrinsic episodic reward
         if np.isnan(similarity) or (similarity > self.similarity_max):
+            self.episodic_memory.pop()
             enm_reward = 0
         else:
             # 1/similarity to encourage visiting states with lower similarity

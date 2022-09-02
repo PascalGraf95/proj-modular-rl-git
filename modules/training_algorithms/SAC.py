@@ -92,7 +92,8 @@ class SACActor(Actor):
                 # state_batch is sampled component-based for first index. The saved exploration policy index within the
                 # observation is always the last observation component -> therefore state_batch[-1] is used to get it.
                 # Get gammas through saved exploration policy indices within the sequences
-                self.gamma = np.empty(np.shape(state_batch[-1]))
+                self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
+                                       self.critic_network.output_shape[-1]))
                 for idx, sequence in enumerate(state_batch[-1]):
                     self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
                 y = reward_batch + np.multiply((self.gamma ** self.n_steps), critic_target)
@@ -411,9 +412,12 @@ class SACLearner(Learner):
             if self.intrinsic_networks_decoupling:
                 extrinsic_rewards = state_batch[-3]
                 intrinsic_rewards = state_batch[-2]
-                self.beta = np.empty(np.shape(state_batch[-1]))
+                # Shaping must equal the output shape of the critic networks
+                self.beta = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
+                                      self.intrinsic_critic1.output_shape[-1]))
 
-            self.gamma = np.empty(np.shape(state_batch[-1]))
+            self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
+                                      self.critic1.output_shape[-1]))
 
             # state_batch is sampled component-based for first index. The saved exploration policy index within the
             # observation is always the last observation component -> therefore state_batch[-1] is used to get it.
@@ -431,7 +435,7 @@ class SACLearner(Learner):
         critic_target_prediction2 = self.critic_target2([*next_state_batch, next_actions])
 
         # Add additional intrinsic critic target prediction, scaled by beta
-        if self.intrinsic_networks_decoupling:
+        if self.intrinsic_networks_decoupling and self.additional_network_inputs:
             critic_target_prediction1 += np.multiply(self.beta,
                                                      self.intrinsic_critic_target1([*next_state_batch, next_actions]))
             critic_target_prediction2 += np.multiply(self.beta,
