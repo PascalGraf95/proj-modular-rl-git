@@ -54,6 +54,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         self.episodic_curiosity_built = False
         self.recurrent = training_parameters["Recurrent"]
         self.sequence_length = training_parameters["SequenceLength"]
+        self.batch_size = training_parameters["BatchSize"]
         self.feature_space_size = exploration_parameters["FeatureSpaceSize"]
 
         # Loss metrics
@@ -63,9 +64,9 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         self.intrinsic_reward = 0
 
         # region Episodic Curiosity module parameters
-        self.k = exploration_parameters["kECR"]
+        self.k = exploration_parameters["kECR"]  # Step threshold in terms of states being reachable/non-reachable
         self.beta = exploration_parameters["BetaECR"]  # For envs with fixed-length episodes: 0.5 else 1.0
-        self.alpha = exploration_parameters["AlphaECR"]
+        self.alpha = 1.0
 
         # Calculate left and right limits of the value range of the output and get median, which represents the novelty
         # threshold
@@ -73,16 +74,15 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         max_network_output = 1  # as output node of comparator is sigmoid
         left_limit, right_limit = self.alpha * (self.beta - min_network_output), \
                                   self.alpha * (self.beta - max_network_output)
-        self.novelty_threshold = np.median([left_limit, right_limit])
 
         # A value of '0' for the novelty threshold is suggested by the authors of the original paper. However, combined
         # with self.beta = 1.0 this leads to every single state encountered being added to the episodic memory. This
         # results in a larger training time overall. Therefore, the median of the value range is used for the novelty
         # threshold.
-        #self.novelty_threshold = 0
+        # self.novelty_threshold = 0
+        self.novelty_threshold = np.median([left_limit, right_limit])
 
         self.episodic_memory = deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
-        self.reset_episodic_memory = exploration_parameters["ResetEpisodicMemory"]
 
         self.feature_extractor, self.comparator_network = self.build_network()
         # endregion
@@ -163,10 +163,10 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         
         # region --- Learning Step ---
         with tf.device(self.device):
-            with tf.GradientTape() as tape:
-                # Clear additional observation parts added during acting as they must not be used by the exploration algorithms
-                state_batch = state_batch[:-self.num_additional_obs_values]
+            # Clear additional observation parts added during played environment step
+            state_batch = state_batch[:-self.num_additional_obs_values]
 
+            with tf.GradientTape() as tape:
                 # Calculate features
                 state_features = self.feature_extractor(state_batch)
 
@@ -177,7 +177,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
                     x1_batch.append(x1)
                     x2_batch.append(x2)
                     y_true_batch.append(y_true)
-                
+
                 # Cast arrays for comparator to output correct shape
                 x1_batch = np.array(x1_batch)
                 x2_batch = np.array(x2_batch)
@@ -277,6 +277,10 @@ class EpisodicCuriosity(ExplorationAlgorithm):
 
         # Aggregate the content of the reachability buffer to calculate similarity-score of current embedding
         similarity_score = np.percentile(reachability_buffer, 90)
+
+        # Calculate intrinsic reward
+        # Original paper suggest the formula: 𝑟 = 𝛼 ∗ (𝛽 − 𝑠𝑖𝑚𝑖𝑙𝑎𝑟𝑖𝑡𝑦_𝑠𝑐𝑜𝑟𝑒), where 𝛼 is a simple reward scaling factor
+        # that is set outside this module
         self.intrinsic_reward = self.alpha * (self.beta - similarity_score)
 
         # Add state to episodic memory if intrinsic reward is large enough
@@ -294,8 +298,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
 
     def reset(self):
         """Empty episodic memory."""
-        if self.reset_episodic_memory:
-            self.episodic_memory.clear()
+        self.episodic_memory.clear()
         return
 
     @staticmethod

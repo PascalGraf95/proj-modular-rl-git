@@ -597,6 +597,8 @@ class Actor:
             self.episodic_border_routine(decision_steps, terminal_steps)
             # Intrinsic reward stays 0 throughout test process
             intrinsic_reward = 0
+            # Exploration Policy currently must be set manually
+            self.exploration_policy_idx = 0
             # Extend step observation values with prior action, extrinsic reward, intrinsic reward, policy idx
             if self.additional_network_inputs:
                 decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
@@ -834,6 +836,8 @@ class Actor:
             self.steps_since_update = 0
             self.reward_correction_factor = np.mean(self.reward_ratio_deque)
 
+    def get_exploration_policy_index(self):
+        return self.exploration_policy_idx
     # endregion
 
 
@@ -897,7 +901,8 @@ class Learner:
     def load_checkpoint(self, path):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
-    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False):
+    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
+                        checkpoint_condition=True, save_policy_index=False, exploration_policy_index=0):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
     # endregion
 

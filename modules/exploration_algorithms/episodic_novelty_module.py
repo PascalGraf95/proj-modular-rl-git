@@ -77,11 +77,10 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         self.k = exploration_parameters["kNearest"]
         self.cluster_distance = exploration_parameters["ClusterDistance"]
         self.eps = exploration_parameters["KernelEpsilon"]
-        self.c = exploration_parameters["KernelConstant"]
+        self.c = 0.001
         self.similarity_max = exploration_parameters["MaximumSimilarity"]
         self.episodic_memory = deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
         self.mean_distances = deque(maxlen=self.episodic_memory.maxlen)
-        self.reset_episodic_memory = exploration_parameters["ResetEpisodicMemory"]
 
         self.feature_extractor, self.embedding_classifier = self.build_network()
 
@@ -322,9 +321,8 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
 
     def reset(self):
         """Empty episodic memory and clear euclidean distance metrics."""
-        if self.reset_episodic_memory:
-            self.mean_distances.clear()
-            self.episodic_memory.clear()
+        self.mean_distances.clear()
+        self.episodic_memory.clear()
         return
 
     def prevent_checkpoint(self):

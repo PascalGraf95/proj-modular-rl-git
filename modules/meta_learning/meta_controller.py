@@ -42,7 +42,6 @@ class MetaController(MetaLearning):
         self.window_size = meta_learning_parameters["UCBWindowSize"]  # Number of past episodes to store within global buffer
         self.global_buffer = deque(maxlen=self.window_size)  # Stores the episode buffers episodes
         self.episode_buffer = deque(maxlen=5000)  # Maxlen represents the max. number of steps within a single episode
-        self.alpha = meta_learning_parameters["UCBAlpha"]
         self.num_arms = meta_learning_parameters["NumExplorationPolicies"]  # Number of arms the bandit can choose from
         self.arm_play_count = np.zeros(self.num_arms)
         self.empirical_mean = np.zeros(self.num_arms)
@@ -78,7 +77,7 @@ class MetaController(MetaLearning):
                     # Alternative: Counting per timestep
                     #arm_play_count[episode[0, 0]] += len(episode)
                 empirical_mean = empirical_mean / (arm_play_count + 1e-6)
-                self.arm_index = np.argmax(empirical_mean + self.alpha * np.sqrt(1 / (arm_play_count + 1e-6)))
+                self.arm_index = np.argmax(empirical_mean + np.sqrt(1 / (arm_play_count + 1e-6)))
 
                 # Log most frequently chosen arm within respective bandit window
                 self.most_chosen_arm = np.argmax(arm_play_count)

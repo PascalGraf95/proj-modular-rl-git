@@ -414,13 +414,12 @@ class DQNLearner(Learner):
         else:
             y[batch_array, action_batch[:, 0].astype(int)] = target_batch[:, 0]
 
+        sample_errors = np.abs(y - self.critic(state_batch))
         if self.recurrent:
-            sample_errors = np.sum(np.abs(y - self.critic(state_batch)), axis=1)
             eta = 0.9
             sample_errors = eta * np.max(sample_errors[:, self.burn_in:], axis=1) + \
                             (1 - eta) * np.mean(sample_errors[:, self.burn_in:], axis=1)
-        else:
-            sample_errors = np.sum(np.abs(y - self.critic(state_batch)), axis=1)
+        sample_errors = np.sum(sample_errors, axis=1)
 
         # Train the network on the training batch.
         value_loss = self.critic.train_on_batch(state_batch, y)
@@ -481,11 +480,17 @@ class DQNLearner(Learner):
             raise NotADirectoryError("Could not find directory or file for loading models.")
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
-                        checkpoint_condition=True):
+                        checkpoint_condition=True, save_policy_index=False, exploration_policy_index=0):
         if not checkpoint_condition:
             return
-        self.critic.save(
-            os.path.join(path, "DQN_Critic_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
+        if save_policy_index:
+            self.critic.save(
+                os.path.join(path, "DQN_Critic_Step{}_Reward{:.2f}_ExpPolicy{}".format(training_step,
+                                                                                     running_average_reward,
+                                                                                     exploration_policy_index)))
+        else:
+            self.critic.save(
+                os.path.join(path, "DQN_Critic_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
 
     @staticmethod
     def get_config():

@@ -2,10 +2,11 @@
 
 import numpy as np
 import gym
-import rubiks_cube_gym
-import panda_gym
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
 
+import pybullet
+import pybullet_envs
+from gym_minigrid.wrappers import FlatObsWrapper
 
 
 class Steps:
@@ -76,8 +77,6 @@ class OpenAIGymInterface:
     def get_agent_number(env: gym.Env, behavior_name: str):
         OpenAIGymInterface.reset(env)
         decision_steps, terminal_steps = OpenAIGymInterface.get_steps(env, behavior_name)
-        '''agent_id_offset = np.min(decision_steps.agent_id)
-        return len(decision_steps), agent_id_offset'''
         return 1, 0
 
     @staticmethod

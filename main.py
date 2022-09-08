@@ -30,10 +30,11 @@ def main():
 
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
-    mode = "training"
-    #model_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220831_220610_CartpoleV1_DQN_Ag57rHP"
-    #model_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220902_152338_Basic_DQN_Agent57_ReferenceNoPop"
-    model_path = None #r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220901_173240_Acrobot-v1_DQN_Agent57"
+    mode = "testing"
+    #model_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220831_084334_SAC_MountainCar_R2D2"
+    #model_path =  r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220831_151730_SAC_MountainCar_Agent57HP"
+    #model_path =  r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220831_211254_SAC_MountainCarV0_Agent57rHP"
+    model_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220907_224157_SAC_MountainCarv0_Agent57"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
@@ -51,13 +52,23 @@ def main():
     #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\BasicDQN\Env.exe"
     #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\BasicDQNHard\Env.exe"
 
-    #environment_path = r"MountainCar-v0"
-    #environment_path = r"Acrobot-v1"
     #environment_path = r"CartPole-v1"
+    #environment_path = r"MountainCar-v0"
+    environment_path = r"MountainCarContinuous-v0"
+    #environment_path = r"Acrobot-v1"
     #environment_path = r"BipedalWalker-v3"
-    environment_path = r"Reacher-v4"
-    #environment_path = r"rubiks-cube-222-lbl-v0"
+    #environment_path = r"Reacher-v4"
     #environment_path = r"PandaReach-v2"
+    #environment_path = r"Breakout-ram-v0"
+    #environment_path = r"LunarLander-v2"
+    #environment_path = r"Reacher-v4"
+
+    #environment_path = r"gym_goddard:Goddard-v0"
+    ##environment_path = r"PandaReach-v2"
+    #environment_path = r"MinitaurBulletEnv-v0"
+    ##environment_path = r"parking-v0"
+    ##environment_path = r"riverswim-v0"
+    #environment_path = r"MiniGrid-Empty-5x5-v0"
 
     # - Training Algorithm -
     # This is the core learning algorithm behind the RL Agent. While Deep Q-Learning / Deep Q Networks (DQN) presumably
@@ -74,7 +85,7 @@ def main():
     # The exploration algorithm helps the RL Agent to explore the environment by occasionally choosing suboptimal
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
     # Choose from "None", "EpsilonGreedy", "ICM", "RND", "ENM", "NGU", "ECR", "NGUr"
-    exploration_algorithm = "NGUr"
+    exploration_algorithm = "NGU"
 
     # - Meta Learning Algorithm -
     # The meta learning algorithm helps the RL Agent to learn the most efficient way of learning.

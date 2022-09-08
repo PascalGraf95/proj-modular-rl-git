@@ -249,6 +249,7 @@ class Trainer:
         self.learner = Learner.remote(mode, self.trainer_configuration,
                                       self.environment_configuration,
                                       model_path)
+
         # Initialize the actor network for each actor
         network_ready = [actor.build_network.remote(self.trainer_configuration.get("NetworkParameters"),
                                                     self.environment_configuration)
@@ -295,7 +296,9 @@ class Trainer:
         checkpoint_condition = self.global_logger.check_checkpoint_condition.remote(training_step)
         self.learner.save_checkpoint.remote(os.path.join("training/summaries", self.logging_name),
                                             self.global_logger.get_best_running_average.remote(),
-                                            training_step, self.save_all_models, checkpoint_condition)
+                                            training_step, self.save_all_models, checkpoint_condition,
+                                            self.trainer_configuration.get("AdditionalNetworkInputs"),
+                                            self.actors[ray.get(self.global_logger.get_best_actor.remote())].get_exploration_policy_index.remote())
         if self.remove_old_checkpoints:
             self.global_logger.remove_old_checkpoints.remote()
 

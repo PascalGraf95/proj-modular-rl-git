@@ -472,6 +472,7 @@ class SACLearner(Learner):
             eta = 0.9
             sample_errors = eta * np.max(sample_errors[:, self.burn_in:], axis=1) + \
                             (1 - eta) * np.mean(sample_errors[:, self.burn_in:], axis=1)
+        sample_errors = np.sum(sample_errors, axis=1)
 
         # Calculate Critic 1 and 2 Loss, utilizes custom mse loss function defined in Trainer-class
         value_loss1 = self.critic1.train_on_batch([*state_batch, action_batch], y)
@@ -580,16 +581,32 @@ class SACLearner(Learner):
             raise NotADirectoryError("Could not find directory or file for loading models.")
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
-                        checkpoint_condition=True):
+                        checkpoint_condition=True, save_policy_index=False, exploration_policy_index=0):
         if not checkpoint_condition:
             return
-        self.actor_network.save(
-            os.path.join(path, "SAC_Actor_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
-        if save_all_models:
-            self.critic1.save(
-                os.path.join(path, "SAC_Critic1_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
-            self.critic2.save(
-                os.path.join(path, "SAC_Critic2_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
+        # In case of agent57-exploration algorithms being used, additionally save the policy index
+        if save_policy_index:
+            self.actor_network.save(
+                os.path.join(path, "SAC_Actor_Step{}_Reward{:.2f}_ExpPolicy{}".format(training_step,
+                                                                                      running_average_reward,
+                                                                                      exploration_policy_index)))
+            if save_all_models:
+                self.critic1.save(
+                    os.path.join(path, "SAC_Critic1_Step{}_Reward{:.2f}_ExpPolicy{}".format(training_step,
+                                                                                            running_average_reward,
+                                                                                            exploration_policy_index)))
+                self.critic2.save(
+                    os.path.join(path, "SAC_Critic2_Step{}_Reward{:.2f}_ExpPolicy{}".format(training_step,
+                                                                                            running_average_reward,
+                                                                                            exploration_policy_index)))
+        else:
+            self.actor_network.save(
+                os.path.join(path, "SAC_Actor_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
+            if save_all_models:
+                self.critic1.save(
+                    os.path.join(path, "SAC_Critic1_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
+                self.critic2.save(
+                    os.path.join(path, "SAC_Critic2_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
 
     def boost_exploration(self):
         self.log_alpha = tf.Variable(tf.ones(1) * -0.7,

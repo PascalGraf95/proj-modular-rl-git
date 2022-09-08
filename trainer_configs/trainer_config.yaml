@@ -29,10 +29,10 @@ ddpg:
 dqn:
     Recurrent: true
     IntrinsicDecoupling: false
-    BurnIn: 0
+    BurnIn: 2
     AdaptiveSequenceLength: false
     SequenceLength: 10
-    Overlap: 6
+    Overlap: 4
     ActorNum: 8
     ClipGrad: 10.0
     BatchSize: 64
@@ -50,22 +50,18 @@ dqn:
         kNearest: 10
         MaxIntRewardScaling: 0.3
         ClusterDistance: 0.008
-        KernelEpsilon: 0.001
-        KernelConstant: 0.001
-        MaximumSimilarity: 2
-        EpisodicMemoryCapacity: 600
-        ResetEpisodicMemory: true
+        KernelEpsilon: 0.01
+        MaximumSimilarity: 8
+        EpisodicMemoryCapacity: 400
         kECR: 5
-        AlphaECR: 1.0
         BetaECR: 1.0
     MetaLearningParameters:
         Epsilon: 0.3
         EpsilonDecay: 0.999
         EpsilonMin: 0.02
         StepDown: false
-        NumExplorationPolicies: 12
+        NumExplorationPolicies: 8
         UCBWindowSize: 160
-        UCBAlpha: 1.0
     Gamma: 0.99
     LearningRate: 0.0005
     NSteps: 5
@@ -76,7 +72,7 @@ dqn:
         Units: 64
         VectorNetworkArchitecture: Dense
         VisualNetworkArchitecture: CNN
-    NetworkUpdateFrequency: 100
+    NetworkUpdateFrequency: 50
     ReplayCapacity: 100000
     ReplayMinSize: 50
     SyncMode: soft_sync
@@ -85,18 +81,18 @@ dqn:
     PrioritizedReplay: true
     PriorityAlpha: 0.8
     RewardNormalization: false
-    TrainingID: Cartpole_DQN_A57lite
+    TrainingID: CartpoleV1_DQN_Agent57
     TrainingInterval: 4
 
 sac:
     Recurrent: true
     IntrinsicDecoupling: false
-    BurnIn: 5
+    BurnIn: 2
     AdaptiveSequenceLength: false
-    SequenceLength: 20
-    Overlap: 6
+    SequenceLength: 10
+    Overlap: 4
     ActorNum: 8
-    BatchSize: 32
+    BatchSize: 64
     ClipGrad: 10.0
     ExplorationParameters:
         FeatureSpaceSize: 18
@@ -111,12 +107,9 @@ sac:
         MaxIntRewardScaling: 0.3
         ClusterDistance: 0.008
         KernelEpsilon: 0.01
-        KernelConstant: 0.001
         MaximumSimilarity: 2
         EpisodicMemoryCapacity: 600
-        ResetEpisodicMemory: true
         kECR: 5
-        AlphaECR: 1.0
         BetaECR: 1.0
     MetaLearningParameters:
         Epsilon: 0.3
@@ -125,7 +118,6 @@ sac:
         StepDown: false
         NumExplorationPolicies: 12
         UCBWindowSize: 160
-        UCBAlpha: 1.0
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
@@ -141,15 +133,15 @@ sac:
         ActorVisualNetworkArchitecture: CNN
         CriticVectorNetworkArchitecture: Dense
         CriticVisualNetworkArchitecture: CNN
-    PrioritizedReplay: false
+    PrioritizedReplay: true
     PriorityAlpha: 0.8
     RewardNormalization: false
     ReplayCapacity: 100000
-    ReplayMinSize: 100
+    ReplayMinSize: 50
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_Reacher_DebugAg57
+    TrainingID: Reacher_SAC_Agent57Debug
     TrainingInterval: 4
 
 cql:

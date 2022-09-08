@@ -1,3 +1,5 @@
+from random import random
+
 import tensorflow as tf
 import numpy as np
 import time
@@ -10,6 +12,7 @@ from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatena
 import time
 from collections import deque
 from tensorflow.keras.utils import plot_model
+import random
 
 np.random.seed(42)
 tf.random.set_seed(42)
@@ -17,9 +20,9 @@ tf.random.set_seed(42)
 
 class Mooodel():
     def __init__(self):
-        self.observation_shapes = [(35,)]
+        self.observation_shapes = [(8,)]
         self.action_shape = (5,)
-        self.feature_space_size = 32
+        self.feature_space_size = 4
         self.recurrent = True
 
         # Loss metrics
@@ -46,7 +49,7 @@ class Mooodel():
         modified_observation_shapes.append((1,))'''
         self.observation_shapes = modified_observation_shapes
 
-        # region Feature Extractor
+        '''# region Feature Extractor
         self.action_space = "DISCRETE"
         if len(self.observation_shapes) == 1:
             if self.recurrent:
@@ -105,9 +108,9 @@ class Mooodel():
         # Summaries
         self.feature_extractor.summary()
         self.embedding_classifier.summary()
-        # endregion
+        # endregion'''
 
-        ''' # region Embedding Network
+         # region Embedding Network
         if len(self.observation_shapes) == 1:
             if self.recurrent:
                 feature_input = Input((None, *self.observation_shapes[0]))
@@ -145,7 +148,7 @@ class Mooodel():
         self.comparator_network = Model([current_state_features, next_state_features], x, name="ECR Comparator")
         # endregion
 
-        # region ALTERNATIVEComparator
+        '''# region ALTERNATIVEComparator
         if self.recurrent:
             # Add additional time dimension if networks work with recurrent replay batches
             current_state_features = Input((None, *(self.feature_space_size,)))
@@ -157,13 +160,13 @@ class Mooodel():
         x = Dense(32, activation="relu")(x)
         x = Dense(32, activation="relu")(x)
         x = Dense(1, activation='sigmoid')(x)
-        self.sigmoid_comparator_network = Model([current_state_features, next_state_features], x, name="ECR Comparator 2")
+        self.sigmoid_comparator_network = Model([current_state_features, next_state_features], x, name="ECR Comparator 2")'''
 
         # region Model compilation and plotting
         # comparator_network.compile(loss=self.cce, optimizer=self.optimizer)
         self.feature_extractor.compile(loss=self.bce, optimizer=self.optimizer)
         self.comparator_network.compile(loss=self.bce, optimizer=self.optimizer)
-        self.sigmoid_comparator_network.compile(loss=self.bce, optimizer=self.optimizer)
+        '''self.sigmoid_comparator_network.compile(loss=self.bce, optimizer=self.optimizer)'''
 
         # Model plots
         try:
@@ -175,7 +178,7 @@ class Mooodel():
         # Summaries
         self.feature_extractor.summary()
         self.comparator_network.summary()
-        self.sigmoid_comparator_network.summary()'''
+        '''self.sigmoid_comparator_network.summary()'''
 
 if __name__ == '__main__':
     mdl = Mooodel()
@@ -189,12 +192,12 @@ if __name__ == '__main__':
     reachability_buffer = reachability_buffer[:, :, 1]
     y_true = tf.convert_to_tensor(np.ones((32, 7)))'''
 
-    state_input_size = 35
+    '''state_input_size = 35
     x1 = np.random.random((32, 15, state_input_size))
     x2 = np.random.random((32, 15, state_input_size))
     action_batch = np.random.random_integers(0,4,(32, 15, 5))
-    action_batch = action_batch[:, :, 0]
-    # Calculate Loss
+    action_batch = action_batch[:, :, 0]'''
+    '''# Calculate Loss
     with tf.GradientTape() as tape:
         # Calculate features of current and next state
         state_features = mdl.feature_extractor(x1)
@@ -220,28 +223,75 @@ if __name__ == '__main__':
                                      mdl.feature_extractor.trainable_weights])
     # Apply Gradients to all models
     mdl.optimizer.apply_gradients(zip(grad[0], mdl.embedding_classifier.trainable_weights))
-    mdl.optimizer.apply_gradients(zip(grad[1], mdl.feature_extractor.trainable_weights))
+    mdl.optimizer.apply_gradients(zip(grad[1], mdl.feature_extractor.trainable_weights))'''
 
-    '''with tf.GradientTape() as tape:
+    # Create training data (unique feature-pairs with respective reachability information as labels)
+    x1_indices, x2_indices, y_true_batch = [], [], []
+    batch_size = 32
+    sequence_len = 10
+    # Get middle index
+    sequence_middle = sequence_len // 2
+
+    for sequence in range(batch_size):
+        sequence_indices = np.arange(sequence_len)
+
+        # Shuffle sequence indices randomly
+        np.random.shuffle(sequence_indices)
+
+        # Divide Index-Array into two equally sized parts (Right half gets cutoff if sequence length is odd)
+        sequence_indices_left, sequence_indices_right = sequence_indices[:sequence_middle], \
+                                                        sequence_indices[sequence_middle:2 * sequence_middle]
+        idx_differences = np.abs(sequence_indices_left - sequence_indices_right)
+
+        # States are reachable (== [0, 1]) one from each other if step-difference between them is smaller than k
+        diffs = []
+        for diff in idx_differences:
+            if diff <= 5:
+                # reachable
+                diffs.append([0, 1])
+            else:
+                # non-reachable
+                diffs.append([1, 0])
+
+        y_true = diffs
+
+        x1_indices.append(sequence_indices_left)
+        x2_indices.append(sequence_indices_right)
+        y_true_batch.append(y_true)
+
+    # Cast arrays for comparator to output correct shape
+    x1_indices = np.array(x1_indices)
+    x2_indices = np.array(x2_indices)
+
+    data = np.random.random((batch_size, sequence_len, 8))
+
+    data = list(data)
+    x1_array = []
+    x2_array = []
+    for sequence, x1_indi, x2_indi in zip(data, x1_indices, x2_indices):
+        x1_array.append(sequence[x1_indi])
+        x2_array.append(sequence[x2_indi])
+
+    x1_array = np.array(x1_array)
+    x2_array = np.array(x2_array)
+
+    with tf.GradientTape() as tape:
         # Calculate features
-        state_features1 = mdl.feature_extractor(x1)
-        state_features2 = mdl.feature_extractor(x2)
-
+        state_features1 = mdl.feature_extractor(x1_array)
+        state_features2 = mdl.feature_extractor(x2_array)
         # Calculate reachability between observation pairs
-        y_pred = mdl.sigmoid_comparator_network([state_features1, state_features2])
-
-        y_true_batch = np.random.random((32, 15, 1))
+        y_pred = mdl.comparator_network([state_features1, state_features2])
 
         # Calculate Binary Cross-Entropy Loss
-        mdl.loss = mdl.bce(y_true_batch, y_pred)
+        mdl.loss = mdl.cce(y_true_batch, y_pred)
 
     # Calculate Gradients
-    grad = tape.gradient(mdl.loss, [mdl.sigmoid_comparator_network.trainable_weights,
+    grad = tape.gradient(mdl.loss, [mdl.comparator_network.trainable_weights,
                                     mdl.feature_extractor.trainable_weights])
 
     # Apply Gradients to all models
-    mdl.optimizer.apply_gradients(zip(grad[0], mdl.sigmoid_comparator_network.trainable_weights))
-    mdl.optimizer.apply_gradients(zip(grad[1], mdl.feature_extractor.trainable_weights))'''
+    mdl.optimizer.apply_gradients(zip(grad[0], mdl.comparator_network.trainable_weights))
+    mdl.optimizer.apply_gradients(zip(grad[1], mdl.feature_extractor.trainable_weights))
 
     '''
     #y_pred = y_pred[:, :, 1]
