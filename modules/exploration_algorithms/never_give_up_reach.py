@@ -56,7 +56,10 @@ class NeverGiveUpReach(ExplorationAlgorithm):
 
         # Modify observation shapes for sampling later on
         self.observation_shapes_modified = modify_observation_shapes(self.observation_shapes, self.action_shape,
-                                                                     self.action_space)
+                                                                     self.action_space,
+                                                                     training_parameters["ActionFeedback"],
+                                                                     training_parameters["RewardFeedback"],
+                                                                     training_parameters["PolicyFeedback"])
         self.num_additional_obs_values = len(self.observation_shapes_modified) - len(self.observation_shapes)
 
         # Parameters required during network build-up
@@ -264,14 +267,15 @@ class NeverGiveUpReach(ExplorationAlgorithm):
         if self.training_step >= self.step_down and self.step_down:
             self.epsilon = self.epsilon_min
 
+        # Clear additional observation parts added as they must not be used by the exploration algorithms
+        if self.num_additional_obs_values:
+            state_batch = state_batch[:-self.num_additional_obs_values]
+            next_state_batch = next_state_batch[:-self.num_additional_obs_values]
+
         # region --- learning step ---
         with tf.device(self.device):
             # region Lifelong Novelty Module
             with tf.GradientTape() as tape:
-                # Clear additional observation parts added during acting as they must not be used by the exploration
-                # algorithms
-                next_state_batch = next_state_batch[:-self.num_additional_obs_values]
-
                 target_features = self.target_model(next_state_batch)
                 prediction_features = self.prediction_model(next_state_batch)
                 self.lifelong_loss = self.mse(target_features, prediction_features)
@@ -281,12 +285,8 @@ class NeverGiveUpReach(ExplorationAlgorithm):
             self.optimizer.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
             # endregion
 
-            # Clear additional observation parts added during played environment step
-            state_batch = state_batch[:-self.num_additional_obs_values]
-
             # region Episodic Curiosity Through Reachability
             with tf.GradientTape() as tape:
-
                 # Calculate features
                 state_features = self.feature_extractor(state_batch)
 

@@ -25,7 +25,7 @@ class MetaLearning:
     def act(self):
         return
 
-    def learning_step(self):
+    def learning_step(self, _param1, _param2):
         return
 
     def reset(self):

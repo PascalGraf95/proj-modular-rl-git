@@ -187,7 +187,8 @@ def sigmoid(x):
     return sig
 
 
-def modify_observation_shapes(observation_shapes, action_shapes, action_type):
+def modify_observation_shapes(observation_shapes, action_shapes, action_type, feedback_actions, feedback_rewards,
+                              feedback_exploration_policy):
     """
     Modify observation shapes through adding additional observation shapes. Those additional shapes will be used to feed
     inputs that are not coming directly from the interface (Unity, Gym). Such inputs would be for example the prior
@@ -201,6 +202,14 @@ def modify_observation_shapes(observation_shapes, action_shapes, action_type):
         Observation shapes given through the interface (Unity, Gym)
     action_shapes:
         Action shapes given through the interface (Unity, Gym)
+    action_type:
+        Action type given through the interface
+    feedback_actions:
+        Boolean whether or not to feed back the last step action as a network input.
+    feedback_rewards:
+        Boolean whether or not to feed back the last step rewards (extr. and intr.) as a network input.
+    feedback_exploration_policy:
+        Boolean whether or not to feed back the last step exploration_policy as a network input.
 
     Returns
     -------
@@ -212,18 +221,22 @@ def modify_observation_shapes(observation_shapes, action_shapes, action_type):
         modified_observation_shapes.append(obs_shape)
 
     # Prior action
-    if action_type == "CONTINUOUS":
-        modified_observation_shapes.append((action_shapes,))
-    elif action_type == "DISCRETE":
+    if feedback_actions:
+        if action_type == "CONTINUOUS":
+            modified_observation_shapes.append((action_shapes,))
+        elif action_type == "DISCRETE":
+            modified_observation_shapes.append((1,))
+        else:
+            print("Used action type not implemented yet.")
+    # Prior rewards
+    if feedback_rewards:
+        # extrinsic
         modified_observation_shapes.append((1,))
-    else:
-        print("Used action type not implemented yet.")
+        # intrinsic
+        modified_observation_shapes.append((1,))
 
-    # Prior extrinsic reward
-    modified_observation_shapes.append((1,))
-    # Prior intrinsic reward
-    modified_observation_shapes.append((1,))
-    # j (index of exploration policy (beta, gamma))
-    modified_observation_shapes.append((1,))
+    # Prior j (index of exploration policy (beta, gamma))
+    if feedback_exploration_policy:
+        modified_observation_shapes.append((1,))
 
     return modified_observation_shapes

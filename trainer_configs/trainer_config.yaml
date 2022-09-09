@@ -28,9 +28,11 @@ ddpg:
     TrainingInterval: 64
 dqn:
     Recurrent: true
-    IntrinsicDecoupling: false
     BurnIn: 2
     AdaptiveSequenceLength: false
+    ActionFeedback: true
+    RewardFeedback: false
+    PolicyFeedback: true
     SequenceLength: 10
     Overlap: 4
     ActorNum: 8
@@ -60,7 +62,7 @@ dqn:
         EpsilonDecay: 0.999
         EpsilonMin: 0.02
         StepDown: false
-        NumExplorationPolicies: 8
+        NumExplorationPolicies: 12
         UCBWindowSize: 160
     Gamma: 0.99
     LearningRate: 0.0005
@@ -81,14 +83,16 @@ dqn:
     PrioritizedReplay: true
     PriorityAlpha: 0.8
     RewardNormalization: false
-    TrainingID: CartpoleV1_DQN_Agent57
+    TrainingID: Cartpole_DQN_actPolicy
     TrainingInterval: 4
 
 sac:
     Recurrent: true
-    IntrinsicDecoupling: false
     BurnIn: 2
     AdaptiveSequenceLength: false
+    ActionFeedback: true
+    RewardFeedback: false
+    PolicyFeedback: true
     SequenceLength: 10
     Overlap: 4
     ActorNum: 8
@@ -141,7 +145,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: Reacher_SAC_Agent57Debug
+    TrainingID: 3DBall_SAC_Agent57r
     TrainingInterval: 4
 
 cql:

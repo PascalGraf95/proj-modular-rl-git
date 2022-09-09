@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import numpy
 import numpy as np
 from tensorflow.keras.models import load_model
 from tensorflow.keras import Model
@@ -38,21 +39,6 @@ class DQNActor(Actor):
                 # In case of a recurrent network, the state input needs an additional time dimension
                 states = [tf.expand_dims(state, axis=1) for state in states]
                 action_values, hidden_state, cell_state = self.critic_network(states)
-
-                if self.reward_normalization:
-                    action_values = self.inverse_value_function_rescaling(action_values)
-
-                # In case of decoupled intrinsic networks augment action_values
-                if self.intrinsic_networks_decoupling and self.additional_network_inputs and self.reward_normalization:
-                    action_values += self.exploration_degree[self.exploration_policy_idx]['beta'] * \
-                                     self.inverse_value_function_rescaling(self.intrinsic_critic_network(states))
-                elif self.intrinsic_networks_decoupling and self.additional_network_inputs:
-                    action_values += self.exploration_degree[self.exploration_policy_idx]['beta'] * \
-                                     self.intrinsic_critic_network(states)
-
-                if self.reward_normalization:
-                    action_values = self.value_function_rescaling(action_values)
-
                 actions = tf.expand_dims(tf.argmax(action_values[0], axis=1), axis=1)
                 self.update_lstm_states(agent_ids, [hidden_state.numpy(), cell_state.numpy()])
             else:
@@ -110,9 +96,6 @@ class DQNActor(Actor):
         self.critic_network.set_weights(network_weights[0])
         if self.recurrent:
             self.critic_prediction_network.set_weights(network_weights[0])
-        # Update intrinsic critic network
-        if self.additional_network_inputs and self.intrinsic_networks_decoupling:
-            self.intrinsic_critic_network.set_weights(network_weights[1])
         self.network_update_requested = False
         self.steps_taken_since_network_update = 0
 
@@ -159,11 +142,6 @@ class DQNActor(Actor):
             if self.recurrent:
                 self.critic_prediction_network = construct_network(network_parameters[1],
                                                                    plot_network_model=(self.index == 0))
-                # Add additional decoupled network that adds intrinsic influence to the Q-network
-                if self.intrinsic_networks_decoupling and self.additional_network_inputs:
-                    network_parameters[0]['ReturnStates'] = False
-                    self.intrinsic_critic_network = construct_network(network_parameters[0],
-                                                                       plot_network_model=(self.index == 0))
                 # In case of recurrent neural networks, the lstm layers need to be accessible so that the hidden and
                 # cell states can be modified manually.
                 self.get_lstm_layers()
@@ -195,16 +173,6 @@ class DQNLearner(Learner):
         self.critic: Model
         self.critic_target: Model
 
-        # In case of usage of Agent57's reward generator, additional networks will be initialized which will
-        # be adapted exclusively based on the intrinsic reward. Moreover, the standard critic networks will accordingly
-        # be adapted exclusively based on the extrinsic reward. Overall this is done due to intrinsic rewards often
-        # differing from extrinsic ones in terms of density and value range which can lead to instabilities when
-        # trying to concatenate both types for network updates.
-        self.intrinsic_networks_decoupling = trainer_configuration.get('IntrinsicDecoupling')
-        if self.intrinsic_networks_decoupling:
-            self.intrinsic_critic: Model
-            self.intrinsic_critic_target: Model
-
         # Double Learning
         self.double_learning = trainer_configuration.get('DoubleLearning')
 
@@ -222,9 +190,6 @@ class DQNLearner(Learner):
             # Compile Networks
             self.critic.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRate'),
                                                clipvalue=self.clip_grad), loss=self.burn_in_mse_loss)
-            if self.intrinsic_networks_decoupling:
-                self.intrinsic_critic.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRate'),
-                                                              clipvalue=self.clip_grad), loss=self.burn_in_mse_loss)
 
         # Load trained Models
         elif mode == 'testing':
@@ -232,10 +197,7 @@ class DQNLearner(Learner):
             self.load_checkpoint(model_path)
 
     def get_actor_network_weights(self, update_requested):
-        if self.intrinsic_networks_decoupling and self.additional_network_inputs:
-            return[self.critic.get_weights(), self.intrinsic_critic.get_weights()]
-        else:
-            return [self.critic.get_weights()]
+        return [self.critic.get_weights()]
 
     def build_network(self, network_settings, environment_parameters):
         # Create a list of dictionaries with 1 entry, one for each network
@@ -276,11 +238,6 @@ class DQNLearner(Learner):
         # Build the networks from the network parameters
         self.critic, self.critic_target = construct_network(network_parameters[0], plot_network_model=True)
 
-        # Build intrinsic critic networks with equal parameters as the non-intrinsic ones
-        if self.intrinsic_networks_decoupling:
-            network_parameters[0]['NetworkName'] = "IntrinsicDQN_" + self.NetworkTypes[0]
-            self.intrinsic_critic, self.intrinsic_critic_target = construct_network(network_parameters[0],
-                                                                                      plot_network_model=True)
         # endregion
 
     @ray.method(num_returns=3)
@@ -308,14 +265,7 @@ class DQNLearner(Learner):
         # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains an idx
         # giving the information which exploration policy was used during acting. This exploration policy contains the
         # parameters gamma (n-step learning) and beta (intrinsic reward scaling factor).
-        if self.additional_network_inputs:
-            # Get extr. and intr. rewards (directly available via state_batch as they are used as inputs)
-            if self.intrinsic_networks_decoupling:
-                extrinsic_rewards = state_batch[-3]
-                intrinsic_rewards = state_batch[-2]
-                # Shaping must equal the output shape of the critic networks
-                self.beta = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
-                                      self.intrinsic_critic.output_shape[-1]))
+        if self.policy_feedback:
             self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
                                    self.critic.output_shape[-1]))
             # state_batch is sampled component-based for first index. The saved exploration policy index within the
@@ -323,97 +273,55 @@ class DQNLearner(Learner):
             # Get gammas through saved exploration policy indices within the sequences
             for idx, sequence in enumerate(state_batch[-1]):
                 self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
-                if self.intrinsic_networks_decoupling:
-                    self.beta[idx][:] = self.exploration_degree[int(sequence[0][0])]['beta']
 
         # If the state is not terminal:
         # t = 𝑟 + 𝛾 * 𝑚𝑎𝑥_𝑎′ 𝑄̂(𝑠′,𝑎′) else t = r
         # target_prediction: (batch_size, time_steps, action_size) or (batch_size, action_size)
-        if self.additional_network_inputs and self.intrinsic_networks_decoupling:
-            if self.reward_normalization:
-                target_prediction = self.inverse_value_function_rescaling(self.critic_target(next_state_batch).numpy())
-                target_prediction += np.multiply(self.beta, self.inverse_value_function_rescaling(self.intrinsic_critic_target(next_state_batch).numpy()))
-                target_prediction = self.value_function_rescaling(target_prediction)
-            else:
-                target_prediction = self.critic_target(next_state_batch).numpy() + np.multiply(self.beta, self.intrinsic_critic_target(next_state_batch).numpy())
-
-        else:
-            target_prediction = self.critic_target(next_state_batch).numpy()
-
+        target_prediction = self.critic_target(next_state_batch).numpy()
         if self.double_learning:
             # model_prediction_argmax : (batch_size,time_steps) or (batch_size,)
-            if self.additional_network_inputs and self.intrinsic_networks_decoupling:
-                if self.reward_normalization:
-                    model_prediction = self.inverse_value_function_rescaling(self.critic(next_state_batch).numpy())
-                    model_prediction += np.multiply(self.beta, self.inverse_value_function_rescaling(self.intrinsic_critic(next_state_batch).numpy()))
-                    model_prediction = self.value_function_rescaling(model_prediction)
-                else:
-                    model_prediction = self.critic(next_state_batch).numpy() + np.multiply(self.beta, self.intrinsic_critic(next_state_batch).numpy())
-                model_prediction_argmax = np.argmax(model_prediction, axis=-1)
-            else:
-                model_prediction_argmax = np.argmax(self.critic(next_state_batch).numpy(), axis=-1)
-
+            model_prediction_argmax = np.argmax(self.critic(next_state_batch).numpy(), axis=-1)
             if self.recurrent:
                 # target_batch: (32, 10, 1) or (32, 1)
-                if self.additional_network_inputs:
-                    if self.intrinsic_networks_decoupling:
-                        target_batch = extrinsic_rewards + \
-                                       np.multiply(np.multiply((self.gamma ** self.n_steps),
-                                                               np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1)), (1 - done_batch))
-                        intrinsic_target_batch = intrinsic_rewards + \
-                                                 np.multiply(np.multiply((self.gamma ** self.n_steps),
-                                                                         np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1)), (1 - done_batch))
-                    else:
-                        target_batch = reward_batch + \
-                                       np.multiply(np.multiply((self.gamma ** self.n_steps),
-                                                               np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1)), (1 - done_batch))
+                if self.reward_normalization:
+                    target_batch = self.value_function_rescaling(reward_batch + (self.gamma ** self.n_steps) * \
+                                   np.expand_dims(self.inverse_value_function_rescaling(
+                                       target_prediction[mesh_y, mesh_x, model_prediction_argmax]), axis=-1) * \
+                                   (1 - done_batch))
                 else:
-                    target_batch = reward_batch + \
-                                   (self.gamma ** self.n_steps) * \
-                                   np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1) * (1 - done_batch)
+                    target_batch = reward_batch + (self.gamma ** self.n_steps) * \
+                                   np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1) * \
+                                   (1 - done_batch)
             else:
-                target_batch = reward_batch + (self.gamma ** self.n_steps) * \
-                               np.expand_dims(target_prediction[batch_array, model_prediction_argmax], axis=-1) * \
-                               (1 - done_batch)
-        else:
-            if self.additional_network_inputs:
-                if self.intrinsic_networks_decoupling:
-                    target_batch = extrinsic_rewards + \
-                                   np.multiply(np.multiply((self.gamma ** self.n_steps),
-                                                           tf.reduce_max(target_prediction, axis=-1, keepdims=True)), (1 - done_batch))
-                    intrinsic_target_batch = intrinsic_rewards + \
-                                             np.multiply(np.multiply((self.gamma ** self.n_steps),
-                                                                     tf.reduce_max(target_prediction, axis=-1, keepdims=True)), (1 - done_batch))
+                if self.reward_normalization:
+                    target_batch = self.value_function_rescaling(reward_batch + (self.gamma ** self.n_steps) * \
+                                   np.expand_dims(self.inverse_value_function_rescaling(
+                                       target_prediction[batch_array, model_prediction_argmax]), axis=-1) * \
+                                   (1 - done_batch))
                 else:
-                    target_batch = reward_batch + \
-                                   np.multiply(np.multiply((self.gamma ** self.n_steps),
-                                                           tf.reduce_max(target_prediction, axis=-1, keepdims=True)), (1 - done_batch))
+                    target_batch = reward_batch + (self.gamma ** self.n_steps) * \
+                                   np.expand_dims(target_prediction[batch_array, model_prediction_argmax], axis=-1) * \
+                                   (1 - done_batch)
+        else:
+            if self.reward_normalization:
+                target_batch = self.value_function_rescaling(reward_batch + (self.gamma ** self.n_steps) * \
+                               tf.reduce_max(self.inverse_value_function_rescaling(target_prediction),
+                                             axis=-1, keepdims=True) * (1 - done_batch))
             else:
                 target_batch = reward_batch + (self.gamma ** self.n_steps) * \
                                tf.reduce_max(target_prediction, axis=-1, keepdims=True) * (1 - done_batch)
 
         # Set the Q value of the chosen action to the target.
         # y: (32, 10, 5) or (32, 5)
-        if self.intrinsic_networks_decoupling and self.additional_network_inputs:
-            if self.reward_normalization:
-                y = self.inverse_value_function_rescaling(self.critic(state_batch).numpy())
-                y += np.multiply(self.beta, self.inverse_value_function_rescaling(self.intrinsic_critic(state_batch).numpy()))
-                y = self.value_function_rescaling(y)
-            else:
-                y = self.critic(state_batch).numpy() + np.multiply(self.beta, self.intrinsic_critic(state_batch).numpy())
-            intrinsic_y = y
-        else:
-            y = self.critic(state_batch).numpy()
+        y = self.critic(state_batch).numpy()
+
         # action_batch: (32, 10, 1) or (32, 1)
         if self.recurrent:
-            if self.intrinsic_networks_decoupling and self.additional_network_inputs:
-                y[mesh_y, mesh_x, action_batch[:, :, 0].astype(int)] = target_batch[:, :, 0]
-                intrinsic_y[mesh_y, mesh_x, action_batch[:, :, 0].astype(int)] = intrinsic_target_batch[:, :, 0]
-            else:
-                y[mesh_y, mesh_x, action_batch[:, :, 0].astype(int)] = target_batch[:, :, 0]
+            y[mesh_y, mesh_x, action_batch[:, :, 0].astype(int)] = target_batch[:, :, 0]
         else:
             y[batch_array, action_batch[:, 0].astype(int)] = target_batch[:, 0]
 
+        # Calculate sample errors
         sample_errors = np.abs(y - self.critic(state_batch))
         if self.recurrent:
             eta = 0.9
@@ -423,17 +331,12 @@ class DQNLearner(Learner):
 
         # Train the network on the training batch.
         value_loss = self.critic.train_on_batch(state_batch, y)
-        if self.intrinsic_networks_decoupling and self.additional_network_inputs:
-            intrinsic_value_loss = self.intrinsic_critic.train_on_batch(state_batch, intrinsic_y)
 
         # Update target network weights
         self.training_step += 1
         self.sync_models()
 
-        if self.intrinsic_networks_decoupling and self.additional_network_inputs:
-            return {'Losses/Loss': value_loss, 'Losses/IntrinsicLoss': intrinsic_value_loss}, sample_errors, self.training_step
-        else:
-            return {'Losses/Loss': value_loss}, sample_errors, self.training_step
+        return {'Losses/Loss': value_loss}, sample_errors, self.training_step
 
     @staticmethod
     def value_function_rescaling(x, eps=1e-3):
@@ -450,17 +353,10 @@ class DQNLearner(Learner):
         if self.sync_mode == "hard_sync":
             if not self.training_step % self.sync_steps and self.training_step > 0:
                 self.critic_target.set_weights(self.critic.get_weights())
-                if self.intrinsic_networks_decoupling:
-                    self.intrinsic_critic_target.set_weights(self.intrinsic_critic.get_weights())
         elif self.sync_mode == "soft_sync":
             self.critic_target.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
                                             for weights, target_weights in zip(self.critic.get_weights(),
                                                                                self.critic_target.get_weights())])
-            if self.intrinsic_networks_decoupling:
-                self.intrinsic_critic_target.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
-                                                          for weights, target_weights in
-                                                          zip(self.intrinsic_critic.get_weights(),
-                                                              self.intrinsic_critic_target.get_weights())])
         else:
             raise ValueError("Sync mode unknown.")
 
@@ -480,10 +376,10 @@ class DQNLearner(Learner):
             raise NotADirectoryError("Could not find directory or file for loading models.")
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
-                        checkpoint_condition=True, save_policy_index=False, exploration_policy_index=0):
+                        checkpoint_condition=True, exploration_policy_index=None):
         if not checkpoint_condition:
             return
-        if save_policy_index:
+        if exploration_policy_index is not None:
             self.critic.save(
                 os.path.join(path, "DQN_Critic_Step{}_Reward{:.2f}_ExpPolicy{}".format(training_step,
                                                                                      running_average_reward,

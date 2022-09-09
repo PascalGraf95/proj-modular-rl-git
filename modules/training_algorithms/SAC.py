@@ -88,7 +88,7 @@ class SACActor(Actor):
             critic_target = critic_prediction * (1 - done_batch)
 
             # Use gamma given through exploration policy index (same value for entire sequence)
-            if self.additional_network_inputs:
+            if self.policy_feedback:
                 # state_batch is sampled component-based for first index. The saved exploration policy index within the
                 # observation is always the last observation component -> therefore state_batch[-1] is used to get it.
                 # Get gammas through saved exploration policy indices within the sequences
@@ -223,17 +223,6 @@ class SACLearner(Learner):
         self.critic2: keras.Model
         self.critic_target2: keras.Model
 
-        # In case of usage of Agent57's reward generator, additional critic networks will be initialized which will
-        # be adapted exclusively based on the intrinsic reward. Moreover, the standard critic networks will accordingly
-        # be adapted exclusively based on the extrinsic reward. Overall this is done due to intrinsic rewards often
-        # differing from extrinsic ones in terms of density and value range which can lead to instabilities when
-        # trying to concatenate both types for network updates.
-        self.intrinsic_networks_decoupling = trainer_configuration.get('IntrinsicDecoupling')
-        if self.intrinsic_networks_decoupling:
-            self.intrinsic_critic1: keras.Model
-            self.intrinsic_critic_target1: keras.Model
-            self.intrinsic_critic2: keras.Model
-            self.intrinsic_critic_target2: keras.Model
         # A small parameter epsilon prevents math errors when log probabilities are 0.
         self.epsilon = 1.0e-6
 
@@ -268,12 +257,6 @@ class SACLearner(Learner):
                                                 clipvalue=self.clip_grad), loss=self.burn_in_mse_loss)
             self.actor_optimizer = Adam(learning_rate=trainer_configuration.get('LearningRateActor'),
                                         clipvalue=self.clip_grad)
-            # Compile intrinsic critic networks
-            if self.intrinsic_networks_decoupling:
-                self.intrinsic_critic1.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRateCritic'),
-                                                    clipvalue=self.clip_grad), loss=self.burn_in_mse_loss)
-                self.intrinsic_critic2.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRateCritic'),
-                                                    clipvalue=self.clip_grad), loss=self.burn_in_mse_loss)
 
         # Load trained Models
         elif mode == 'testing' or mode == 'fastTesting':
@@ -356,13 +339,6 @@ class SACLearner(Learner):
         self.actor_network = construct_network(network_parameters[0], plot_network_model=True)
         self.critic1, self.critic_target1 = construct_network(network_parameters[1], plot_network_model=True)
         self.critic2, self.critic_target2 = construct_network(network_parameters[2])
-
-        # Build intrinsic critic networks with equal parameters as the non-intrinsic ones
-        if self.intrinsic_networks_decoupling:
-            network_parameters[1]['NetworkName'] = "IntrinsicSAC_" + self.NetworkTypes[1]
-            network_parameters[2]['NetworkName'] = "IntrinsicSAC_" + self.NetworkTypes[2]
-            self.intrinsic_critic1, self.intrinsic_critic_target1 = construct_network(network_parameters[1], plot_network_model=True)
-            self.intrinsic_critic2, self.intrinsic_critic_target2 = construct_network(network_parameters[2])
         # endregion
 
     def forward(self, states):
@@ -404,28 +380,17 @@ class SACLearner(Learner):
             return None, None, self.training_step
         # endregion
 
-        # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains an idx
-        # giving the information which exploration policy was used during acting. This exploration policy contains the
-        # parameters gamma (n-step learning) and beta (intrinsic reward scaling factor).
-        if self.additional_network_inputs:
-            # Get extr. and intr. rewards (directly available via state_batch as they are used as inputs)
-            if self.intrinsic_networks_decoupling:
-                extrinsic_rewards = state_batch[-3]
-                intrinsic_rewards = state_batch[-2]
-                # Shaping must equal the output shape of the critic networks
-                self.beta = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
-                                      self.intrinsic_critic1.output_shape[-1]))
-
+        # With additional policy feedback, the state batch contains an idx giving the information which exploration
+        # policy was used during acting. This exploration policy contains the parameters gamma (n-step learning) and
+        # beta (intrinsic reward scaling factor).
+        if self.policy_feedback:
             self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
                                       self.critic1.output_shape[-1]))
-
             # state_batch is sampled component-based for first index. The saved exploration policy index within the
             # observation is always the last observation component -> therefore state_batch[-1] is used to get it.
             # Get gammas through saved exploration policy indices within the sequences
             for idx, sequence in enumerate(state_batch[-1]):
                 self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
-                if self.intrinsic_networks_decoupling:
-                    self.beta[idx][:] = self.exploration_degree[int(sequence[0][0])]['beta']
 
         # region --- CRITIC TRAINING ---
         next_actions, next_log_prob = self.forward(next_state_batch)
@@ -433,13 +398,6 @@ class SACLearner(Learner):
         # Critic Target Predictions
         critic_target_prediction1 = self.critic_target1([*next_state_batch, next_actions])
         critic_target_prediction2 = self.critic_target2([*next_state_batch, next_actions])
-
-        # Add additional intrinsic critic target prediction, scaled by beta
-        if self.intrinsic_networks_decoupling and self.additional_network_inputs:
-            critic_target_prediction1 += np.multiply(self.beta,
-                                                     self.intrinsic_critic_target1([*next_state_batch, next_actions]))
-            critic_target_prediction2 += np.multiply(self.beta,
-                                                     self.intrinsic_critic_target2([*next_state_batch, next_actions]))
 
         critic_target_prediction = tf.minimum(critic_target_prediction1, critic_target_prediction2)
 
@@ -450,21 +408,11 @@ class SACLearner(Learner):
         # Training Target Calculation with standard TD-Error + Temperature Parameter
         critic_target = (critic_target_prediction - self.alpha * next_log_prob) * (1 - done_batch)
 
-        # Use gamma given through exploration policy index (same value for entire sequence). Additionally calculate an
-        # intrinsic y based on intrinsic rewards in case of network decoupling.
-        if self.additional_network_inputs and self.intrinsic_networks_decoupling:
-            y = extrinsic_rewards + np.multiply((self.gamma ** self.n_steps), critic_target)
-            intrinsic_y = intrinsic_rewards + np.multiply((self.gamma ** self.n_steps), critic_target)
-        elif self.additional_network_inputs:
-            y = reward_batch + np.multiply((self.gamma ** self.n_steps), critic_target)
-        else:
-            y = reward_batch + (self.gamma ** self.n_steps) * critic_target
+        y = reward_batch + (self.gamma ** self.n_steps) * critic_target
 
         # Possible Reward Normalization
         if self.reward_normalization:
             y = self.value_function_rescaling(y)
-            if self.intrinsic_networks_decoupling:
-                intrinsic_y = self.value_function_rescaling(intrinsic_y)
 
         # Calculate Sample Errors to update priorities in Prioritized Experience Replay
         sample_errors = np.abs(y - self.critic1([*state_batch, action_batch]))
@@ -478,11 +426,6 @@ class SACLearner(Learner):
         value_loss1 = self.critic1.train_on_batch([*state_batch, action_batch], y)
         value_loss2 = self.critic2.train_on_batch([*state_batch, action_batch], y)
         value_loss = (value_loss1 + value_loss2) / 2
-        # Calculate  Intrinsic Critic 1 and 2 Loss, utilizes custom mse loss function defined in Trainer-class
-        if self.intrinsic_networks_decoupling:
-            intrinsic_value_loss1 = self.intrinsic_critic1.train_on_batch([*state_batch, action_batch], intrinsic_y)
-            intrinsic_value_loss2 = self.intrinsic_critic2.train_on_batch([*state_batch, action_batch], intrinsic_y)
-            intrinsic_value_loss = (intrinsic_value_loss1 + intrinsic_value_loss2) / 2
         # endregion
 
         # region --- ACTOR TRAINING ---
@@ -490,12 +433,6 @@ class SACLearner(Learner):
             new_actions, log_prob = self.forward(state_batch)
             critic_prediction1 = self.critic1([*state_batch, new_actions])
             critic_prediction2 = self.critic2([*state_batch, new_actions])
-
-            # Add additional intrinsic critic target prediction, scaled by beta
-            if self.intrinsic_networks_decoupling:
-                critic_prediction1 += np.multiply(self.beta, self.intrinsic_critic1([*state_batch, new_actions]))
-                critic_prediction2 += np.multiply(self.beta, self.intrinsic_critic2([*state_batch, new_actions]))
-
             critic_prediction = tf.minimum(critic_prediction1, critic_prediction2)
             policy_loss = tf.reduce_mean(self.alpha * log_prob[:, self.burn_in:] - critic_prediction[:, self.burn_in:])
 
@@ -516,15 +453,9 @@ class SACLearner(Learner):
         self.steps_since_actor_update += 1
         self.sync_models()
 
-        # Add additional intrinsic value loss in case of network decoupling
-        if self.intrinsic_networks_decoupling:
-            return {'Losses/Loss': policy_loss + value_loss, 'Losses/PolicyLoss': policy_loss,
-                    'Losses/ValueLoss': value_loss, 'Losses/IntrinsicValueLoss': intrinsic_value_loss, 'Losses/AlphaLoss': alpha_loss,
-                    'Losses/Alpha': tf.reduce_mean(self.alpha).numpy()}, sample_errors, self.training_step
-        else:
-            return {'Losses/Loss': policy_loss + value_loss, 'Losses/PolicyLoss': policy_loss,
-                    'Losses/ValueLoss': value_loss, 'Losses/AlphaLoss': alpha_loss,
-                    'Losses/Alpha': tf.reduce_mean(self.alpha).numpy()}, sample_errors, self.training_step
+        return {'Losses/Loss': policy_loss + value_loss, 'Losses/PolicyLoss': policy_loss,
+                'Losses/ValueLoss': value_loss, 'Losses/AlphaLoss': alpha_loss,
+                'Losses/Alpha': tf.reduce_mean(self.alpha).numpy()}, sample_errors, self.training_step
 
     @staticmethod
     def value_function_rescaling(x, eps=1e-3):
@@ -539,9 +470,6 @@ class SACLearner(Learner):
             if not self.training_step % self.sync_steps and self.training_step > 0:
                 self.critic_target1.set_weights(self.critic1.get_weights())
                 self.critic_target2.set_weights(self.critic2.get_weights())
-                if self.intrinsic_networks_decoupling:
-                    self.intrinsic_critic_target1.set_weights(self.intrinsic_critic1.get_weights())
-                    self.intrinsic_critic_target2.set_weights(self.intrinsic_critic2.get_weights())
         elif self.sync_mode == "soft_sync":
             self.critic_target1.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
                                              for weights, target_weights in zip(self.critic1.get_weights(),
@@ -549,13 +477,6 @@ class SACLearner(Learner):
             self.critic_target2.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
                                              for weights, target_weights in zip(self.critic2.get_weights(),
                                                                                 self.critic_target2.get_weights())])
-            if self.intrinsic_networks_decoupling:
-                self.intrinsic_critic_target1.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
-                                                 for weights, target_weights in zip(self.intrinsic_critic1.get_weights(),
-                                                                                    self.intrinsic_critic_target1.get_weights())])
-                self.intrinsic_critic_target2.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
-                                                 for weights, target_weights in zip(self.intrinsic_critic2.get_weights(),
-                                                                                    self.intrinsic_critic_target2.get_weights())])
         else:
             raise ValueError("Sync mode unknown.")
 
@@ -581,11 +502,10 @@ class SACLearner(Learner):
             raise NotADirectoryError("Could not find directory or file for loading models.")
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
-                        checkpoint_condition=True, save_policy_index=False, exploration_policy_index=0):
+                        checkpoint_condition=True, exploration_policy_index=None):
         if not checkpoint_condition:
             return
-        # In case of agent57-exploration algorithms being used, additionally save the policy index
-        if save_policy_index:
+        if exploration_policy_index is not None:
             self.actor_network.save(
                 os.path.join(path, "SAC_Actor_Step{}_Reward{:.2f}_ExpPolicy{}".format(training_step,
                                                                                       running_average_reward,

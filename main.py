@@ -30,11 +30,11 @@ def main():
 
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
-    mode = "testing"
+    mode = "training"
     #model_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220831_084334_SAC_MountainCar_R2D2"
     #model_path =  r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220831_151730_SAC_MountainCar_Agent57HP"
     #model_path =  r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220831_211254_SAC_MountainCarV0_Agent57rHP"
-    model_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220907_224157_SAC_MountainCarv0_Agent57"
+    model_path = None #r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220907_224157_SAC_MountainCarv0_Agent57"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
@@ -52,9 +52,9 @@ def main():
     #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\BasicDQN\Env.exe"
     #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\BasicDQNHard\Env.exe"
 
-    #environment_path = r"CartPole-v1"
+    environment_path = r"CartPole-v1"
     #environment_path = r"MountainCar-v0"
-    environment_path = r"MountainCarContinuous-v0"
+    #environment_path = r"MountainCarContinuous-v0"
     #environment_path = r"Acrobot-v1"
     #environment_path = r"BipedalWalker-v3"
     #environment_path = r"Reacher-v4"
@@ -76,7 +76,7 @@ def main():
     # in their current implementation only support continuous action spaces. Of those three Soft Actor-Critic (SAC)
     # is the most recent and preferred option.
     # Choose from "DQN", "DDPG", "TD3", "SAC", "CQL"
-    training_algorithm = 'SAC'
+    training_algorithm = 'DQN'
     trainer.select_training_algorithm(training_algorithm)
     # In case you want to train the agent offline via CQL please provide the path for demonstrations.
     demonstration_path = None  #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-robot-arm-environment\DemoSinglePendulum"
@@ -90,7 +90,7 @@ def main():
     # - Meta Learning Algorithm -
     # The meta learning algorithm helps the RL Agent to learn the most efficient way of learning.
     # Choose from "None", "MetaController"
-    meta_learning_algorithm = "MetaController"
+    meta_learning_algorithm = "None"
 
     # - Curriculum Strategy -
     # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for

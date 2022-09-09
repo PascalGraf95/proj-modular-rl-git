@@ -47,7 +47,10 @@ class EpisodicCuriosity(ExplorationAlgorithm):
 
         # Modify observation shapes for sampling later on
         self.observation_shapes_modified = modify_observation_shapes(self.observation_shapes, self.action_shape,
-                                                                     self.action_space)
+                                                                     self.action_space,
+                                                                     training_parameters["ActionFeedback"],
+                                                                     training_parameters["RewardFeedback"],
+                                                                     training_parameters["PolicyFeedback"])
         self.num_additional_obs_values = len(self.observation_shapes_modified) - len(self.observation_shapes)
 
         # Parameters required during network build-up
@@ -160,12 +163,13 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         if np.any(np.isnan(action_batch)):
             return replay_batch
         # endregion
-        
-        # region --- Learning Step ---
-        with tf.device(self.device):
-            # Clear additional observation parts added during played environment step
+
+        # Clear additional observation parts added during played environment step
+        if self.num_additional_obs_values:
             state_batch = state_batch[:-self.num_additional_obs_values]
 
+        # region --- Learning Step ---
+        with tf.device(self.device):
             with tf.GradientTape() as tape:
                 # Calculate features
                 state_features = self.feature_extractor(state_batch)

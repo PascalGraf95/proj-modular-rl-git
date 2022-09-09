@@ -54,7 +54,10 @@ class NeverGiveUp(ExplorationAlgorithm):
 
         # Modify observation shapes for sampling later on
         self.observation_shapes_modified = modify_observation_shapes(self.observation_shapes, self.action_shape,
-                                                                     self.action_space)
+                                                                     self.action_space,
+                                                                     training_parameters["ActionFeedback"],
+                                                                     training_parameters["RewardFeedback"],
+                                                                     training_parameters["PolicyFeedback"])
         self.num_additional_obs_values = len(self.observation_shapes_modified) - len(self.observation_shapes)
 
         # Parameters required during network build-up
@@ -234,9 +237,9 @@ class NeverGiveUp(ExplorationAlgorithm):
                                                                          self.action_shape, self.sequence_length)
             # Only use last 5 time steps of sequences for training
             # state_batch and next_state_batch are sampled as lists, therefore a separate slicing method is necessary
-            state_batch = [state_input[:, -5:] for state_input in state_batch]
+            '''state_batch = [state_input[:, -5:] for state_input in state_batch]
             next_state_batch = [next_state_input[:, -5:] for next_state_input in next_state_batch]
-            action_batch = action_batch[:, -5:]
+            action_batch = action_batch[:, -5:]'''
 
         else:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
@@ -247,8 +250,9 @@ class NeverGiveUp(ExplorationAlgorithm):
             return replay_batch
 
         # Clear additional observation parts added during acting as they must not be used by the exploration algorithms
-        state_batch = state_batch[:-self.num_additional_obs_values]
-        next_state_batch = next_state_batch[:-self.num_additional_obs_values]
+        if self.num_additional_obs_values:
+            state_batch = state_batch[:-self.num_additional_obs_values]
+            next_state_batch = next_state_batch[:-self.num_additional_obs_values]
 
         # Action batch, if discrete, contains the index of the respective actions multiple times for every step, which
         # is not necessary for further operations, therefore get the first element for every timestep.
