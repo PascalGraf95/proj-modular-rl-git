@@ -83,8 +83,8 @@ dqn:
     PrioritizedReplay: true
     PriorityAlpha: 0.8
     RewardNormalization: false
-    TrainingID: Cartpole_DQN_actPolicy
-    TrainingInterval: 4
+    TrainingID: _DQN_Debug_ECRreal
+    TrainingInterval: 8
 
 sac:
     Recurrent: true
@@ -92,7 +92,7 @@ sac:
     AdaptiveSequenceLength: false
     ActionFeedback: true
     RewardFeedback: false
-    PolicyFeedback: true
+    PolicyFeedback: false
     SequenceLength: 10
     Overlap: 4
     ActorNum: 8
@@ -126,7 +126,7 @@ sac:
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
     LogAlpha: -3.0
-    NSteps: 4
+    NSteps: 5
     AdaptiveExploration: true
     NetworkUpdateFrequency: 50
     SelfPlayNetworkUpdateFrequency: 1000
@@ -145,8 +145,8 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: 3DBall_SAC_Agent57r
-    TrainingInterval: 4
+    TrainingID: 3DBall_SAC_R2D2_actFeedback
+    TrainingInterval: 8
 
 cql:
     Recurrent: false

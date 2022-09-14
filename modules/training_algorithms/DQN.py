@@ -70,9 +70,22 @@ class DQNActor(Actor):
             else:
                 target_prediction = self.critic_network(next_state_batch)
                 y = self.critic_network(state_batch).numpy()
+
+            # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains an
+            # idx giving the information which exploration policy was used during acting. This exploration policy
+            # contains the parameters gamma (n-step learning) and beta (intrinsic reward scaling factor).
+            if self.recurrent and self.policy_feedback:
+                self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
+                                       self.critic_prediction_network.output_shape[-1]))
+                # state_batch is sampled component-based for first index. The saved exploration policy index within the
+                # observation is always the last observation component -> therefore state_batch[-1] is used to get it.
+                # Get gammas through saved exploration policy indices within the sequences
+                for idx, sequence in enumerate(state_batch[-1]):
+                    self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
+
             target_batch = reward_batch + \
-                           (self.gamma ** self.n_steps) * np.max(target_prediction, axis=1, keepdims=True) * (
-                                       1 - done_batch)
+                           (self.gamma ** self.n_steps) * np.max(target_prediction, axis=1, keepdims=True) * \
+                           (1 - done_batch)
             if self.recurrent:
                 time_step_array = np.arange(self.sequence_length)
                 mesh_x, mesh_y = np.meshgrid(time_step_array, batch_array)

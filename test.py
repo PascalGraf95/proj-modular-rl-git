@@ -183,14 +183,20 @@ class Mooodel():
 if __name__ == '__main__':
     mdl = Mooodel()
     time.sleep(3)
-    '''for a in range(100):
-        mdl.episodic_memory.append(np.random.random((1, 32)))
-    state_embedding = np.random.random((1, 32))
+    for a in range(100):
+        mdl.episodic_memory.append(np.random.random((5, 4)))
+    state_embedding = np.random.random((5, 4))
+
+
     state_embedding_array = np.empty([mdl.episodic_memory.__len__(), state_embedding.shape[0], state_embedding.shape[1]])
     state_embedding_array[:] = state_embedding
-    reachability_buffer = mdl.comparator_network([state_embedding_array, np.array(mdl.episodic_memory)])
-    reachability_buffer = reachability_buffer[:, :, 1]
-    y_true = tf.convert_to_tensor(np.ones((32, 7)))'''
+
+    state_embedding_lst = list(state_embedding)
+    state_embedding_lstarray = mdl.episodic_memory.__len__() * state_embedding_lst
+
+    reachability_buffer = mdl.comparator_network([state_embedding_array, np.array(mdl.episodic_memory)])[:, :, 1]
+
+    y_true = tf.convert_to_tensor(np.ones((32, 7)))
 
     '''state_input_size = 35
     x1 = np.random.random((32, 15, state_input_size))

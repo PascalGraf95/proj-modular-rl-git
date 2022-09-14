@@ -19,7 +19,7 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
     """
     Basic implementation of Episodic Novelty Module (ENM)
     The computation of intrinsic episodic rewards is done for each actor and after every environment step (see act()).
-    Logic can be compared to pseudo code within the respective paper:
+
     https://openreview.net/pdf?id=Sye57xStvB
     """
     Name = "EpisodicNoveltyModule"
@@ -163,9 +163,7 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             action_batch = action_batch[:, -5:]'''
 
         else:
-            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-                = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes_modified,
-                                                               self.action_shape)
+            return "Exploration algorithm 'ENM' does currently not work with non-recurrent agents."
 
         if np.any(np.isnan(action_batch)):
             return replay_batch
@@ -176,7 +174,7 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             next_state_batch = next_state_batch[:-self.num_additional_obs_values]
 
         # Action batch, if discrete, contains the index of the respective actions multiple times for every step, which
-        # is not necessary for further operations, therefore get the first element for every timestep.
+        # is not necessary for further operations, therefore get only the first element for every sequence.
         if self.action_space == "DISCRETE":
             action_batch = action_batch[:, :, 0]
         # endregion
@@ -206,7 +204,6 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
                     true_actions_one_hot = tf.one_hot(action_batch, self.action_shape[0])
                     # Compute Loss via Categorical Cross Entropy
                     self.loss = self.cce(true_actions_one_hot, action_prediction)
-
                 elif self.action_space == "CONTINUOUS":
                     # Compute Loss via Mean Squared Error
                     self.loss = self.mse(action_batch, action_prediction)
@@ -278,7 +275,7 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
 
         # Check for similarity boundaries and return intrinsic episodic reward
         if np.isnan(similarity) or (similarity > self.similarity_max):
-            self.episodic_memory.pop()
+            self.episodic_memory.pop()  # Only keep relevant embeddings
             self.episodic_intrinsic_reward = 0
         else:
             # 1/similarity to encourage visiting states with lower similarity

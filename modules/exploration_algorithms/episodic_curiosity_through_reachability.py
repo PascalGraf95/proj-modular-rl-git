@@ -69,7 +69,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         # region Episodic Curiosity module parameters
         self.k = exploration_parameters["kECR"]  # Step threshold in terms of states being reachable/non-reachable
         self.beta = exploration_parameters["BetaECR"]  # For envs with fixed-length episodes: 0.5 else 1.0
-        self.alpha = 1.0
+        self.alpha = 10.0
 
         # Calculate left and right limits of the value range of the output and get median, which represents the novelty
         # threshold
@@ -86,6 +86,8 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         self.novelty_threshold = np.median([left_limit, right_limit])
 
         self.episodic_memory = deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
+        self.sequence_indices = np.arange(self.sequence_length)
+        self.sequence_middle = self.sequence_length // 2
 
         self.feature_extractor, self.comparator_network = self.build_network()
         # endregion
@@ -158,7 +160,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
             '''state_batch = [state_input[:, -5:] for state_input in state_batch]
             action_batch = action_batch[:, -5:]'''
         else:
-            return "Exploration algorithm 'ECR' does not work with non-recurrent agents. Learning step NOT executed."
+            return "Exploration algorithm 'ECR' does currently not work with non-recurrent agents."
 
         if np.any(np.isnan(action_batch)):
             return replay_batch
@@ -174,7 +176,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
                 # Calculate features
                 state_features = self.feature_extractor(state_batch)
 
-                # Create training data (unique feature-pairs with respective reachability information as labels)
+                # Create training data (unique feature-pairs with reachability information as labels)
                 x1_batch, x2_batch, y_true_batch = [], [], []
                 for sequence in state_features:
                     x1, x2, y_true = self.get_training_data(sequence)
@@ -219,33 +221,20 @@ class EpisodicCuriosity(ExplorationAlgorithm):
             Reachability between x1 and x2 elements and therefore the ground truth of the training data. (0 == not
             reachable within k-steps, 1 == reachable within k-steps)
         """
-        # Create Index Array
-        sequence_len = len(sequence)
-        sequence_indices = np.arange(sequence_len)
-
         # Shuffle sequence indices randomly
-        np.random.shuffle(sequence_indices)
-        # Get middle index
-        sequence_middle = sequence_len // 2
+        np.random.shuffle(self.sequence_indices)
+
         # Divide Index-Array into two equally sized parts (Right half gets cutoff if sequence length is odd)
-        sequence_indices_left, sequence_indices_right = sequence_indices[:sequence_middle], \
-                                                        sequence_indices[sequence_middle:2 * sequence_middle]
+        sequence_indices_left, sequence_indices_right = self.sequence_indices[:self.sequence_middle], \
+                                                        self.sequence_indices[self.sequence_middle:2 * self.sequence_middle]
         idx_differences = np.abs(sequence_indices_left - sequence_indices_right)
         x1 = sequence.numpy()[sequence_indices_left]
         x2 = sequence.numpy()[sequence_indices_right]
 
         # States are reachable (== [0, 1]) one from each other if step-difference between them is smaller than k
-        diffs = []
-        for diff in idx_differences:
-            if diff <= self.k:
-                # reachable
-                diffs.append([0, 1])
-            else:
-                # non-reachable
-                diffs.append([1, 0])
-        labels = diffs
+        diffs = [[0, 1] if diff <= self.k else [1, 0] for diff in idx_differences]
 
-        return x1, x2, labels
+        return x1, x2, diffs
 
     def get_intrinsic_reward(self, replay_batch):
         return replay_batch
@@ -277,14 +266,15 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         state_embedding_array[:] = state_embedding
 
         # Get reachability buffer
+        # Reachability buffer contains values from 0...1 indicating if compared states are reachable one from each other
+        # (==1).
         reachability_buffer = self.comparator_network([state_embedding_array, np.array(self.episodic_memory)])[:, :, 1]
 
         # Aggregate the content of the reachability buffer to calculate similarity-score of current embedding
         similarity_score = np.percentile(reachability_buffer, 90)
 
         # Calculate intrinsic reward
-        # Original paper suggest the formula: 𝑟 = 𝛼 ∗ (𝛽 − 𝑠𝑖𝑚𝑖𝑙𝑎𝑟𝑖𝑡𝑦_𝑠𝑐𝑜𝑟𝑒), where 𝛼 is a simple reward scaling factor
-        # that is set outside this module
+        # 𝑟 = 𝛼 ∗ (𝛽 − 𝑠𝑖𝑚𝑖𝑙𝑎𝑟𝑖𝑡𝑦_𝑠𝑐𝑜𝑟𝑒), where 𝛼 is a simple reward scaling factor that is set outside this module
         self.intrinsic_reward = self.alpha * (self.beta - similarity_score)
 
         # Add state to episodic memory if intrinsic reward is large enough

@@ -88,17 +88,15 @@ class SACActor(Actor):
             critic_target = critic_prediction * (1 - done_batch)
 
             # Use gamma given through exploration policy index (same value for entire sequence)
-            if self.policy_feedback:
-                # state_batch is sampled component-based for first index. The saved exploration policy index within the
-                # observation is always the last observation component -> therefore state_batch[-1] is used to get it.
-                # Get gammas through saved exploration policy indices within the sequences
+            if self.recurrent and self.policy_feedback:
                 self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
                                        self.critic_network.output_shape[-1]))
+                # state_batch is sampled component-based for first index. The saved exploration policy index within the
+                # observation is always the last observation component -> therefore state_batch[-1] is used to get it.
                 for idx, sequence in enumerate(state_batch[-1]):
                     self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
-                y = reward_batch + np.multiply((self.gamma ** self.n_steps), critic_target)
-            else:
-                y = reward_batch + (self.gamma ** self.n_steps) * critic_target
+
+            y = reward_batch + (self.gamma ** self.n_steps) * critic_target
 
             # Train Both Critic Networks
             sample_errors = np.abs(y - self.critic_network([*state_batch, action_batch]))
@@ -383,12 +381,11 @@ class SACLearner(Learner):
         # With additional policy feedback, the state batch contains an idx giving the information which exploration
         # policy was used during acting. This exploration policy contains the parameters gamma (n-step learning) and
         # beta (intrinsic reward scaling factor).
-        if self.policy_feedback:
+        if self.recurrent and self.policy_feedback:
             self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
-                                      self.critic1.output_shape[-1]))
+                                   self.critic1.output_shape[-1]))
             # state_batch is sampled component-based for first index. The saved exploration policy index within the
             # observation is always the last observation component -> therefore state_batch[-1] is used to get it.
-            # Get gammas through saved exploration policy indices within the sequences
             for idx, sequence in enumerate(state_batch[-1]):
                 self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
 

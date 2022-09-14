@@ -12,6 +12,7 @@ from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatena
 import time
 from collections import deque
 from tensorflow.keras.utils import plot_model
+from ..misc.utility import modify_observation_shapes
 
 
 class RandomNetworkDistillation(ExplorationAlgorithm):
@@ -35,8 +36,17 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         self.action_space = action_space
         self.action_shape = action_shape
         self.observation_shapes = observation_shapes
+        self.observation_shapes_modified = observation_shapes
         self.index = idx
         self.device = '/cpu:0'
+
+        # Modify observation shapes for sampling later on
+        self.observation_shapes_modified = modify_observation_shapes(self.observation_shapes, self.action_shape,
+                                                                     self.action_space,
+                                                                     training_parameters["ActionFeedback"],
+                                                                     training_parameters["RewardFeedback"],
+                                                                     training_parameters["PolicyFeedback"])
+        self.num_additional_obs_values = len(self.observation_shapes_modified) - len(self.observation_shapes)
 
         self.recurrent = training_parameters["Recurrent"]
         self.sequence_length = training_parameters["SequenceLength"]
@@ -150,7 +160,7 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         # region --- Batch Reshaping ---
         if self.recurrent:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-                = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes,
+                = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes_modified,
                                                                          self.action_shape, self.sequence_length)
 
             # Only use last 5 time steps of sequences for training
@@ -166,6 +176,10 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
         if np.any(np.isnan(action_batch)):
             return replay_batch
         # endregion
+
+        # Clear additional observation parts added during acting as they must not be used by the exploration algorithms
+        if self.num_additional_obs_values:
+            next_state_batch = next_state_batch[:-self.num_additional_obs_values]
 
         with tf.device(self.device):
             with tf.GradientTape() as tape:

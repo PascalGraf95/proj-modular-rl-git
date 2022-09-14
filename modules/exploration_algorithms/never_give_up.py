@@ -90,11 +90,11 @@ class NeverGiveUp(ExplorationAlgorithm):
 
         # region Lifelong novelty module parameters
         self.normalize_observations = exploration_parameters["ObservationNormalization"]
-        self.observation_deque = deque(maxlen=1000)
+        self.observation_deque = deque(maxlen=5000)
         self.observation_mean = 0
         self.observation_std = 1
         self.alpha_max = 5
-        self.rnd_reward_deque = deque(maxlen=1000)
+        self.rnd_reward_deque = deque(maxlen=5000)
         self.rnd_reward_mean = 0
         self.rnd_reward_std = 1
 
@@ -242,9 +242,7 @@ class NeverGiveUp(ExplorationAlgorithm):
             action_batch = action_batch[:, -5:]'''
 
         else:
-            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-                = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes_modified,
-                                                               self.action_shape)
+            return "Exploration algorithm 'NGU' does currently not work with non-recurrent agents."
 
         if np.any(np.isnan(action_batch)):
             return replay_batch
@@ -405,7 +403,7 @@ class NeverGiveUp(ExplorationAlgorithm):
 
         # Check for similarity boundaries and return intrinsic episodic reward
         if np.isnan(similarity) or (similarity > self.similarity_max):
-            self.episodic_memory.pop()
+            self.episodic_memory.pop()  # Only keep relevant embeddings
             enm_reward = 0
         else:
             # 1/similarity to encourage visiting states with lower similarity

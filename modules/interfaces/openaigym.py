@@ -6,7 +6,6 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 
 import pybullet
 import pybullet_envs
-from gym_minigrid.wrappers import FlatObsWrapper
 
 
 class Steps:
@@ -109,16 +108,18 @@ class OpenAIGymInterface:
                 OpenAIGymInterface.done, OpenAIGymInterface.info = env.step(actions[0])
 
 if __name__ == '__main__':
-    print(gym.envs.registry.all())
-    env = gym.make('maze-random-10x10-v0')
+    env = gym.make('Pusher-v4')
     OpenAIGymInterface.reset(env)
     print(OpenAIGymInterface.get_action_shape(env, None))
     print(OpenAIGymInterface.get_action_type(env))
     print(OpenAIGymInterface.get_observation_shapes(env))
     decision_step, terminal_step = OpenAIGymInterface.get_steps(env, None)
-    while not OpenAIGymInterface.done:
-        env.render()
-        a = OpenAIGymInterface.get_random_action(env, 1)
-        OpenAIGymInterface.step_action(env, "", "", [[a]])
+    while True:
+        while not OpenAIGymInterface.done:
+            env.render()
+            actions = OpenAIGymInterface.get_random_action(env, 1)
+            OpenAIGymInterface.step_action(env, "", "", [actions])
+            decision_step, terminal_step = OpenAIGymInterface.get_steps(env, None)
+        OpenAIGymInterface.reset(env)
     env.close()
 

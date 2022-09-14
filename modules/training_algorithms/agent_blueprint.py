@@ -9,6 +9,7 @@ from ..sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
 from ..curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
 from collections import deque
+from gym.wrappers import RescaleAction
 import time
 import ray
 
@@ -29,9 +30,16 @@ class Actor:
         self.critic_network = None
         # It also may have a prior version of the actor network stored for self play purposes.
         self.clone_actor_network = None
-        # Lastly, if the actor is working in a recurrent fashion another copy of the actor network exists.
+        # If the actor is working in a recurrent fashion another copy of the actor network exists.
         self.actor_prediction_network = None
         self.critic_prediction_network = None
+        # Lastly, there are values that can optionally be fed back to the network as inputs in addition to the
+        # observation received by the respective environment. Such inputs are the prior action, the prior rewards and
+        # the exploration policy used by the agent during the prior step. However, the exploration feedback is only
+        # compatible with recurrent agents and intrinsic exploration methods.
+        self.action_feedback = None
+        self.policy_feedback = None
+        self.reward_feedback = None
         # The following parameters keep track of the network's update status, i.e. if a new version of the networks is
         # requested from the learner and how long it's been since the last update
         self.network_update_requested = False
@@ -132,6 +140,7 @@ class Actor:
         # Prediction Parameters
         self.gamma = None
         self.n_steps = None
+        self.reward_normalization = None
 
         # - Misc -
         self.mode = mode
@@ -150,6 +159,9 @@ class Actor:
 
     def connect_to_gym_environment(self):
         self.environment = AgentInterface.connect(self.environment_path)
+        # Make sure continuous actions are always bound to the same action scaling
+        if AgentInterface.get_action_type == "CONTINUOUS":
+            self.environment = RescaleAction(self.environment, min_action=-1.0, max_action=1.0)
         AgentInterface.reset(self.environment)
 
     def set_unity_parameters(self, **kwargs):
@@ -355,15 +367,14 @@ class Actor:
         self.action_type = self.environment_configuration["ActionType"]
         self.action_shape = self.environment_configuration["ActionShape"]
 
-        # Initialize prior actions randomly if fed back as network inputs.
+        # Initialize prior actions randomly if they're fed back as network inputs.
         if self.action_feedback:
-            # Sample prior action as random action for first iteration
             if self.action_type == "DISCRETE":
                 self.prior_action = np.random.randint(0, self.action_shape, (1,))
             else:
                 self.prior_action = np.random.uniform(-1.0, 1.0, (self.action_shape,))
 
-        # Add additional network inputs to actor and learner network if specified by user.
+        # Extend observation shapes given by environment through additional network inputs.
         modified_observation_shapes = modify_observation_shapes(self.environment_configuration["ObservationShapes"],
                                                                 self.action_shape, self.action_type,
                                                                 self.action_feedback, self.reward_feedback,
@@ -483,7 +494,7 @@ class Actor:
         with tf.device(self.device):
             # Set/Reset variables and algorithms when agent reaches episodic borders
             self.episodic_border_routine(terminal_steps)
-            # There are exploration algorithms that calculate intrinsic rewards in a "per-step" fashion.
+            # There are exploration algorithms that calculate intrinsic rewards each timestep.
             if self.intrinsic_exploration:
                 # Meta-controller learning function
                 self.meta_learning_routine(decision_steps, terminal_steps)
@@ -591,21 +602,17 @@ class Actor:
         if self.intrinsic_exploration:
             # Set/Reset variables and algorithms when agent reaches episodic borders
             self.episodic_border_routine(terminal_steps)
-            # Intrinsic reward stays 0 throughout test process
-            intrinsic_reward = 0
             # Exploration Policy currently must be set manually
-            self.exploration_policy_idx = 0
-            # Extend step observation values with prior action, extrinsic reward, intrinsic reward, policy idx
-            if self.additional_network_inputs:
-                decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
+            self.exploration_policy_idx = 11
 
+        # Extend step observation values with prior action, extrinsic reward, intrinsic reward, policy idx
+        decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
         actions = self.act(decision_steps.obs,
                            agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                            mode=self.mode)
 
         # Save current metrics for next iteration
-        if self.additional_network_inputs:
-            self.save_current_metrics(intrinsic_reward, actions, decision_steps, terminal_steps)
+        self.save_current_metrics(0, actions, decision_steps, terminal_steps)
 
         # Do the same for the clone behavior if active
         if self.behavior_clone_name:
@@ -714,7 +721,7 @@ class Actor:
             Contains the observation values, reward value and further information about the current step if terminal.
         """
         if self.episode_begin:
-            # Reset reward and action metrics in the episode beginning
+            # Reset reward and action metrics
             if self.action_feedback:
                 if self.action_type == "DISCRETE":
                     self.prior_action = np.random.randint(0, self.action_shape, (1,))
@@ -724,17 +731,21 @@ class Actor:
                 self.prior_intrinsic_reward = 0
                 self.prior_extrinsic_reward = 0
 
-            # Set current exploration policy index (will be used as network input throughout episode)
-            # In case of testing, the exploration policy index must be set manually to the one trained according to
-            # saved network weights.
+            # Set new exploration policy index. Once per episode when using meta-controller, otherwise once in the
+            # agent's lifetime.
+            # NOTE: If fed back during training and in case of testing, the exploration policy index must be set
+            # manually to the one trained according to saved network weights.
             if self.mode == "training" and self.use_meta_controller:
-                # Get the value through meta-controller
                 self.exploration_policy_idx = self.meta_learning_algorithm.act()
+                # Additionally set local_buffer's gamma and calculate the respective gamma list
+                self.local_buffer.gamma = self.exploration_degree[self.exploration_policy_idx]["gamma"]
+                temp_gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
+                self.local_buffer.gamma_list = temp_gamma_list
             elif self.mode == "training":
-                # Set the value according to actor index (set once for the whole training and therefore never updated)
+                # Set the value according to actor index
                 if self.first_iteration and self.intrinsic_exploration:
                     self.exploration_policy_idx = self.exploration_algorithm.index
-                    # Set local_buffers gamma and calculate its gamma list based on agent's index (never updated)
+                    # Additionally set local_buffer's gamma and calculate the respective gamma list
                     self.local_buffer.gamma = self.exploration_degree[self.exploration_policy_idx]["gamma"]
                     temp_gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
                     self.local_buffer.gamma_list = temp_gamma_list
@@ -742,7 +753,7 @@ class Actor:
             # Routine for episode beginning finished
             self.episode_begin = False
 
-        # Episode ending reached, reset begin flag and algorithms
+        # Episode ending reached
         if len(terminal_steps.obs[0]):
             self.episode_begin = True
             # Reset exploration algorithm
@@ -752,7 +763,7 @@ class Actor:
 
     def meta_learning_routine(self, decision_steps, terminal_steps):
         """
-        Use decision and terminal steps to adapt the meta learning algorithms behaviour. (Currently only Meta-Controller)
+        Execute the meta learning algorithm's learning step.
 
         Parameters
         ----------
@@ -769,9 +780,8 @@ class Actor:
 
     def extend_observations(self, decision_steps, terminal_steps):
         """
-        Augment decision and terminal steps 'globally' with additional inputs. Those additional inputs are the prior
-        action, the prior extrinsic reward, the prior intrinsic reward and the exploration policy used throughout
-        the current episode.
+        Extend the current decision and terminal step through values from the prior step (action, rewards and expl.
+        policy).
 
         Parameters
         ----------
@@ -808,7 +818,7 @@ class Actor:
 
     def save_current_metrics(self, current_intrinsic_reward, actions, decision_steps, terminal_steps):
         """
-        Save values from current step that will be used within next step as inputs.
+        Save current step values for upcoming step.
 
         Parameters
         ----------

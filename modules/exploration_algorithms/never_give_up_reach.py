@@ -99,6 +99,8 @@ class NeverGiveUpReach(ExplorationAlgorithm):
         self.novelty_threshold = np.median([left_limit, right_limit])
 
         self.episodic_memory = deque(maxlen=exploration_parameters["EpisodicMemoryCapacity"])
+        self.sequence_indices = np.arange(self.sequence_length)
+        self.sequence_middle = self.sequence_length // 2
 
         self.feature_extractor, self.comparator_network = self.build_network()
         self.episodic_curiosity_built = True
@@ -251,9 +253,7 @@ class NeverGiveUpReach(ExplorationAlgorithm):
             action_batch = action_batch[:, -5:]'''
 
         else:
-            state_batch, action_batch, reward_batch, next_state_batch, done_batch \
-                = Learner.get_training_batch_from_replay_batch(replay_batch, self.observation_shapes_modified,
-                                                               self.action_shape)
+            return "Exploration algorithm 'NGUr' does currently not work with non-recurrent agents."
 
         if np.any(np.isnan(action_batch)):
             return replay_batch
@@ -397,8 +397,7 @@ class NeverGiveUpReach(ExplorationAlgorithm):
         similarity_score = np.percentile(reachability_buffer, 90)
 
         # Calculate ecr-reward
-        # Original paper suggest the formula: 𝑟 = 𝛼 ∗ (𝛽 − 𝑠𝑖𝑚𝑖𝑙𝑎𝑟𝑖𝑡𝑦_𝑠𝑐𝑜𝑟𝑒), where 𝛼 is a simple reward scaling factor
-        # that is set outside this module
+        # 𝑟 = 𝛼 ∗ (𝛽 − 𝑠𝑖𝑚𝑖𝑙𝑎𝑟𝑖𝑡𝑦_𝑠𝑐𝑜𝑟𝑒), where 𝛼 is a simple reward scaling factor that is set outside this module
         ecr_reward = self.alpha * (self.beta - similarity_score)
 
         # Add state to episodic memory if intrinsic reward is large enough
@@ -462,33 +461,21 @@ class NeverGiveUpReach(ExplorationAlgorithm):
             Reachability between x1 and x2 elements and therefore the ground truth of the training data. (0 == not
             reachable within k-steps, 1 == reachable within k-steps)
         """
-        # Create Index Array
-        sequence_len = len(sequence)
-        sequence_indices = np.arange(sequence_len)
-
         # Shuffle sequence indices randomly
-        np.random.shuffle(sequence_indices)
-        # Get middle index
-        sequence_middle = sequence_len // 2
+        np.random.shuffle(self.sequence_indices)
+
         # Divide Index-Array into two equally sized parts (Right half gets cutoff if sequence length is odd)
-        sequence_indices_left, sequence_indices_right = sequence_indices[:sequence_middle], \
-                                                        sequence_indices[sequence_middle:2 * sequence_middle]
+        sequence_indices_left, sequence_indices_right = self.sequence_indices[:self.sequence_middle], \
+                                                        self.sequence_indices[
+                                                        self.sequence_middle:2 * self.sequence_middle]
         idx_differences = np.abs(sequence_indices_left - sequence_indices_right)
         x1 = sequence.numpy()[sequence_indices_left]
         x2 = sequence.numpy()[sequence_indices_right]
 
         # States are reachable (== [0, 1]) one from each other if step-difference between them is smaller than k
-        diffs = []
-        for diff in idx_differences:
-            if diff <= self.k:
-                # reachable
-                diffs.append([0, 1])
-            else:
-                # non-reachable
-                diffs.append([1, 0])
-        labels = diffs
+        diffs = [[0, 1] if diff <= self.k else [1, 0] for diff in idx_differences]
 
-        return x1, x2, labels
+        return x1, x2, diffs
 
     def get_logs(self):
         if self.index == 0:
