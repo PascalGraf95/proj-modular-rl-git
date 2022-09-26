@@ -26,7 +26,7 @@ def make_demo_buffer(
     pair_infos: List[AgentInfoActionPairProto],
     behavior_spec: BehaviorSpec,
     sequence_length: int,
-) -> AgentBuffer:
+    ) -> AgentBuffer:
     # Create and populate buffer using experiences
     demo_raw_buffer = AgentBuffer()
     demo_processed_buffer = AgentBuffer()
@@ -39,7 +39,7 @@ def make_demo_buffer(
         next_decision_step, next_terminal_step = steps_from_proto(
             [next_pair_info.agent_info], behavior_spec
         )
-        previous_action = (np.array(pair_infos[idx].action_info.vector_actions_deprecated, dtype=np.float32)* 0)
+        previous_action = (np.array(pair_infos[idx].action_info.vector_actions_deprecated, dtype=np.float32) * 0)
         if idx > 0:
             previous_action = np.array(pair_infos[idx - 1].action_info.vector_actions_deprecated, dtype=np.float32,)
         next_done = len(next_terminal_step) == 1

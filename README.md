@@ -21,12 +21,13 @@ the `main.py` file.**
   - **Deep Q Learning / Deep Q Network (DQN)** with several extensions
   (Double Learning, Dueling Architecture, Noisy Networks)
   - **Soft Actor-Critic (SAC)** with automatic temperature parameter adjustment
+  - **Conservative Q-Learning (CQL)** for offline Reinforcement Learning
 - ###Learning Features:
   - Several network architectures for vector and image-based environments 
   - Recurrent Neural Networks (R2D2) with burn in
   - Prioritized Experience Replay (PER)
   - Potential feature preprocessing
-  - Curriculum Learning
+  - Curriculum Learning (restricted)
 - ###Exploration Algorithms:
   - Epsilon Greedy
   - Intrinsic Curiosity Module (ICM)
@@ -40,6 +41,6 @@ the `main.py` file.**
 - Incorporate Attention architecture into the main branch
 - Fix `Intrinsic Curiosity Module (ICM)`
 - Implement Meta Learning and "Never Give Up" (Agent57)
-- Fix and extend self play functionality
+- Extend self play functionality
 - Implement Multi Agent RL algorithms for cooperative / competitive learning
-- Implement Imitation Learning methods
+- Implement additional Imitation Learning methods

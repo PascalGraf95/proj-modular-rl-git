@@ -103,8 +103,11 @@ class SACActor(Actor):
         self.critic_network.set_weights(network_weights[1])
         if self.recurrent:
             self.actor_prediction_network.set_weights(network_weights[0])
-        if (self.is_clone_network_update_requested(total_episodes)) and self.behavior_clone_name:
-            self.clone_actor_network.set_weights(network_weights[0])
+        if self.is_clone_network_update_requested(total_episodes) and self.behavior_clone_name:
+            if total_episodes == 0 and len(network_weights) == 3:
+                self.clone_actor_network.set_weights(network_weights[2])
+            else:
+                self.clone_actor_network.set_weights(network_weights[0])
             print("Clone Network has been updated at step {}".format(total_episodes))
             self.steps_taken_since_clone_network_update = 0
         self.steps_taken_since_network_update = 0
@@ -185,7 +188,6 @@ class SACActor(Actor):
                 network_parameters.append(network_parameters[0].copy())
                 if self.recurrent:
                     network_parameters[3]['NetworkName'] = 'ActorCloneCopy{}'.format(self.index)
-                    print(network_parameters[3])
                     self.clone_actor_network = construct_network(network_parameters[3], plot_network_model=True)
                 else:
                     network_parameters[2]['NetworkName'] = 'ActorCloneCopy{}'.format(self.index)
@@ -203,7 +205,7 @@ class SACLearner(Learner):
     ActionType = ['CONTINUOUS']
     NetworkTypes = ['Actor', 'Critic1', 'Critic2']
 
-    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None):
+    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None, clone_path=None):
         super().__init__(trainer_configuration, environment_configuration)
 
         # - Neural Networks -
@@ -216,8 +218,11 @@ class SACLearner(Learner):
         self.critic_target1: keras.Model
         self.critic2: keras.Model
         self.critic_target2: keras.Model
+        self.clone_actor_network: keras.Model
         # A small parameter epsilon prevents math errors when log probabilities are 0.
         self.epsilon = 1.0e-6
+        # Model path
+        self.clone_model_path = clone_path
 
         # - Optimizer -
         self.actor_optimizer: keras.optimizers.Optimizer
@@ -242,6 +247,8 @@ class SACLearner(Learner):
             # Load Pretrained Models
             if model_path:
                 self.load_checkpoint(model_path)
+            if self.clone_model_path:
+                self.load_clone_checkpoint(clone_path)
 
             # Compile Networks
             self.critic1.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRateCritic'),
@@ -255,11 +262,18 @@ class SACLearner(Learner):
         elif mode == 'testing' or mode == 'fastTesting':
             assert model_path, "No model path entered."
             self.load_checkpoint(model_path)
+            if self.clone_model_path:
+                self.load_clone_checkpoint(clone_path)
 
     def get_actor_network_weights(self, update_requested):
         if not update_requested:
             return []
-        return [self.actor_network.get_weights(), self.critic1.get_weights()]
+        if not self.clone_model_path:
+            return [self.actor_network.get_weights(), self.critic1.get_weights()]
+        else:
+            return [self.actor_network.get_weights(),
+                    self.critic1.get_weights(),
+                    self.clone_actor_network.get_weights()]
 
     def build_network(self, network_settings, environment_parameters):
         # Create a list of dictionaries with 3 entries, one for each network
@@ -330,6 +344,8 @@ class SACLearner(Learner):
         # region --- Building ---
         # Build the networks from the network parameters
         self.actor_network = construct_network(network_parameters[0], plot_network_model=True)
+        if self.clone_model_path:
+            self.clone_actor_network = clone_model(self.actor_network)
         self.critic1, self.critic_target1 = construct_network(network_parameters[1], plot_network_model=True)
         self.critic2, self.critic_target2 = construct_network(network_parameters[2])
         # endregion
@@ -476,6 +492,19 @@ class SACLearner(Learner):
                 raise FileNotFoundError("Could not find all necessary model files.")
         else:
             raise NotADirectoryError("Could not find directory or file for loading models.")
+
+    def load_clone_checkpoint(self, path):
+        if "Step" in path:
+            self.clone_actor_network = load_model(path)
+        elif os.path.isdir(path):
+            file_names = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f))]
+            for file_name in file_names:
+                if "Actor" in file_name:
+                    self.clone_actor_network = load_model(os.path.join(path, file_name), compile=False)
+            if not self.clone_actor_network:
+                raise FileNotFoundError("Could not find clone model files.")
+        else:
+            raise NotADirectoryError("Could not find directory or file for loading clone models.")
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
                         checkpoint_condition=True):

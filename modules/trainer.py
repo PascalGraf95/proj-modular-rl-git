@@ -133,7 +133,7 @@ class Trainer:
     # region Instantiation
     def async_instantiate_agent(self, mode: str, preprocessing_algorithm: str, exploration_algorithm: str,
                                 environment_path: str = None, model_path: str = None,
-                                preprocessing_path: str = None, demonstration_path: str = None):
+                                preprocessing_path: str = None, demonstration_path: str = None, clone_path: str = None):
         """ Instantiate the agent consisting of learner and actor(s) and their respective submodules in an asynchronous
         fashion utilizing the ray library."""
         # Initialize ray for parallel multiprocessing.
@@ -183,28 +183,28 @@ class Trainer:
                     actor.set_unity_parameters.remote(time_scale=1000,
                                                       width=10, height=10,
                                                       quality_level=1,
-                                                      target_frame_rate=-1,
-                                                      capture_frame_rate=60)
+                                                      target_frame_rate=-1)
                 elif mode == "fastTesting":
-                    actor.set_unity_parameters.remote(time_scale=100, width=500, height=500)
+                    actor.set_unity_parameters.remote(time_scale=1000, width=500, height=500)
                 else:
                     actor.set_unity_parameters.remote(time_scale=1, width=500, height=500)
 
         # Get the environment and exploration configuration from the first actor.
-        # NOTE: ray remote-functions return IDs only. If you want the actual returned value of the function you neet to
+        # NOTE: ray remote-functions return IDs only. If you want the actual returned value of the function you need to
         # call ray.get() on the ID.
         environment_configuration = self.actors[0].get_environment_configuration.remote()
         self.environment_configuration = ray.get(environment_configuration)
-        print(self.environment_configuration.get("BehaviorCloneName"))
         exploration_configuration = self.actors[0].get_exploration_configuration.remote()
         self.exploration_configuration = ray.get(exploration_configuration)
 
         # - Learner Instantiation -
         # Create one actor capable of learning according to the selected algorithm utilizing the buffered actor
         # experiences. If a model path is given, the respective networks will continue to learn from this checkpoint.
+        # If a clone path is given, it will be used as starting point for self-play.
         self.learner = Learner.remote(mode, self.trainer_configuration,
                                       self.environment_configuration,
-                                      model_path)
+                                      model_path,
+                                      clone_path)
 
         # Initialize the actor network for each actor
         network_ready = [actor.build_network.remote(self.trainer_configuration.get("NetworkParameters"),
