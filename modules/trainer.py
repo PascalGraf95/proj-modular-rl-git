@@ -189,22 +189,19 @@ class Trainer:
         # Paste the exploration degree into the trainer configuration
         self.trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
 
-        '''# If specific exploration algorithms are used, additional network inputs will be used.
-        additional_input_algorithms = ["NGU", "ENM", "ECR", "NGUr"]
-        if exploration_algorithm in additional_input_algorithms:
-            self.trainer_configuration["AdditionalNetworkInputs"] = True
-        else:
-            self.trainer_configuration["AdditionalNetworkInputs"] = False'''
         # A Meta-Controller adapts the agents exploration policy. Therefore, it requires the agent inputs to be extended
         # manually by the exploration policy used within the respective timestep.
         if meta_learning_algorithm == "MetaController":
             self.trainer_configuration["PolicyFeedback"] = True
+            print("\n\nExploration policy feedback activated as Meta-Controller is in use.\n\n")
 
         # Feedbacks in form of the exploration policy and the rewards is only compatible whilst using intrinsic
         # exploration algorithms. Moreover meta_learning through meta-controller is automatically disabled.
         if exploration_algorithm not in agent57_related_exploration_algorithms:
             self.trainer_configuration["PolicyFeedback"] = False
             self.trainer_configuration["RewardFeedback"] = False
+            print("\n\nExploration Policy and reward feedback deactivated as the necessary exploration algorithms"
+                  "are not in use.\n\n")
             if meta_learning_algorithm == "MetaController":
                 meta_learning_algorithm = "None"
 
@@ -309,7 +306,8 @@ class Trainer:
         self.learner.save_checkpoint.remote(os.path.join("training/summaries", self.logging_name),
                                             self.global_logger.get_best_running_average.remote(),
                                             training_step, self.save_all_models, checkpoint_condition,
-                                            self.actors[ray.get(self.global_logger.get_best_actor.remote())].get_exploration_policy_index.remote())
+                                            self.actors[ray.get(self.global_logger.get_best_actor.remote())].get_exploration_policy_index.remote(),
+                                            self.actors[ray.get(self.global_logger.get_best_actor.remote())].get_exploration_reward.remote())
         if self.remove_old_checkpoints:
             self.global_logger.remove_old_checkpoints.remote()
 

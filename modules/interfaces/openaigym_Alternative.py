@@ -3,17 +3,28 @@
 import numpy as np
 import gym
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
+from gym.wrappers import FlattenObservation
 
 class Steps:
-    def __init__(self, observation, reward):
-        if np.any(observation):
-            self.agent_id = np.reshape(np.array(0), 1)
-            self.obs = [np.expand_dims(observation, axis=0)]
-            self.reward = np.reshape(np.array(reward), 1)
+    def __init__(self, observation, reward, is_decision_step):
+        if is_decision_step:
+            if np.any(observation[0]):
+                self.agent_id = np.reshape(np.array(0), 1)
+                self.obs = [np.expand_dims(observation, axis=0)]
+                self.reward = np.reshape(np.array(reward), 1)
+            else:
+                self.agent_id = np.empty(0)
+                self.obs = [np.empty((0))]
+                self.reward = np.empty(0)
         else:
-            self.agent_id = np.empty(0)
-            self.obs = [np.empty((0))]
-            self.reward = np.empty(0)
+            if np.any(observation):
+                self.agent_id = np.reshape(np.array(0), 1)
+                self.obs = [np.expand_dims(observation, axis=0)]
+                self.reward = np.reshape(np.array(reward), 1)
+            else:
+                self.agent_id = np.empty(0)
+                self.obs = [np.empty((0))]
+                self.reward = np.empty(0)
 
     def __len__(self):
         return 1
@@ -33,6 +44,7 @@ class OpenAIGymInterface:
     @staticmethod
     def connect(environment_path):
         return gym.make(environment_path)
+        #return FlattenObservation(gym.make(environment_path))
 
     @staticmethod
     def get_interface_name():
@@ -77,11 +89,11 @@ class OpenAIGymInterface:
     @staticmethod
     def get_steps(env: gym.Env, behavior_name: str):
         if OpenAIGymInterface.done:
-            decision_steps = Steps(None, None)
-            terminal_steps = Steps(OpenAIGymInterface.observation, OpenAIGymInterface.reward)
+            decision_steps = Steps(None, None, False)
+            terminal_steps = Steps(OpenAIGymInterface.observation, OpenAIGymInterface.reward, True)
         else:
-            decision_steps = Steps(OpenAIGymInterface.observation, OpenAIGymInterface.reward)
-            terminal_steps = Steps(None, None)
+            decision_steps = Steps(OpenAIGymInterface.observation, OpenAIGymInterface.reward, True)
+            terminal_steps = Steps(None, None, False)
 
         return decision_steps, terminal_steps
 
@@ -98,13 +110,13 @@ class OpenAIGymInterface:
                     actions_clone=None):
         if OpenAIGymInterface.action_space == "DISCRETE":
             OpenAIGymInterface.observation, OpenAIGymInterface.reward, \
-                OpenAIGymInterface.done, OpenAIGymInterface.info = env.step(actions[0][0])
+                OpenAIGymInterface.done, OpenAIGymInterface.truncated,OpenAIGymInterface.info = env.step(actions[0][0])
         else:
             OpenAIGymInterface.observation, OpenAIGymInterface.reward, \
-                OpenAIGymInterface.done, OpenAIGymInterface.info = env.step(actions[0])
+                OpenAIGymInterface.done, OpenAIGymInterface.truncated, OpenAIGymInterface.info = env.step(actions[0])
 
 if __name__ == '__main__':
-    env = gym.make('Pusher-v4')
+    env = FlattenObservation(gym.make('HandManipulateBlock-v1', render_mode='human'))
     OpenAIGymInterface.reset(env)
     print(OpenAIGymInterface.get_action_shape(env, None))
     print(OpenAIGymInterface.get_action_type(env))

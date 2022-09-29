@@ -45,6 +45,7 @@ class MetaController(MetaLearning):
         self.num_arms = meta_learning_parameters["NumExplorationPolicies"]  # Number of arms the bandit can choose from
         self.arm_play_count = np.zeros(self.num_arms)
         self.empirical_mean = np.zeros(self.num_arms)
+        self.episodic_counting = meta_learning_parameters["EpisodicCounting"]
         self.count = 0
         self.arm_index = None
         self.most_chosen_arm = 0
@@ -72,10 +73,12 @@ class MetaController(MetaLearning):
                 for episode in self.global_buffer:
                     episode = np.array(episode)
                     empirical_mean[episode[0, 0]] += np.sum(episode[:, 1])
-                    # Counting per episode
-                    arm_play_count[episode[0, 0]] += 1
-                    # Alternative: Counting per timestep
-                    #arm_play_count[episode[0, 0]] += len(episode)
+                    if self.episodic_counting:
+                        # Counting per episode
+                        arm_play_count[episode[0, 0]] += 1
+                    else:
+                        # Alternative: Counting per timestep
+                        arm_play_count[episode[0, 0]] += len(episode)
                 empirical_mean = empirical_mean / (arm_play_count + 1e-6)
                 self.arm_index = np.argmax(empirical_mean + np.sqrt(1 / (arm_play_count + 1e-6)))
 

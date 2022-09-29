@@ -70,7 +70,9 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.cce = CategoricalCrossentropy()
         self.mse = MeanSquaredError()
 
-        self.optimizer = Adam(exploration_parameters["LearningRate"])
+        self.optimizer_episodic = Adam(learning_rate=0.00005)
+        #self.optimizer_episodic = Adam(exploration_parameters["LearningRate"])
+        self.optimizer_lifelong = Adam(exploration_parameters["LearningRate"])
         self.lifelong_loss = 0
         self.episodic_loss = 0
         self.intrinsic_reward = 0
@@ -90,11 +92,11 @@ class NeverGiveUp(ExplorationAlgorithm):
 
         # region Lifelong novelty module parameters
         self.normalize_observations = exploration_parameters["ObservationNormalization"]
-        self.observation_deque = deque(maxlen=5000)
+        self.observation_deque = deque(maxlen=1000)
         self.observation_mean = 0
         self.observation_std = 1
         self.alpha_max = 5
-        self.rnd_reward_deque = deque(maxlen=5000)
+        self.rnd_reward_deque = deque(maxlen=1000)
         self.rnd_reward_mean = 0
         self.rnd_reward_std = 1
 
@@ -137,7 +139,7 @@ class NeverGiveUp(ExplorationAlgorithm):
                     current_state_features = Input(self.feature_space_size)
                     next_state_features = Input(self.feature_space_size)
                 x = Concatenate(axis=-1)([current_state_features, next_state_features])
-                x = Dense(64, 'relu')(x)
+                x = Dense(128, 'relu')(x)
                 if self.action_space == "DISCRETE":
                     x = Dense(self.action_shape[0], 'softmax')(x)
                 elif self.action_space == "CONTINUOUS":
@@ -145,15 +147,7 @@ class NeverGiveUp(ExplorationAlgorithm):
                 embedding_classifier = Model([current_state_features, next_state_features], x, name="ENM Classifier")
                 # endregion
 
-                # region Model compilation and plotting
-                if self.action_space == "DISCRETE":
-                    feature_extractor.compile(loss=self.cce, optimizer=self.optimizer)
-                    embedding_classifier.compile(loss=self.cce, optimizer=self.optimizer)
-                elif self.action_space == "CONTINUOUS":
-                    feature_extractor.compile(loss=self.mse, optimizer=self.optimizer)
-                    embedding_classifier.compile(loss=self.mse, optimizer=self.optimizer)
-
-                # Model plots
+                # region Model plots
                 try:
                     plot_model(feature_extractor, "plots/ENM_FeatureExtractor.png", show_shapes=True)
                     plot_model(embedding_classifier, "plots/ENM_EmbeddingClassifier.png", show_shapes=True)
@@ -277,7 +271,7 @@ class NeverGiveUp(ExplorationAlgorithm):
 
             # Calculate Gradients and apply the weight updates to the prediction model.
             grad = tape.gradient(self.lifelong_loss, self.prediction_model.trainable_weights)
-            self.optimizer.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
+            self.optimizer_lifelong.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
             # endregion
 
             # region Episodic Novelty Module
@@ -302,8 +296,8 @@ class NeverGiveUp(ExplorationAlgorithm):
             grad = tape.gradient(self.episodic_loss, [self.embedding_classifier.trainable_weights,
                                                       self.feature_extractor.trainable_weights])
             # Apply Gradients to all models
-            self.optimizer.apply_gradients(zip(grad[0], self.embedding_classifier.trainable_weights))
-            self.optimizer.apply_gradients(zip(grad[1], self.feature_extractor.trainable_weights))
+            self.optimizer_episodic.apply_gradients(zip(grad[0], self.embedding_classifier.trainable_weights))
+            self.optimizer_episodic.apply_gradients(zip(grad[1], self.feature_extractor.trainable_weights))
             # endregion
         # endregion
         return

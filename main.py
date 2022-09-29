@@ -31,40 +31,23 @@ def main():
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
     mode = "training"
-    #model_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220831_084334_SAC_MountainCar_R2D2"
-    #model_path =  r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220831_151730_SAC_MountainCar_Agent57HP"
-    #model_path =  r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220831_211254_SAC_MountainCarV0_Agent57rHP"
-    model_path = None #r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\220909_094200_SAC_MountainCarv0_Agent57noRewards"
+    model_path = None #r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\..."
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
-    trainer.interface = 'MLAgentsV18'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
+    trainer.interface = 'OpenAIGym'  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
     # If you want to run multiple Unity actors in parallel you need to specify the path to the Environment '.exe' here.
     # In case of "OpenAIGym" enter the desired env name here instead, e.g. "LunarLanderContinuous-v2".
     # If you want a CQL agent to learn from demonstrations, an environment can be used to evaluate the model on a
     # regular basis. Please provide a path or type None to connect directly to the Unity Editor. Otherwise, type
     # 'NoEnv' to proceed without evaluation.
-    environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\3DBall\Skiing.exe"
-    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\minimHallway\Hallway.exe"
-    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\Crawler\Crawler.exe"
-    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\Walker\Env.exe"
-    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\HallwayDQN\Env.exe"
-    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\BasicDQN\Env.exe"
-    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\BasicDQNHard\Env.exe"
+    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\3DBall\Skiing.exe"
 
-    #environment_path = r"CartPole-v1"
+    environment_path = r"CartPole-v1"
+    # environment_path = r"LunarLander-v2"
     #environment_path = r"MountainCar-v0"
     #environment_path = r"MountainCarContinuous-v0"
-    #environment_path = r"Acrobot-v1"
-    #environment_path = r"BipedalWalker-v3"
-    #environment_path = r"Reacher-v4"
-    #environment_path = r"LunarLander-v2"
-    #environment_path = r"Reacher-v4"
-    #environment_path = r"HalfCheetah-v4"
     #environment_path = r"Humanoid-v4"
-
-    #environment_path = r"maze-random-10x10-plus-v0"
-    #environment_path = r"InvertedPendulum-v4"
 
     # - Training Algorithm -
     # This is the core learning algorithm behind the RL Agent. While Deep Q-Learning / Deep Q Networks (DQN) presumably
@@ -72,7 +55,7 @@ def main():
     # in their current implementation only support continuous action spaces. Of those three Soft Actor-Critic (SAC)
     # is the most recent and preferred option.
     # Choose from "DQN", "DDPG", "TD3", "SAC", "CQL"
-    training_algorithm = 'SAC'
+    training_algorithm = 'DQN'
     trainer.select_training_algorithm(training_algorithm)
     # In case you want to train the agent offline via CQL please provide the path for demonstrations.
     demonstration_path = None  #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-robot-arm-environment\DemoSinglePendulum"
@@ -81,12 +64,12 @@ def main():
     # The exploration algorithm helps the RL Agent to explore the environment by occasionally choosing suboptimal
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
     # Choose from "None", "EpsilonGreedy", "ICM", "RND", "ENM", "NGU", "ECR", "NGUr"
-    exploration_algorithm = "EpsilonGreedy"
+    exploration_algorithm = "NGUr"
 
     # - Meta Learning Algorithm -
     # The meta learning algorithm helps the RL Agent to learn the most efficient way of learning.
     # Choose from "None", "MetaController"
-    meta_learning_algorithm = "None"
+    meta_learning_algorithm = "MetaController"
 
     # - Curriculum Strategy -
     # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for
@@ -106,7 +89,7 @@ def main():
     preprocessing_path = None  #r"C:\PGraf\Arbeit\RL\SemanticSegmentation\vae\models\210809_101443_VAE_encoder_235"
 
     # - Misc -
-    trainer.save_all_models = True  # Determines if all models or only the actor will be saved during training
+    trainer.save_all_models = False  # Determines if all models or only the actor will be saved during training
     trainer.remove_old_checkpoints = True  # Determines if old model checkpoints will be overwritten
     # endregion
 

@@ -62,7 +62,8 @@ class EpisodicCuriosity(ExplorationAlgorithm):
 
         # Loss metrics
         self.cce = CategoricalCrossentropy()
-        self.optimizer = Adam(exploration_parameters["LearningRate"])
+        #self.optimizer = Adam(exploration_parameters["LearningRate"])
+        self.optimizer = Adam(learning_rate=0.00005)  # Temporarily fixed during testing phase
         self.loss = 0
         self.intrinsic_reward = 0
 
@@ -128,12 +129,10 @@ class EpisodicCuriosity(ExplorationAlgorithm):
             x = Concatenate(axis=-1)([current_state_features, next_state_features])
             x = Dense(32, activation="relu")(x)
             x = Dense(32, activation="relu")(x)
+            x = Dense(32, activation="relu")(x)
             x = Dense(2, activation='softmax')(x)
             comparator_network = Model([current_state_features, next_state_features], x, name="ECR Comparator")
             # endregion
-
-            # region Model compilation and plotting
-            comparator_network.compile(loss=self.cce, optimizer=self.optimizer)
 
             # Model plots
             try:
@@ -145,7 +144,6 @@ class EpisodicCuriosity(ExplorationAlgorithm):
             # Summaries
             feature_extractor.summary()
             comparator_network.summary()
-            # endregion
 
             return feature_extractor, comparator_network
             # endregion
@@ -224,7 +222,7 @@ class EpisodicCuriosity(ExplorationAlgorithm):
         # Shuffle sequence indices randomly
         np.random.shuffle(self.sequence_indices)
 
-        # Divide Index-Array into two equally sized parts (Right half gets cutoff if sequence length is odd)
+        # Divide Index-Array into two equally sized parts
         sequence_indices_left, sequence_indices_right = self.sequence_indices[:self.sequence_middle], \
                                                         self.sequence_indices[self.sequence_middle:2 * self.sequence_middle]
         idx_differences = np.abs(sequence_indices_left - sequence_indices_right)

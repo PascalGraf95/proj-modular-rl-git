@@ -74,7 +74,10 @@ class NeverGiveUpReach(ExplorationAlgorithm):
         self.cce = CategoricalCrossentropy()
         self.mse = MeanSquaredError()
 
-        self.optimizer = Adam(exploration_parameters["LearningRate"])
+        #self.optimizer = Adam(exploration_parameters["LearningRate"])
+        self.optimizer_episodic = Adam(learning_rate=0.00005)
+        #self.optimizer_episodic = Adam(exploration_parameters["LearningRate"])
+        self.optimizer_lifelong = Adam(exploration_parameters["LearningRate"])
         self.lifelong_loss = 0
         self.episodic_loss = 0
         self.intrinsic_reward = 0
@@ -157,12 +160,10 @@ class NeverGiveUpReach(ExplorationAlgorithm):
                 x = Concatenate(axis=-1)([current_state_features, next_state_features])
                 x = Dense(32, activation="relu")(x)
                 x = Dense(32, activation="relu")(x)
+                x = Dense(32, activation="relu")(x)
                 x = Dense(2, activation='softmax')(x)
                 comparator_network = Model([current_state_features, next_state_features], x, name="ECR Comparator")
                 # endregion
-
-                # region Model compilation and plotting
-                comparator_network.compile(loss=self.cce, optimizer=self.optimizer)
 
                 # Model plots
                 try:
@@ -174,7 +175,6 @@ class NeverGiveUpReach(ExplorationAlgorithm):
                 # Summaries
                 feature_extractor.summary()
                 comparator_network.summary()
-                # endregion
 
                 return feature_extractor, comparator_network
             # endregion
@@ -282,7 +282,7 @@ class NeverGiveUpReach(ExplorationAlgorithm):
 
             # Calculate Gradients and apply the weight updates to the prediction model.
             grad = tape.gradient(self.lifelong_loss, self.prediction_model.trainable_weights)
-            self.optimizer.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
+            self.optimizer_lifelong.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
             # endregion
 
             # region Episodic Curiosity Through Reachability
@@ -310,7 +310,7 @@ class NeverGiveUpReach(ExplorationAlgorithm):
 
             # Calculate Gradients and apply the weight updates to the comparator model.
             grad = tape.gradient(self.episodic_loss, self.comparator_network.trainable_weights)
-            self.optimizer.apply_gradients(zip(grad, self.comparator_network.trainable_weights))
+            self.optimizer_episodic.apply_gradients(zip(grad, self.comparator_network.trainable_weights))
 
             # endregion
         # endregion
@@ -464,7 +464,7 @@ class NeverGiveUpReach(ExplorationAlgorithm):
         # Shuffle sequence indices randomly
         np.random.shuffle(self.sequence_indices)
 
-        # Divide Index-Array into two equally sized parts (Right half gets cutoff if sequence length is odd)
+        # Divide Index-Array into two equally sized parts
         sequence_indices_left, sequence_indices_right = self.sequence_indices[:self.sequence_middle], \
                                                         self.sequence_indices[
                                                         self.sequence_middle:2 * self.sequence_middle]

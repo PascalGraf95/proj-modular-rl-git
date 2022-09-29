@@ -127,33 +127,6 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
             target_model.summary()
             # endregion
 
-            '''# List with two dictionaries in it, one for each network.
-            network_parameters = [{}, {}]
-            # region --- Prediction Model ---
-            # This model tries to mimic the target model for every state in the environment
-            # - Network Name -
-            network_parameters[0]['NetworkName'] = "RND_PredictionModel"
-            # - Network Architecture-
-            network_parameters[0]['VectorNetworkArchitecture'] = "SmallDense"
-            network_parameters[0]['VisualNetworkArchitecture'] = "CNN"
-            network_parameters[0]['Filters'] = 32
-            network_parameters[0]['Units'] = 32
-            network_parameters[0]['TargetNetwork'] = False
-            # - Input / Output / Initialization -
-            network_parameters[0]['Input'] = self.observation_shapes
-            network_parameters[0]['Output'] = [self.feature_space_size]
-            network_parameters[0]['OutputActivation'] = [None]
-            # - Recurrent Parameters -
-            network_parameters[0]['Recurrent'] = False
-            # endregion
-
-            # region --- TargetModel ---
-            network_parameters[1] = network_parameters[0].copy()
-            network_parameters[1]['NetworkName'] = "RND_TargetModel"
-
-            prediction_model = construct_network(network_parameters[0], plot_network_model=True)
-            target_model = construct_network(network_parameters[1], plot_network_model=True)'''
-
             return prediction_model, target_model
 
     def learning_step(self, replay_batch):

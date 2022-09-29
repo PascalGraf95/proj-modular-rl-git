@@ -71,7 +71,8 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
         elif self.action_space == "CONTINUOUS":
             self.mse = MeanSquaredError()
 
-        self.optimizer = Adam(exploration_parameters["LearningRate"])
+        #self.optimizer = Adam(exploration_parameters["LearningRate"])
+        self.optimizer = Adam(learning_rate=0.00005)  # Temporarily fixed during testing phase
         self.loss = 0
         self.episodic_intrinsic_reward = 0
         self.intrinsic_reward = 0
@@ -129,14 +130,6 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             embedding_classifier = Model([current_state_features, next_state_features], x, name="ENM Classifier")
             # endregion
 
-            # region Model compilation and plotting
-            if self.action_space == "DISCRETE":
-                feature_extractor.compile(loss=self.cce, optimizer=self.optimizer)
-                embedding_classifier.compile(loss=self.cce, optimizer=self.optimizer)
-            elif self.action_space == "CONTINUOUS":
-                feature_extractor.compile(loss=self.mse, optimizer=self.optimizer)
-                embedding_classifier.compile(loss=self.mse, optimizer=self.optimizer)
-
             # Model plots
             try:
                 plot_model(feature_extractor, "plots/ENM_FeatureExtractor.png", show_shapes=True)
@@ -147,7 +140,6 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
             # Summaries
             feature_extractor.summary()
             embedding_classifier.summary()
-            # endregion
 
             return feature_extractor, embedding_classifier
 

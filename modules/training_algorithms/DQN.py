@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import numpy
 import numpy as np
 from tensorflow.keras.models import load_model
 from tensorflow.keras import Model
@@ -71,7 +70,7 @@ class DQNActor(Actor):
                 target_prediction = self.critic_network(next_state_batch)
                 y = self.critic_network(state_batch).numpy()
 
-            # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains an
+            '''# With additional network inputs, which is the case when using Agent57-concepts, the state batch contains an
             # idx giving the information which exploration policy was used during acting. This exploration policy
             # contains the parameters gamma (n-step learning) and beta (intrinsic reward scaling factor).
             if self.recurrent and self.policy_feedback:
@@ -83,9 +82,14 @@ class DQNActor(Actor):
                 for idx, sequence in enumerate(state_batch[-1]):
                     self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
 
+            target_batch = reward_batch + np.multiply(np.multiply((self.gamma ** self.n_steps),
+                                                      np.max(target_prediction, axis=1, keepdims=True)),
+                                                      (1 - done_batch))'''
+
             target_batch = reward_batch + \
                            (self.gamma ** self.n_steps) * np.max(target_prediction, axis=1, keepdims=True) * \
                            (1 - done_batch)
+
             if self.recurrent:
                 time_step_array = np.arange(self.sequence_length)
                 mesh_x, mesh_y = np.meshgrid(time_step_array, batch_array)
@@ -302,9 +306,9 @@ class DQNLearner(Learner):
                                        target_prediction[mesh_y, mesh_x, model_prediction_argmax]), axis=-1) * \
                                    (1 - done_batch))
                 else:
-                    target_batch = reward_batch + (self.gamma ** self.n_steps) * \
-                                   np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1) * \
-                                   (1 - done_batch)
+                    target_batch = reward_batch + np.multiply(np.multiply((self.gamma ** self.n_steps),
+                                   np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1)),
+                                   (1 - done_batch))
             else:
                 if self.reward_normalization:
                     target_batch = self.value_function_rescaling(reward_batch + (self.gamma ** self.n_steps) * \
@@ -312,17 +316,17 @@ class DQNLearner(Learner):
                                        target_prediction[batch_array, model_prediction_argmax]), axis=-1) * \
                                    (1 - done_batch))
                 else:
-                    target_batch = reward_batch + (self.gamma ** self.n_steps) * \
-                                   np.expand_dims(target_prediction[batch_array, model_prediction_argmax], axis=-1) * \
-                                   (1 - done_batch)
+                    target_batch = reward_batch + np.multiply(np.multiply((self.gamma ** self.n_steps),
+                                   np.expand_dims(target_prediction[batch_array, model_prediction_argmax], axis=-1)),
+                                   (1 - done_batch))
         else:
             if self.reward_normalization:
                 target_batch = self.value_function_rescaling(reward_batch + (self.gamma ** self.n_steps) * \
                                tf.reduce_max(self.inverse_value_function_rescaling(target_prediction),
                                              axis=-1, keepdims=True) * (1 - done_batch))
             else:
-                target_batch = reward_batch + (self.gamma ** self.n_steps) * \
-                               tf.reduce_max(target_prediction, axis=-1, keepdims=True) * (1 - done_batch)
+                target_batch = reward_batch + np.multiply(np.multiply((self.gamma ** self.n_steps),
+                               tf.reduce_max(target_prediction, axis=-1, keepdims=True)), (1 - done_batch))
 
         # Set the Q value of the chosen action to the target.
         # y: (32, 10, 5) or (32, 5)
@@ -389,14 +393,25 @@ class DQNLearner(Learner):
             raise NotADirectoryError("Could not find directory or file for loading models.")
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
-                        checkpoint_condition=True, exploration_policy_index=None):
+                        checkpoint_condition=True, exploration_policy_index=None, intrinsic_reward=None):
         if not checkpoint_condition:
             return
-        if exploration_policy_index is not None:
+        if exploration_policy_index is not None and intrinsic_reward is not None:
+            self.critic.save(
+                os.path.join(path, "DQN_Critic_Step{}_Reward{:.2f}_ExpPolicy{}_IR{:.4f}".format(training_step,
+                                                                                                   running_average_reward,
+                                                                                                   exploration_policy_index,
+                                                                                                   intrinsic_reward)))
+        elif exploration_policy_index is not None:
             self.critic.save(
                 os.path.join(path, "DQN_Critic_Step{}_Reward{:.2f}_ExpPolicy{}".format(training_step,
-                                                                                     running_average_reward,
-                                                                                     exploration_policy_index)))
+                                                                                       running_average_reward,
+                                                                                       exploration_policy_index)))
+        elif intrinsic_reward is not None:
+            self.critic.save(
+                os.path.join(path, "DQN_Critic_Step{}_Reward{:.2f}_IR{:.4f}".format(training_step,
+                                                                                       running_average_reward,
+                                                                                       intrinsic_reward)))
         else:
             self.critic.save(
                 os.path.join(path, "DQN_Critic_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))

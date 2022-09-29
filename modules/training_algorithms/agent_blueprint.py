@@ -107,7 +107,7 @@ class Actor:
         self.prior_action = None
         self.exploration_degree = None
         self.exploration_policy_idx = None
-        self.reward_ratio_deque = deque(maxlen=1000)
+        #self.reward_ratio_deque = deque(maxlen=5000)
         self.reward_correction_factor = 1
         self.steps_since_update = 0
 
@@ -162,6 +162,7 @@ class Actor:
         # Make sure continuous actions are always bound to the same action scaling
         if AgentInterface.get_action_type == "CONTINUOUS":
             self.environment = RescaleAction(self.environment, min_action=-1.0, max_action=1.0)
+            print("\n\nEnvironment action space rescaled to -1.0...1.0.\n\n")
         AgentInterface.reset(self.environment)
 
     def set_unity_parameters(self, **kwargs):
@@ -598,12 +599,26 @@ class Actor:
         # Register terminal agents, so for example the hidden LSTM state is reset
         self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
 
-        # There are several exploration algorithms that calculate intrinsic rewards in a "per-step" fashion.
+        # Values that were fed back as inputs during training must be set manually and according to the saved
+        # weight's name.
+        if self.policy_feedback:
+            self.exploration_policy_idx = 7
+            if self.first_iteration:
+                print("  -> Exploration policy index: \t", self.exploration_policy_idx)
+        if self.reward_feedback:
+            #self.prior_extrinsic_reward = 0
+            #self.prior_intrinsic_reward = 0
+            intrinsic_reward = self.prior_intrinsic_reward
+            '''if self.first_iteration:
+                print("  -> Prior extrinsic reward: \t", self.prior_extrinsic_reward)
+                print("  -> Prior intrinsic reward: \t", self.prior_intrinsic_reward)'''
+
+        self.first_iteration = False
+
+        '''# There are several exploration algorithms that calculate intrinsic rewards in a "per-step" fashion.
         if self.intrinsic_exploration:
             # Set/Reset variables and algorithms when agent reaches episodic borders
-            self.episodic_border_routine(terminal_steps)
-            # Exploration Policy currently must be set manually
-            self.exploration_policy_idx = 11
+            self.episodic_border_routine(terminal_steps)'''
 
         # Extend step observation values with prior action, extrinsic reward, intrinsic reward, policy idx
         decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
@@ -611,8 +626,14 @@ class Actor:
                            agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                            mode=self.mode)
 
+        self.save_current_metrics(intrinsic_reward, actions, decision_steps, terminal_steps)
+
         # Save current metrics for next iteration
-        self.save_current_metrics(0, actions, decision_steps, terminal_steps)
+        '''if self.action_feedback:
+            if len(decision_steps.obs[0]):
+                decision_steps.obs.append(np.array([self.prior_action], dtype=np.float32))
+            else:
+                terminal_steps.obs.append(np.array([self.prior_action], dtype=np.float32))'''
 
         # Do the same for the clone behavior if active
         if self.behavior_clone_name:
@@ -710,7 +731,9 @@ class Actor:
 
     def get_local_buffer(self):
         return self.local_buffer.sample(1, reset_buffer=False, random_samples=True)
+    # endregion
 
+    # region Misc additionals
     def episodic_border_routine(self, terminal_steps):
         """
         Reset specific variables and algorithms when agent reaches episodic begin or ending.
@@ -737,18 +760,13 @@ class Actor:
             # manually to the one trained according to saved network weights.
             if self.mode == "training" and self.use_meta_controller:
                 self.exploration_policy_idx = self.meta_learning_algorithm.act()
-                # Additionally set local_buffer's gamma and calculate the respective gamma list
-                self.local_buffer.gamma = self.exploration_degree[self.exploration_policy_idx]["gamma"]
-                temp_gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
-                self.local_buffer.gamma_list = temp_gamma_list
             elif self.mode == "training":
                 # Set the value according to actor index
                 if self.first_iteration and self.intrinsic_exploration:
                     self.exploration_policy_idx = self.exploration_algorithm.index
-                    # Additionally set local_buffer's gamma and calculate the respective gamma list
+                    # Additionally set local_buffer's gamma and calculate the individual gamma list per actor
                     self.local_buffer.gamma = self.exploration_degree[self.exploration_policy_idx]["gamma"]
-                    temp_gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
-                    self.local_buffer.gamma_list = temp_gamma_list
+                    self.local_buffer.gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
                     self.first_iteration = False
             # Routine for episode beginning finished
             self.episode_begin = False
@@ -840,11 +858,12 @@ class Actor:
                 self.prior_extrinsic_reward = decision_steps.reward[0]
             else:
                 self.prior_extrinsic_reward = terminal_steps.reward[0]
+        else:
+            self.prior_intrinsic_reward = None
 
     def adaptive_intrinsic_reward_scaling(self, intrinsic_reward, extrinsic_reward):
         """
-        Calculate the ratio between extrinsic and intrinsic rewards. The ratio is later used to scale the intrinsic
-        rewards with respect to the range of the extrinsic rewards.
+        Calculate the ratio between extrinsic and intrinsic rewards.
 
         Parameters
         ----------
@@ -855,14 +874,12 @@ class Actor:
         """
         self.steps_since_update += 1
 
-        # Calculate ratio between current extrinsic and intrinsic reward and clip it between 0 and 1
+        # Calculate ratio between the extrinsic and intrinsic reward and clip it
         if extrinsic_reward == 0:
-            self.reward_ratio_deque.append(1)
-        elif intrinsic_reward <= 1e-6:
-            return
+            self.reward_ratio_deque.append(0)
         else:
-            reward_ratio = np.clip(abs(extrinsic_reward/(intrinsic_reward+1e-6)), 0, 1)
-            self.reward_ratio_deque.append(reward_ratio)
+            reward_ratio = np.clip(abs(extrinsic_reward/(intrinsic_reward+1e-6)), 0, 5)
+            self.reward_ratio_deque.append(reward_ratio[0])
 
         # Update reward correction factor
         if self.steps_since_update % 100:
@@ -871,6 +888,9 @@ class Actor:
 
     def get_exploration_policy_index(self):
         return self.exploration_policy_idx
+
+    def get_exploration_reward(self):
+        return self.prior_intrinsic_reward
     # endregion
 
 
@@ -933,7 +953,7 @@ class Learner:
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
-                        checkpoint_condition=True, exploration_policy_index=0):
+                        checkpoint_condition=True, exploration_policy_index=0, intrinsic_reward=0):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
     # endregion
 
