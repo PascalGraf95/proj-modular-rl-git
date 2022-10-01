@@ -1,0 +1,1 @@
+python main.py --mode testing --model_path C:\repos\Airhockey_Agent_Weights\220824_205341_SAC_Airhockey_Selfplay_Multiagent --trainer_interface MLAgentsV18 --train_algorithm SAC 
