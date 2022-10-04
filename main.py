@@ -22,17 +22,18 @@ def main():
     :return: None
     """
 
+    # region  --- Parameter Choice ---
+    # Parse training / testing parameters from command line. If not provided default parameters will be used.
     parser = CmdArgParse()
     args = parser.return_args()
-    # region  --- Parameter Choice ---
 
     # Choose between "training", "testing" or "fastTesting"
-    # If you want to test a trained model or continue learning from a checkpoint enter the model path below
+    # If you want to test a trained model or continue learning from a checkpoint enter the model path via command line
     mode = args.mode
-    model_path = args.model_path #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220913_161201_SAC_Airhockey_Selfplay_TrainingBasicBehavior" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220903_124426_SAC_Airhockey_Selfplay_Multiagent" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220901_150641_SAC_Airhockey_Selfplay_Multiagent" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220830_145608_SAC_Airhockey_Selfplay_Multiagent" # r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220823_165533_SAC_Airhockey_Selfplay_Multiagent" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220712_131840_SAC1" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220712_131840_SAC2" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220708_160314_SAC_Airhockey_Selfplay" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220708_143215_SAC_Airhockey_Selfplay" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220527_094925_CQL_SinglePendulum" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220525_092958_CQL_SinglePendulum" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220524_133838_CQL_SinglePendulum" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220514_131626_SAC_InvertedDoublePendulumCart_Recurrent"
+    model_path = args.model_path
     # If defined this path defines the clone's weights for selfplay training/testing. Otherwise, model_path will be
     # used.
-    clone_path = args.clone_path #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220903_124426_SAC_Airhockey_Selfplay_Multiagent" #r"C:\PGraf\Arbeit\RL\ZML_GitLab\proj-modular-reinforcement-learning\training\summaries\220712_131840_SAC1"
+    clone_path = args.clone_path
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
@@ -42,7 +43,7 @@ def main():
     # If you want a CQL agent to learn from demonstrations, an environment can be used to evaluate the model on a
     # regular basis. Please provide a path or type None to connect directly to the Unity Editor. Otherwise, type
     # 'NoEnv' to proceed without evaluation.
-    environment_path = args.env_path #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\3DAirHockeyMujoco" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\3DAirHockeyMujoco" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\3DAirHockeyMujoco" #r"C:\PGraf\Arbeit\RL\EnvironmentBuilds\RobotArm\Conveyor\DoBotEnvironment.exe"
+    environment_path = args.env_path
 
     # - Training Algorithm -
     # This is the core learning algorithm behind the RL Agent. While Deep Q-Learning / Deep Q Networks (DQN) presumably
@@ -78,8 +79,10 @@ def main():
     preprocessing_path = args.preprocessing_path
 
     # - Misc -
-    trainer.save_all_models = True  # Determines if all models or only the actor will be saved during training
-    trainer.remove_old_checkpoints = False  # Determines if old model checkpoints will be overwritten
+    # Determine if all models or only the actor will be saved during training
+    trainer.save_all_models = args.save_all_models
+    # Determine if old model checkpoints will be overwritten
+    trainer.remove_old_checkpoints = args.remove_old_checkpoints
 
     # endregion
 
