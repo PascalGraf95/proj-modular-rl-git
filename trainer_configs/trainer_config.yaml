@@ -107,7 +107,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_Airhockey_Selfplay_TrainingBasicBehavior
+    TrainingID: SAC_Airhockey_Selfplay_TrainingGreedyReward
     TrainingInterval: 10
 cql:
     Recurrent: false

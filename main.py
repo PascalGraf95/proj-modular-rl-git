@@ -59,7 +59,7 @@ def main():
     # The exploration algorithm helps the RL Agent to explore the environment by occasionally choosing suboptimal
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
     # Choose from "None", "EpsilonGreedy", "ICM" and "RND"
-    exploration_algorithm = "None"
+    exploration_algorithm = args.exploration_algorithm
 
     # - Curriculum Strategy -
     # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for
