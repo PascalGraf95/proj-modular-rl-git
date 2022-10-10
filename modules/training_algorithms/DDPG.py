@@ -10,6 +10,7 @@ import tensorflow as tf
 from tensorflow.keras.models import clone_model
 import os
 
+# WARNING: THIS ALGORITHM IMPLEMENTATION IS DEPRECATED AND CURRENTLY NOT FUNCTIONAL
 
 class DDPGAgent(Agent):
     # Static, algorithm specific Parameters

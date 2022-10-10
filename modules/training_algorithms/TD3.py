@@ -12,6 +12,8 @@ from tensorflow.keras.models import clone_model
 import os
 import math
 
+# WARNING: THIS ALGORITHM IMPLEMENTATION IS DEPRECATED AND CURRENTLY NOT FUNCTIONAL
+
 class TD3Agent(Agent):
     # Static, algorithm specific Parameters
     TrainingParameterSpace = Agent.TrainingParameterSpace.copy()

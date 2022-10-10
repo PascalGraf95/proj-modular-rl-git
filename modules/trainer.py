@@ -198,7 +198,7 @@ class Trainer:
         self.exploration_configuration = ray.get(exploration_configuration)
 
         # - Learner Instantiation -
-        # Create one actor capable of learning according to the selected algorithm utilizing the buffered actor
+        # Create one learner capable of learning according to the selected algorithm utilizing the buffered actor
         # experiences. If a model path is given, the respective networks will continue to learn from this checkpoint.
         # If a clone path is given, it will be used as starting point for self-play.
         self.learner = Learner.remote(mode, self.trainer_configuration,

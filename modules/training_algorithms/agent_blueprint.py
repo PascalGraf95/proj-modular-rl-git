@@ -9,6 +9,8 @@ from ..curriculum_strategies.curriculum_strategy_blueprint import CurriculumComm
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
 import time
 import ray
+import os
+import csv
 
 
 class Actor:
@@ -298,6 +300,11 @@ class Actor:
     def build_network(self, network_parameters, environment_parameters):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
+    def update_actor_network(self, network_weights, forced=False):
+        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+    # endregion
+
+    # region Recurrent Memory State Update and Reset
     def get_lstm_layers(self):
         if self.actor_network:
             self.lstm = self.actor_network.get_layer("lstm")
@@ -311,9 +318,6 @@ class Actor:
             self.clone_lstm = self.clone_actor_network.get_layer("lstm_3")
             self.clone_lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                                      np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
-
-    def update_actor_network(self, network_weights, forced=False):
-        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
     def reset_actor_state(self):
         """This function resets the actors LSTM states to random values at the beginning of a new episode."""
@@ -373,7 +377,6 @@ class Actor:
             for idx, agent_id in enumerate(agent_ids):
                 self.clone_lstm_state[0][agent_id] = lstm_state[0][idx]
                 self.clone_lstm_state[1][agent_id] = lstm_state[1][idx]
-
     # endregion
 
     # region Environment Interaction
@@ -497,7 +500,7 @@ class Learner:
     ActionType = []
     NetworkTypes = []
 
-    def __init__(self, trainer_configuration, environment_configuration):
+    def __init__(self, trainer_configuration, environment_configuration, model_path=None, clone_model_path=None):
         # Environment Configuration
         self.action_shape = environment_configuration.get('ActionShape')
         self.observation_shapes = environment_configuration.get('ObservationShapes')
@@ -522,6 +525,13 @@ class Learner:
         self.training_step = 0
         self.steps_since_actor_update = 0
         self.set_gpu_growth()  # Important step to avoid tensorflow OOM errors when running multiprocessing!
+
+        # - Model Weights -
+        # Structures to store information about the given pretrained models (and clone models in case of selfplay)
+        self.model_dir = model_path
+        self.model_dictionary = self.create_model_dictionary_from_path(model_path)
+        self.clone_model_dir = clone_model_path
+        self.clone_model_dictionary = self.create_model_dictionary_from_path(clone_model_path)
     # endregion
 
     # region Network Construction and Transfer
@@ -542,11 +552,103 @@ class Learner:
     # endregion
 
     # region Checkpoints
-    def load_checkpoint(self, path):
+    def load_checkpoint(self, model_path, clone_path):
+        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    def load_checkpoint_from_path_list(self, model_paths, clone=False):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    @staticmethod
+    def create_model_dictionary_from_path(model_path):
+        if not model_path or not os.path.isdir(model_path):
+            return {}
+        # First, determine if the provided model path contains multiple training folders of which each might contain
+        # multiple model checkpoints itself. This is decided by the fact if the folders in the path contain a date at
+        # the beginning (which is ensured for all new training sessions with this framework)
+        training_session_paths = []
+        for file in os.listdir(model_path):
+            if os.path.isdir(os.path.join(model_path, file)):
+                if file[:6].isdigit():
+                    training_session_paths.append(os.path.join(model_path, file))
+        # In case there is any file path in this list, we expect to be in the top folder containing one or multiple
+        # training sessions of which each might hold one or multiple trained models. Otherwise, the provided path
+        # already points to one specific training session.
+        if len(training_session_paths) == 0 and model_path:
+            training_session_paths.append(model_path)
+
+        # Create a dictionary to store all provided models by a unique identifier, along with their paths, elo, etc.
+        model_dictionary = {}
+        # For each training session folder search for all network checkpoints it contains
+        for path in training_session_paths:
+            for file in os.listdir(path):
+                if os.path.isdir(os.path.join(path, file)):
+                    # Check if the respective folder is a model checkpoint. This is decided by the fact if the folder
+                    # contains the keywords "Step" and "Reward" (which is ensured for all checkpoints created with this
+                    # framework)
+                    if "Step" in file and "Reward" in file:
+                        # To retrieve the training step of the checkpoint, split the file string.
+                        training_step = [f for f in file.split("_") if "Step" in f][0]
+                        training_step = training_step.replace("Step", "")
+
+                        # To retrieve the training reward of the checkpoint, split the file string.
+                        training_reward = [f for f in file.split("_") if "Reward" in f][0]
+                        training_reward = training_reward.replace("Reward", "")
+
+                        # The unique identifier (key) is the training session name along with the training step
+                        key = path.split("\\")[-1] + "_" + training_step
+
+                        # If the key is not already in the dictionary, append it. Otherwise, just add the current model
+                        # to its model paths
+                        if key not in model_dictionary:
+                            model_dictionary[key] = {"TrainingStep": int(training_step),
+                                                     "ELO": 0,
+                                                     "Reward": float(training_reward),
+                                                     "ModelPaths": [os.path.join(path, file)]}
+
+                        else:
+                            model_dictionary[key]["ModelPaths"].append(os.path.join(path, file))
+        return model_dictionary
+
+    @staticmethod
+    def create_elo_list_from_path(path, model_dictionary):
+        # Search for a csv file containing elo ratings for the models in the model dictionary.
+        # The file is expected to be under the model path.
+        if os.path.isfile(os.path.join(path, "elo_rating.csv")):
+            with open(os.path.join(path, "elo_rating.csv"), newline='') as csv_file:
+                csv_reader = csv.reader(csv_file)
+                next(csv_reader, None)  # Skip Header
+                for row in csv_reader:
+                    if row[0] in model_dictionary:
+                        model_dictionary[row[0]]['ELO'] = row[1]
+
+    @staticmethod
+    def get_model_key_from_dictionary(model_dictionary, mode="latest"):
+        # If the model dictionary is empty return None
+        if len(model_dictionary) == 0:
+            return None
+        # Get the most recent model by date and time.
+        if mode == "latest":
+            sorted_key_list = sorted(list(model_dictionary.keys()))
+            return sorted_key_list[-1]
+        # Get a random model.
+        elif mode == "random":
+            key_list = list(model_dictionary.keys())
+            return np.random.choice(key_list, 1)[0]
+        # Get the model with the highest reward (might not be representative for different trainings).
+        elif mode == "best":
+            sorted_key_list = [key for key, val in sorted(model_dictionary.items(), key=lambda item: item[1]['Reward'])]
+            return sorted_key_list[-1]
+        # Get the model with the highest elo. In case there is no elo rating this will return a random model.
+        elif mode == "elo":
+            sorted_key_list = [key for key, val in sorted(model_dictionary.items(), key=lambda item: item[1]['ELO'])]
+            return sorted_key_list[-1]
+        # Otherwise, we expect the mode variable to contain the key itself (used for matches between two distinct models
+        # for elo rating.
+        else:
+            return model_dictionary[mode]
     # endregion
 
     # region Learning
@@ -644,6 +746,14 @@ class Learner:
                 reward_batch[idx_seq][idx_trans] = transition['reward']
                 done_batch[idx_seq][idx_trans] = transition['done']
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch
+
+    @staticmethod
+    def value_function_rescaling(x, eps=1e-3):
+        return np.sign(x) * (np.sqrt(np.abs(x) + 1) - 1) + eps * x
+
+    @staticmethod
+    def inverse_value_function_rescaling(h, eps=1e-3):
+        return np.sign(h) * (((np.sqrt(1 + 4 * eps * (np.abs(h) + 1 + eps)) - 1) / (2 * eps)) - 1)
     # endregion
 
     # region Parameter Validation
