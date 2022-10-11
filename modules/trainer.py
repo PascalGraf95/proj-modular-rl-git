@@ -138,6 +138,9 @@ class Trainer:
         fashion utilizing the ray library."""
         # Initialize ray for parallel multiprocessing.
         ray.init()
+        # Alternatively, use the following code line to enable debugging (with ray >= 2.0.X)
+        # ray.init(logging_level=logging.INFO, local_mode=True)
+
         # If the connection is established directly with the Unity Editor or if we are in testing mode, override
         # the number of actors with 1.
         if not environment_path or mode == "testing" or mode == "fastTesting" or environment_path == "Unity":
