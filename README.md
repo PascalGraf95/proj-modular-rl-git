@@ -12,7 +12,8 @@ the `main.py` file.**
 - ### PIP
   - tensorflow: 2.3.X
   - tensorflow-probability: 0.11.X (corresponds to tensorflow version)
-  - ray: 1.11.X (later versions, especially 1.12 lead to Windows fatal errors 'access violation')
+  - ray: 1.11.X -> NOTE: 2.0.X also works and enables debugging (set `ray.init(local_mode=True)`). 
+  However, on Windows this throws 'access violation' fatal errors that DO NOT affect performance or executability.
 ## Features
 - ###Interfaces:
   - Unity MlAgentsV18
