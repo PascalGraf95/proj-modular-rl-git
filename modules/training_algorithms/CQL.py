@@ -374,8 +374,8 @@ class CQLLearner(Learner):
     ActionType = ['CONTINUOUS']
     NetworkTypes = ['Actor', 'Critic1', 'Critic2']
 
-    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None):
-        super().__init__(trainer_configuration, environment_configuration)
+    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None, clone_model_path=None):
+        super().__init__(trainer_configuration, environment_configuration, model_path, clone_model_path)
 
         # - Neural Networks -
         # The Soft Actor-Critic algorithm utilizes 5 neural networks. One actor and two critics with one target network
@@ -419,9 +419,11 @@ class CQLLearner(Learner):
         if mode == 'training':
             # Network Construction
             self.build_network(trainer_configuration.get("NetworkParameters"), environment_configuration)
-            # Load Pretrained Models
-            if model_path:
-                self.load_checkpoint(model_path)
+            # Try to load pretrained models if provided. Otherwise, this method does nothing.
+            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
+            if model_key:
+                self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
+            # TODO: Implement Clone model and self-play
 
             # Compile Networks
             self.actor_optimizer = Adam(learning_rate=trainer_configuration.get('LearningRateActor'),
@@ -436,7 +438,10 @@ class CQLLearner(Learner):
         # Load trained Models
         elif mode == 'testing':
             assert model_path, "No model path entered."
-            self.load_checkpoint(model_path)
+            # Try to load pretrained models if provided. Otherwise, this method does nothing.
+            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
+            if model_key:
+                self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
 
     def get_actor_network_weights(self, update_requested):
         if not update_requested:
@@ -722,38 +727,36 @@ class CQLLearner(Learner):
         else:
             raise ValueError("Sync mode unknown.")
 
-    def load_checkpoint(self, path):
-        if "Step" in path:
-            self.actor_network = load_model(path)
-        elif os.path.isdir(path):
-            file_names = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f))]
-            for file_name in file_names:
-                if "Critic1" in file_name:
-                    self.critic1 = load_model(os.path.join(path, file_name), compile=False)
+    def load_checkpoint_from_path_list(self, model_paths, clone=False):
+        if not clone:
+            for file_path in model_paths:
+                if "Critic1" in file_path:
+                    self.critic1 = load_model(file_path, compile=False)
                     self.critic_target1 = clone_model(self.critic1)
                     self.critic_target1.set_weights(self.critic1.get_weights())
-                elif "Critic2" in file_name:
-                    self.critic2 = load_model(os.path.join(path, file_name), compile=False)
+                elif "Critic2" in file_path:
+                    self.critic2 = load_model(file_path, compile=False)
                     self.critic_target2 = clone_model(self.critic2)
                     self.critic_target2.set_weights(self.critic2.get_weights())
-                elif "Actor" in file_name:
-                    self.actor_network = load_model(os.path.join(path, file_name), compile=False)
-            if not self.actor_network or not self.critic1 or not self.critic2:
+                elif "Actor" in file_path:
+                    self.actor_network = load_model(file_path, compile=False)
+            if not self.actor_network:
                 raise FileNotFoundError("Could not find all necessary model files.")
-        else:
-            raise NotADirectoryError("Could not find directory or file for loading models.")
+            if not self.critic1 or not self.critic2:
+                print("WARNING: Critic models for CQL not found. "
+                      "This is not an issue if you're planning to only test the model.")
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
                         checkpoint_condition=True):
         if not checkpoint_condition:
             return
         self.actor_network.save(
-            os.path.join(path, "SAC_CQL_Actor_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
+            os.path.join(path, "SAC_CQL_Actor_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
         if save_all_models:
             self.critic1.save(
-                os.path.join(path, "SAC_CQL_Critic1_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
+                os.path.join(path, "SAC_CQL_Critic1_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
             self.critic2.save(
-                os.path.join(path, "SAC_CQL_Critic2_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
+                os.path.join(path, "SAC_CQL_Critic2_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
 
     def boost_exploration(self):
         self.log_alpha = tf.Variable(tf.ones(1) * -0.7,

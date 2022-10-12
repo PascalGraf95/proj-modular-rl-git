@@ -10,6 +10,7 @@ from tensorflow.keras.models import clone_model
 from tensorflow.keras import losses
 import tensorflow_probability as tfp
 import os
+import csv
 import ray
 import time
 
@@ -205,9 +206,11 @@ class SACLearner(Learner):
     ActionType = ['CONTINUOUS']
     NetworkTypes = ['Actor', 'Critic1', 'Critic2']
 
-    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None, clone_path=None):
-        super().__init__(trainer_configuration, environment_configuration)
+    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None, clone_model_path=None):
+        # Call parent class constructor
+        super().__init__(trainer_configuration, environment_configuration, model_path, clone_model_path)
 
+        # region --- Object Variables ---
         # - Neural Networks -
         # The Soft Actor-Critic algorithm utilizes 5 neural networks. One actor and two critics with one target network
         # each. The actor takes in the current state and outputs an action vector which consists of a mean and standard
@@ -219,14 +222,13 @@ class SACLearner(Learner):
         self.critic2: keras.Model
         self.critic_target2: keras.Model
         self.clone_actor_network: keras.Model
-        # A small parameter epsilon prevents math errors when log probabilities are 0.
-        self.epsilon = 1.0e-6
-        # Model path
-        self.clone_model_path = clone_path
 
         # - Optimizer -
         self.actor_optimizer: keras.optimizers.Optimizer
         self.alpha_optimizer: keras.optimizers.Optimizer
+
+        # A small parameter epsilon prevents math errors when log probabilities are 0.
+        self.epsilon = 1.0e-6
 
         # - Temperature Parameter Alpha -
         # The alpha parameter similar to the epsilon in epsilon-greedy promotes exploring the environment by keeping
@@ -239,16 +241,24 @@ class SACLearner(Learner):
         self.alpha_optimizer = tf.keras.optimizers.Adam(learning_rate=trainer_configuration.get('LearningRateActor'),
                                                         clipvalue=self.clip_grad)
         self.alpha = tf.exp(self.log_alpha).numpy()
+        # endregion
 
-        # Construct or load the required neural networks based on the trainer configuration and environment information
+        # region --- Network Construction, Compilation and Model Loading ---
+        # - Training -
         if mode == 'training':
-            # Network Construction
+            # Construct or load the required neural networks based on the trainer configuration and environment
+            # information
             self.build_network(trainer_configuration.get("NetworkParameters"), environment_configuration)
-            # Load Pretrained Models
-            if model_path:
-                self.load_checkpoint(model_path)
-            if self.clone_model_path:
-                self.load_clone_checkpoint(clone_path)
+            # Try to load pretrained models if provided. Otherwise, this method does nothing.
+            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
+            if model_key:
+                self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
+            # In case of self-play try to load a clone model if provided. If there is a clone model but no distinct
+            # path is provided, the agent actor's weights will be utilized.
+            clone_model_key = self.get_model_key_from_dictionary(self.clone_model_dictionary, mode="latest")
+            if clone_model_key:
+                self.load_checkpoint_from_path_list(self.clone_model_dictionary[clone_model_key]['ModelPaths'],
+                                                    clone=True)
 
             # Compile Networks
             self.critic1.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRateCritic'),
@@ -258,17 +268,27 @@ class SACLearner(Learner):
             self.actor_optimizer = Adam(learning_rate=trainer_configuration.get('LearningRateActor'),
                                         clipvalue=self.clip_grad)
 
-        # Load trained Models
+        # - Testing -
         elif mode == 'testing' or mode == 'fastTesting':
-            assert model_path, "No model path entered."
-            self.load_checkpoint(model_path)
-            if self.clone_model_path:
-                self.load_clone_checkpoint(clone_path)
+            # In case of testing there is no model construction, instead a model path must be provided.
+            assert len(self.model_dictionary), "No model path provided or no appropriate model present in given path."
+            # Try to load pretrained models if provided. Otherwise, this method does nothing.
+            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
+            if model_key:
+                self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
+            # In case of self-play try to load a clone model if provided. If there is a clone model but no distinct
+            # path is provided, the agent actor's weights will be utilized.
+            clone_model_key = self.get_model_key_from_dictionary(self.clone_model_dictionary, mode="latest")
+            if clone_model_key:
+                self.load_checkpoint_from_path_list(self.clone_model_dictionary[clone_model_key]['ModelPaths'],
+                                                    clone=True)
+        # endregion
 
+    # region --- Model Construction, Synchronisation, Weight Transfer and Loading ---
     def get_actor_network_weights(self, update_requested):
         if not update_requested:
             return []
-        if not self.clone_model_path:
+        if not len(self.clone_model_dictionary):
             return [self.actor_network.get_weights(), self.critic1.get_weights()]
         else:
             return [self.actor_network.get_weights(),
@@ -344,12 +364,68 @@ class SACLearner(Learner):
         # region --- Building ---
         # Build the networks from the network parameters
         self.actor_network = construct_network(network_parameters[0], plot_network_model=True)
-        if self.clone_model_path:
+        if self.clone_model_dir:
             self.clone_actor_network = clone_model(self.actor_network)
         self.critic1, self.critic_target1 = construct_network(network_parameters[1], plot_network_model=True)
         self.critic2, self.critic_target2 = construct_network(network_parameters[2])
         # endregion
 
+    def sync_models(self):
+        if self.sync_mode == "hard_sync":
+            if not self.training_step % self.sync_steps and self.training_step > 0:
+                self.critic_target1.set_weights(self.critic1.get_weights())
+                self.critic_target2.set_weights(self.critic2.get_weights())
+        elif self.sync_mode == "soft_sync":
+            self.critic_target1.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
+                                             for weights, target_weights in zip(self.critic1.get_weights(),
+                                                                                self.critic_target1.get_weights())])
+            self.critic_target2.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
+                                             for weights, target_weights in zip(self.critic2.get_weights(),
+                                                                                self.critic_target2.get_weights())])
+        else:
+            raise ValueError("Sync mode unknown.")
+
+    def load_checkpoint_from_path_list(self, model_paths, clone=False):
+        if clone:
+            for file_path in model_paths:
+                if "Actor" in file_path:
+                    self.clone_actor_network = load_model(file_path, compile=False)
+            if not self.clone_actor_network:
+                raise FileNotFoundError("Could not find clone model files.")
+        else:
+            for file_path in model_paths:
+                if "Critic1" in file_path:
+                    self.critic1 = load_model(file_path, compile=False)
+                    self.critic_target1 = clone_model(self.critic1)
+                    self.critic_target1.set_weights(self.critic1.get_weights())
+                elif "Critic2" in file_path:
+                    self.critic2 = load_model(file_path, compile=False)
+                    self.critic_target2 = clone_model(self.critic2)
+                    self.critic_target2.set_weights(self.critic2.get_weights())
+                elif "Actor" in file_path:
+                    self.actor_network = load_model(file_path, compile=False)
+            if not self.actor_network:
+                raise FileNotFoundError("Could not find all necessary model files.")
+            if not self.critic1 or not self.critic2:
+                print("WARNING: Critic models for SAC not found. "
+                      "This is not an issue if you're planning to only test the model.")
+
+    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
+                        checkpoint_condition=True):
+        if not checkpoint_condition:
+            return
+        self.actor_network.save(
+            os.path.join(path, "SAC_Actor_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
+        if save_all_models:
+            self.critic1.save(
+                os.path.join(path, "SAC_Critic1_Step{:06d}_Reward{:.2f}".format(training_step,
+                                                                                running_average_reward)))
+            self.critic2.save(
+                os.path.join(path, "SAC_Critic2_Step{:06d}_Reward{:.2f}".format(training_step,
+                                                                                running_average_reward)))
+    # endregion
+
+    # region --- Learning ---
     def forward(self, states):
         # Calculate the actors output and clip the logarithmic standard deviation values
         mean, log_std = self.actor_network(states)
@@ -448,77 +524,15 @@ class SACLearner(Learner):
         return {'Losses/Loss': policy_loss + value_loss, 'Losses/PolicyLoss': policy_loss,
                 'Losses/ValueLoss': value_loss, 'Losses/AlphaLoss': alpha_loss,
                 'Losses/Alpha': tf.reduce_mean(self.alpha).numpy()}, sample_errors, self.training_step
+    # endregion
 
-    @staticmethod
-    def value_function_rescaling(x, eps=1e-3):
-        return np.sign(x) * (np.sqrt(np.abs(x) + 1) - 1) + eps * x
-
-    @staticmethod
-    def inverse_value_function_rescaling(h, eps=1e-3):
-        return np.sign(h) * (((np.sqrt(1 + 4 * eps * (np.abs(h) + 1 + eps)) - 1) / (2 * eps)) - 1)
-
-    def sync_models(self):
-        if self.sync_mode == "hard_sync":
-            if not self.training_step % self.sync_steps and self.training_step > 0:
-                self.critic_target1.set_weights(self.critic1.get_weights())
-                self.critic_target2.set_weights(self.critic2.get_weights())
-        elif self.sync_mode == "soft_sync":
-            self.critic_target1.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
-                                             for weights, target_weights in zip(self.critic1.get_weights(),
-                                                                                self.critic_target1.get_weights())])
-            self.critic_target2.set_weights([self.tau * weights + (1.0 - self.tau) * target_weights
-                                             for weights, target_weights in zip(self.critic2.get_weights(),
-                                                                                self.critic_target2.get_weights())])
-        else:
-            raise ValueError("Sync mode unknown.")
-
-    def load_checkpoint(self, path):
-        if "Step" in path:
-            self.actor_network = load_model(path)
-        elif os.path.isdir(path):
-            file_names = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f))]
-            for file_name in file_names:
-                if "Critic1" in file_name:
-                    self.critic1 = load_model(os.path.join(path, file_name), compile=False)
-                    self.critic_target1 = clone_model(self.critic1)
-                    self.critic_target1.set_weights(self.critic1.get_weights())
-                elif "Critic2" in file_name:
-                    self.critic2 = load_model(os.path.join(path, file_name), compile=False)
-                    self.critic_target2 = clone_model(self.critic2)
-                    self.critic_target2.set_weights(self.critic2.get_weights())
-                elif "Actor" in file_name:
-                    self.actor_network = load_model(os.path.join(path, file_name), compile=False)
-            if not self.actor_network or not self.critic1 or not self.critic2:
-                raise FileNotFoundError("Could not find all necessary model files.")
-        else:
-            raise NotADirectoryError("Could not find directory or file for loading models.")
-
-    def load_clone_checkpoint(self, path):
-        if "Step" in path:
-            self.clone_actor_network = load_model(path)
-        elif os.path.isdir(path):
-            file_names = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f))]
-            for file_name in file_names:
-                if "Actor" in file_name:
-                    self.clone_actor_network = load_model(os.path.join(path, file_name), compile=False)
-            if not self.clone_actor_network:
-                raise FileNotFoundError("Could not find clone model files.")
-        else:
-            raise NotADirectoryError("Could not find directory or file for loading clone models.")
-
-    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
-                        checkpoint_condition=True):
-        if not checkpoint_condition:
-            return
-        self.actor_network.save(
-            os.path.join(path, "SAC_Actor_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
-        if save_all_models:
-            self.critic1.save(
-                os.path.join(path, "SAC_Critic1_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
-            self.critic2.save(
-                os.path.join(path, "SAC_Critic2_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
-
+    # region --- Utility ---
     def boost_exploration(self):
         self.log_alpha = tf.Variable(tf.ones(1) * -0.7,
                                      constraint=lambda x: tf.clip_by_value(x, -10, 20), trainable=True)
         return True
+    # endregion
+
+
+
+

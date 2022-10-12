@@ -11,6 +11,7 @@ from datetime import datetime
 import os
 import ray
 import tensorflow as tf
+from tensorflow import keras
 
 
 @ray.remote
@@ -146,7 +147,7 @@ class DQNActor(Actor):
         return True
 
 
-@ray.remote(num_gpus=1)
+@ray.remote
 class DQNLearner(Learner):
     # region ParameterSpace
     ActionType = ['DISCRETE']
@@ -154,10 +155,11 @@ class DQNLearner(Learner):
 
     # endregion
 
-    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None):
-        super().__init__(trainer_configuration, environment_configuration)
+    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None, clone_model_path=None):
+        super().__init__(trainer_configuration, environment_configuration, model_path, clone_model_path)
         # Networks
-        self.critic, self.critic_target = None, None
+        self.critic: keras.Model
+        self.critic_target: keras.Model
 
         # Double Learning
         self.double_learning = trainer_configuration.get('DoubleLearning')
@@ -169,9 +171,11 @@ class DQNLearner(Learner):
         if mode == 'training':
             # Network Construction
             self.build_network(trainer_configuration["NetworkParameters"], environment_configuration)
-            # Load Pretrained Models
-            if model_path:
-                self.load_checkpoint(model_path)
+            # Try to load pretrained models if provided. Otherwise, this method does nothing.
+            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
+            if model_key:
+                self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
+            # TODO: Implement Clone model and self-play
 
             # Compile Networks
             self.critic.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRate'),
@@ -180,7 +184,10 @@ class DQNLearner(Learner):
         # Load trained Models
         elif mode == 'testing':
             assert model_path, "No model path entered."
-            self.load_checkpoint(model_path)
+            # Try to load pretrained models if provided. Otherwise, this method does nothing.
+            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
+            if model_key:
+                self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
 
     def get_actor_network_weights(self, update_requested):
         return [self.critic.get_weights()]
@@ -304,27 +311,20 @@ class DQNLearner(Learner):
         else:
             raise ValueError("Sync mode unknown.")
 
-    def load_checkpoint(self, path):
-        if "Step" in path:
-            self.critic = load_model(path)
-        elif os.path.isdir(path):
-            file_names = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f))]
-            for file_name in file_names:
-                if "DQN_Critic" in file_name:
-                    self.critic = load_model(os.path.join(path, file_name), compile=False)
-                    self.critic_target = clone_model(self.critic)
-                    self.critic_target.set_weights(self.critic.get_weights())
-            if not self.critic:
-                raise FileNotFoundError("Could not find all necessary model files.")
-        else:
-            raise NotADirectoryError("Could not find directory or file for loading models.")
+    def load_checkpoint_from_path_list(self, model_paths, clone=False):
+        if not clone:
+            for file_path in model_paths:
+                if "DQN_Critic" in file_path:
+                    self.critic = load_model(file_path)
+                if not self.critic:
+                    raise FileNotFoundError("Could not find all necessary model files.")
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
                         checkpoint_condition=True):
         if not checkpoint_condition:
             return
         self.critic.save(
-            os.path.join(path, "DQN_Critic_Step{}_Reward{:.2f}".format(training_step, running_average_reward)))
+            os.path.join(path, "DQN_Critic_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
 
     @staticmethod
     def get_config():
