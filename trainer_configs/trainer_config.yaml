@@ -72,14 +72,14 @@ sac:
     AdaptiveSequenceLength: false
     SequenceLength: 12
     Overlap: 6
-    ActorNum: 5
+    ActorNum: 8
     BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
         FeatureSpaceSize: 16
         CuriosityScalingFactor: 0.03
         LearningRate: 0.001
-        Epsilon: 0.25
+        Epsilon: 0.35
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
         StepDown: false
@@ -87,11 +87,11 @@ sac:
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -1.0
+    LogAlpha: -4.0
     NSteps: 4
     AdaptiveExploration: false
     NetworkUpdateFrequency: 50
-    SelfPlayNetworkUpdateFrequency: 5000
+    SelfPlayNetworkUpdateFrequency: 100000
     NetworkParameters:
         Filters: 16
         Units: 64
@@ -100,14 +100,14 @@ sac:
         CriticVectorNetworkArchitecture: Dense
         CriticVisualNetworkArchitecture: CNN
     PrioritizedReplay: true
-    PriorityAlpha: 0.8
+    PriorityAlpha: 0.75
     RewardNormalization: false
     ReplayCapacity: 100000
     ReplayMinSize: 100
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_Airhockey_Selfplay_TrainingGreedyReward
+    TrainingID: SAC_Airhockey_Selfplay_TFTEST
     TrainingInterval: 10
 cql:
     Recurrent: false

@@ -306,16 +306,33 @@ class Actor:
 
     # region Recurrent Memory State Update and Reset
     def get_lstm_layers(self):
+        # Get the lstm layer in the provided network
+        # Sometimes the layer names vary, a LSTM layer might be called "lstm" or "lstm_2", etc.
+        # Make sure this function does not fail by getting the actual layers name from the network.
+        lstm_layer_name = ""
         if self.actor_network:
-            self.lstm = self.actor_network.get_layer("lstm")
+            for layer in self.actor_network.layers:
+                if "lstm" in layer.name:
+                    lstm_layer_name = layer.name
+            self.lstm = self.actor_network.get_layer(lstm_layer_name)
         elif self.critic_network:
-            self.lstm = self.critic_network.get_layer("lstm")
+            for layer in self.critic_network.layers:
+                if "lstm" in layer.name:
+                    lstm_layer_name = layer.name
+            self.lstm = self.critic_network.get_layer(lstm_layer_name)
 
+        # Get the number of units as well as states in the respective layer.
         self.lstm_units = self.lstm.units
         self.lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                            np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
+
+        # If in self-play there will be a clone of the actor model. Use the same workflow to acquire its
+        # lstm layer as well as unit number and state
         if self.behavior_clone_name:
-            self.clone_lstm = self.clone_actor_network.get_layer("lstm_3")
+            for layer in self.clone_actor_network.layers:
+                if "lstm" in layer.name:
+                    lstm_layer_name = layer.name
+            self.clone_lstm = self.clone_actor_network.get_layer(lstm_layer_name)
             self.clone_lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                                      np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
 
@@ -584,7 +601,7 @@ class Learner:
         # For each training session folder search for all network checkpoints it contains
         for path in training_session_paths:
             for file in os.listdir(path):
-                if os.path.isdir(os.path.join(path, file)):
+                if os.path.isdir(os.path.join(path, file)) or os.path.isfile(os.path.join(path, file) and ".h5" in file):
                     # Check if the respective folder is a model checkpoint. This is decided by the fact if the folder
                     # contains the keywords "Step" and "Reward" (which is ensured for all checkpoints created with this
                     # framework)
@@ -595,7 +612,7 @@ class Learner:
 
                         # To retrieve the training reward of the checkpoint, split the file string.
                         training_reward = [f for f in file.split("_") if "Reward" in f][0]
-                        training_reward = training_reward.replace("Reward", "")
+                        training_reward = training_reward.replace("Reward", "").replace(".h5", "")
 
                         # The unique identifier (key) is the training session name along with the training step
                         key = path.split("\\")[-1] + "_" + training_step

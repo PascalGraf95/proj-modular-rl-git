@@ -1,21 +1,28 @@
 #!/usr/bin/env python
 
 from enum import Enum
-from tensorflow.keras.layers import Dense, Flatten, Conv2D, Concatenate, Input, BatchNormalization, Dropout, Add, Subtract, \
+import tensorflow as tf
+from tensorflow import keras
+from keras.layers import Dense, Flatten, Conv2D, Concatenate, Input, BatchNormalization, Dropout, Add, Subtract, \
     Lambda, UpSampling2D, Reshape, LSTM, GlobalMaxPool2D, TimeDistributed
-from tensorflow.keras.activations import relu
-from tensorflow.keras import backend as K
+from keras.activations import relu
+from keras import backend as K
 
-from tensorflow.keras.utils import plot_model
-from tensorflow.keras import Model
-from tensorflow.keras.models import clone_model
-from tensorflow.keras.initializers import RandomUniform, Orthogonal, Constant
-from tensorflow.keras.layers.experimental.preprocessing import Resizing
+from keras.utils import plot_model
+from keras import Model
+from keras.models import clone_model
+from keras.initializers.initializers_v2 import RandomUniform, Orthogonal, Constant
+from keras.layers.preprocessing.image_preprocessing import Resizing
 from .noisy_dense import NoisyDense
 from .resnet import create_res_net12
 import numpy as np
-import tensorflow as tf
 import os
+
+# Fix to avoid huge RAM allocation initiated by tf network construction -> necessary for CUDA >= 11.0
+gpus = tf.config.experimental.list_physical_devices("GPU")
+tf.config.experimental.set_memory_growth(gpus[0], True)
+
+
 os.environ["PATH"] += os.pathsep + 'C:/Graphviz/bin/'
 
 NormalDense = Dense
