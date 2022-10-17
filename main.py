@@ -31,7 +31,7 @@ def main():
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
     mode = "training"
-    model_path = None #r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\..."
+    model_path = None#r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\221017_133344__debug_CP_DQN_A57"
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
@@ -41,13 +41,16 @@ def main():
     # If you want a CQL agent to learn from demonstrations, an environment can be used to evaluate the model on a
     # regular basis. Please provide a path or type None to connect directly to the Unity Editor. Otherwise, type
     # 'NoEnv' to proceed without evaluation.
+    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\Pyramids\Env.exe"
     #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\3DBall\Skiing.exe"
 
-    environment_path = r"CartPole-v1"
-    # environment_path = r"LunarLander-v2"
-    #environment_path = r"MountainCar-v0"
+    #environment_path = r"CartPole-v1"
+    #environment_path = r"LunarLander-v2"
+    #environment_path = r"LunarLanderContinuous-v2"
+    environment_path = r"MountainCar-v0"
     #environment_path = r"MountainCarContinuous-v0"
-    #environment_path = r"Humanoid-v4"
+    # environment_path = r"Humanoid-v4"
+    #environment_path = r"InvertedPendulum-v4"
 
     # - Training Algorithm -
     # This is the core learning algorithm behind the RL Agent. While Deep Q-Learning / Deep Q Networks (DQN) presumably
@@ -64,7 +67,7 @@ def main():
     # The exploration algorithm helps the RL Agent to explore the environment by occasionally choosing suboptimal
     # actions or giving reward bonuses to unseen states instead of exploiting the current knowledge.
     # Choose from "None", "EpsilonGreedy", "ICM", "RND", "ENM", "NGU", "ECR", "NGUr"
-    exploration_algorithm = "NGUr"
+    exploration_algorithm = "NGU"
 
     # - Meta Learning Algorithm -
     # The meta learning algorithm helps the RL Agent to learn the most efficient way of learning.
@@ -89,7 +92,7 @@ def main():
     preprocessing_path = None  #r"C:\PGraf\Arbeit\RL\SemanticSegmentation\vae\models\210809_101443_VAE_encoder_235"
 
     # - Misc -
-    trainer.save_all_models = False  # Determines if all models or only the actor will be saved during training
+    trainer.save_all_models = True  # Determines if all models or only the actor will be saved during training
     trainer.remove_old_checkpoints = True  # Determines if old model checkpoints will be overwritten
     # endregion
 

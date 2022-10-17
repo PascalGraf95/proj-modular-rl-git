@@ -28,13 +28,13 @@ ddpg:
     TrainingInterval: 64
 dqn:
     Recurrent: true
-    BurnIn: 2
+    BurnIn: 10
     AdaptiveSequenceLength: false
     ActionFeedback: true
     RewardFeedback: true
     PolicyFeedback: true
-    SequenceLength: 10
-    Overlap: 4
+    SequenceLength: 50
+    Overlap: 17
     ActorNum: 8
     ClipGrad: 10.0
     BatchSize: 32
@@ -53,66 +53,7 @@ dqn:
         MaxIntRewardScaling: 0.3
         ClusterDistance: 0.008
         KernelEpsilon: 0.01
-        MaximumSimilarity: 3
-        EpisodicMemoryCapacity: 600
-        kECR: 5
-        BetaECR: 1.0
-    MetaLearningParameters:
-        Epsilon: 0.3
-        EpsilonDecay: 0.999
-        EpsilonMin: 0.02
-        StepDown: false
-        NumExplorationPolicies: 12
-        UCBWindowSize: 160
-        EpisodicCounting: true
-    Gamma: 0.997
-    LearningRate: 0.0001
-    NSteps: 5
-    NetworkParameters:
-        DuelingNetworks: true
-        NoisyNetworks: false
-        Filters: 32
-        Units: 128
-        VectorNetworkArchitecture: Dense
-        VisualNetworkArchitecture: CNN
-    NetworkUpdateFrequency: 50
-    ReplayCapacity: 100000
-    ReplayMinSize: 50
-    SyncMode: soft_sync
-    SyncSteps: 500
-    Tau: 0.01
-    PrioritizedReplay: false
-    PriorityAlpha: 0.8
-    RewardNormalization: false
-    TrainingID: CP_DQN_Agent57r
-    TrainingInterval: 4
-
-sac:
-    Recurrent: true
-    BurnIn: 2
-    AdaptiveSequenceLength: false
-    ActionFeedback: true
-    RewardFeedback: true
-    PolicyFeedback: true
-    SequenceLength: 10
-    Overlap: 4
-    ActorNum: 8
-    BatchSize: 64
-    ClipGrad: 10.0
-    ExplorationParameters:
-        FeatureSpaceSize: 18
-        CuriosityScalingFactor: 0.02
-        LearningRate: 0.0001
-        Epsilon: 0.99
-        EpsilonDecay: 0.999
-        EpsilonMin: 0.02
-        StepDown: false
-        ObservationNormalization: false
-        kNearest: 10
-        MaxIntRewardScaling: 0.3
-        ClusterDistance: 0.008
-        KernelEpsilon: 0.01
-        MaximumSimilarity: 3
+        MaximumSimilarity: 4
         EpisodicMemoryCapacity: 600
         kECR: 5
         BetaECR: 1.0
@@ -125,8 +66,67 @@ sac:
         UCBWindowSize: 160
         EpisodicCounting: true
     Gamma: 0.99
-    LearningRateActor: 0.0005
-    LearningRateCritic: 0.0005
+    LearningRate: 0.0001
+    NSteps: 5
+    NetworkParameters:
+        DuelingNetworks: true
+        NoisyNetworks: false
+        Filters: 32
+        Units: 64
+        VectorNetworkArchitecture: Dense
+        VisualNetworkArchitecture: CNN
+    NetworkUpdateFrequency: 50
+    ReplayCapacity: 100000
+    ReplayMinSize: 50
+    SyncMode: soft_sync
+    SyncSteps: 500
+    Tau: 0.01
+    PrioritizedReplay: true
+    PriorityAlpha: 0.8
+    RewardNormalization: false
+    TrainingID: MC_DQN_A57
+    TrainingInterval: 4
+
+sac:
+    Recurrent: true
+    BurnIn: 10
+    AdaptiveSequenceLength: false
+    ActionFeedback: true
+    RewardFeedback: true
+    PolicyFeedback: true
+    SequenceLength: 50
+    Overlap: 17
+    ActorNum: 8
+    BatchSize: 32
+    ClipGrad: 10.0
+    ExplorationParameters:
+        FeatureSpaceSize: 18
+        CuriosityScalingFactor: 0.02
+        LearningRate: 0.0001
+        Epsilon: 0.99
+        EpsilonDecay: 0.999
+        EpsilonMin: 0.02
+        StepDown: false
+        ObservationNormalization: false
+        kNearest: 10
+        MaxIntRewardScaling: 0.1
+        ClusterDistance: 0.008
+        KernelEpsilon: 0.01
+        MaximumSimilarity: 3
+        EpisodicMemoryCapacity: 600
+        kECR: 5
+        BetaECR: 0.5
+    MetaLearningParameters:
+        Epsilon: 0.3
+        EpsilonDecay: 0.999
+        EpsilonMin: 0.02
+        StepDown: false
+        NumExplorationPolicies: 12
+        UCBWindowSize: 160
+        EpisodicCounting: false
+    Gamma: 0.99
+    LearningRateActor: 0.0001
+    LearningRateCritic: 0.0001
     LogAlpha: -3.0
     NSteps: 5
     AdaptiveExploration: true
@@ -134,7 +134,7 @@ sac:
     SelfPlayNetworkUpdateFrequency: 1000
     NetworkParameters:
         Filters: 32
-        Units: 128
+        Units: 64
         ActorVectorNetworkArchitecture: Dense
         ActorVisualNetworkArchitecture: CNN
         CriticVectorNetworkArchitecture: Dense
@@ -147,7 +147,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: _SAC_Debug
+    TrainingID: MC_SAC_NGUr-raw
     TrainingInterval: 4
 
 cql:

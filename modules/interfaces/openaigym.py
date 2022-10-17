@@ -104,7 +104,7 @@ class OpenAIGymInterface:
                 OpenAIGymInterface.done, OpenAIGymInterface.info = env.step(actions[0])
 
 if __name__ == '__main__':
-    env = gym.make('Pusher-v4')
+    env = gym.make('LunarLander-v2')
     OpenAIGymInterface.reset(env)
     print(OpenAIGymInterface.get_action_shape(env, None))
     print(OpenAIGymInterface.get_action_type(env))

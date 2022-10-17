@@ -397,7 +397,7 @@ class NeverGiveUp(ExplorationAlgorithm):
 
         # Check for similarity boundaries and return intrinsic episodic reward
         if np.isnan(similarity) or (similarity > self.similarity_max):
-            self.episodic_memory.pop()  # Only keep relevant embeddings
+            #self.episodic_memory.pop()  # Only keep relevant embeddings
             enm_reward = 0
         else:
             # 1/similarity to encourage visiting states with lower similarity

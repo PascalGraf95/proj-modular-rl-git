@@ -405,7 +405,7 @@ class SACLearner(Learner):
         # Training Target Calculation with standard TD-Error + Temperature Parameter
         critic_target = (critic_target_prediction - self.alpha * next_log_prob) * (1 - done_batch)
 
-        y = reward_batch + (self.gamma ** self.n_steps) * critic_target
+        y = reward_batch + np.multiply((self.gamma ** self.n_steps), critic_target)
 
         # Possible Reward Normalization
         if self.reward_normalization:
@@ -417,7 +417,7 @@ class SACLearner(Learner):
             eta = 0.9
             sample_errors = eta * np.max(sample_errors[:, self.burn_in:], axis=1) + \
                             (1 - eta) * np.mean(sample_errors[:, self.burn_in:], axis=1)
-        sample_errors = np.sum(sample_errors, axis=1)
+        #sample_errors = np.sum(sample_errors, axis=1)
 
         # Calculate Critic 1 and 2 Loss, utilizes custom mse loss function defined in Trainer-class
         value_loss1 = self.critic1.train_on_batch([*state_batch, action_batch], y)
@@ -431,7 +431,11 @@ class SACLearner(Learner):
             critic_prediction1 = self.critic1([*state_batch, new_actions])
             critic_prediction2 = self.critic2([*state_batch, new_actions])
             critic_prediction = tf.minimum(critic_prediction1, critic_prediction2)
-            policy_loss = tf.reduce_mean(self.alpha * log_prob[:, self.burn_in:] - critic_prediction[:, self.burn_in:])
+            if self.recurrent:
+                policy_loss = tf.reduce_mean(
+                    self.alpha * log_prob[:, self.burn_in:] - critic_prediction[:, self.burn_in:])
+            else:
+                policy_loss = tf.reduce_mean(self.alpha * log_prob - critic_prediction)
 
         actor_grads = tape.gradient(policy_loss, self.actor_network.trainable_variables)
         self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor_network.trainable_variables))
@@ -493,8 +497,8 @@ class SACLearner(Learner):
                     self.critic_target2.set_weights(self.critic2.get_weights())
                 elif "Actor" in file_name:
                     self.actor_network = load_model(os.path.join(path, file_name), compile=False)
-            if not self.actor_network or not self.critic1 or not self.critic2:
-                raise FileNotFoundError("Could not find all necessary model files.")
+            '''if not self.actor_network or not self.critic1 or not self.critic2:
+                raise FileNotFoundError("Could not find all necessary model files.")'''
         else:
             raise NotADirectoryError("Could not find directory or file for loading models.")
 

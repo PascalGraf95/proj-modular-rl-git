@@ -144,6 +144,9 @@ class Trainer:
         fashion utilizing the ray library."""
         # Initialize ray for parallel multiprocessing.
         ray.init()
+        # Alternatively, use the following code line to enable debugging (with ray >= 2.0.X)
+        # ray.init(logging_level=logging.INFO, local_mode=True)
+
         # If the connection is established directly with the Unity Editor or if we are in testing mode, override
         # the number of actors with 1.
         if not environment_path or mode == "testing" or mode == "fastTesting" or environment_path == "Unity":
@@ -156,9 +159,9 @@ class Trainer:
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
         # returns 0. If the Meta-Controller is used, a family of exploration policies is created, where the controller
         # later on can dynamically choose from.
-        agent57_related_exploration_algorithms = ["NGU", "ENM", "RND", "ECR", "NGUr"]
+        intrinsic_exploration_algorithms = ["NGU", "ENM", "RND", "ECR", "NGUr"]
         if actor_num == 1 and mode == "training":
-            if exploration_algorithm in agent57_related_exploration_algorithms:
+            if exploration_algorithm in intrinsic_exploration_algorithms:
                 if meta_learning_algorithm == "MetaController":
                     # Meta-Controller chooses from a range of exploration policies
                     number_of_policies = self.trainer_configuration["MetaLearningParameters"].get("NumExplorationPolicies")
@@ -171,7 +174,7 @@ class Trainer:
             else:
                 exploration_degree = [1.0]
         elif mode == "training":
-            if exploration_algorithm in agent57_related_exploration_algorithms:
+            if exploration_algorithm in intrinsic_exploration_algorithms:
                 if meta_learning_algorithm == "MetaController":
                     # Meta-Controller chooses from a range of exploration policies
                     number_of_policies = self.trainer_configuration["MetaLearningParameters"].get("NumExplorationPolicies")
@@ -186,24 +189,27 @@ class Trainer:
         else:
             exploration_degree = np.linspace(0, 1, actor_num)
 
-        # Paste the exploration degree into the trainer configuration
+        # Pass the exploration degree to the trainer configuration
         self.trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
 
-        # A Meta-Controller adapts the agents exploration policy. Therefore, it requires the agent inputs to be extended
-        # manually by the exploration policy used within the respective timestep.
-        if meta_learning_algorithm == "MetaController":
+        # Meta-Controller adapts the agents' exploration policy. Therefore, it requires the agent inputs to be extended
+        # manually by the exploration policy index used within the respective timestep.
+        if meta_learning_algorithm == "MetaController" and mode == "training":
             self.trainer_configuration["PolicyFeedback"] = True
-            print("\n\nExploration policy feedback activated as Meta-Controller is in use.\n\n")
 
-        # Feedbacks in form of the exploration policy and the rewards is only compatible whilst using intrinsic
-        # exploration algorithms. Moreover meta_learning through meta-controller is automatically disabled.
-        if exploration_algorithm not in agent57_related_exploration_algorithms:
+        # Extension of agent inputs to accept values in addition to the environment observations (exploration policy
+        # index, ext. reward, int. reward) is only compatible with usage of intrinsic exploration algorithms. Moreover,
+        # meta_learning through meta-controller is also disabled if intrinsic expl. algorithms not being used.
+        if exploration_algorithm not in intrinsic_exploration_algorithms and mode == "training":
+            self.trainer_configuration["IntrinsicExploration"] = False
             self.trainer_configuration["PolicyFeedback"] = False
             self.trainer_configuration["RewardFeedback"] = False
-            print("\n\nExploration Policy and reward feedback deactivated as the necessary exploration algorithms"
-                  "are not in use.\n\n")
+            print("\n\nExploration policy feedback and reward feedback automatically disabled as no intrinsic"
+                  "exploration algorithm is in use.\n\n")
             if meta_learning_algorithm == "MetaController":
                 meta_learning_algorithm = "None"
+        else:
+            self.trainer_configuration["IntrinsicExploration"] = True
 
         # - Actor Instantiation -
         # Create the desired number of actors using the ray "remote"-function. Each of them will construct their own
@@ -338,7 +344,7 @@ class Trainer:
             # Receiving the latest state from its environment each actor chooses an action according to its policy
             # and/or its exploration algorithm. Furthermore, the reward and the info about the environment state (done)
             # is processed and stored in a local replay buffer for each actor.
-            actors_ready = [actor.play_one_train_step.remote(training_step) for actor in self.actors]
+            actors_ready = [actor.play_one_step.remote(training_step, mode="training") for actor in self.actors]
             # endregion
 
             # region --- Global Buffer and Logger ---
@@ -489,7 +495,7 @@ class Trainer:
             # Receiving the latest state from its environment each actor chooses an action according to its policy
             # and/or its exploration algorithm. Furthermore, the reward and the info about the environment state (done)
             # is processed and stored in a local replay buffer for each actor.
-            actors_ready = [actor.play_one_train_step.remote() for actor in self.actors]
+            actors_ready = [actor.play_one_step.remote(mode="training") for actor in self.actors]
             # endregion
 
             # region --- Curriculum Update ---
@@ -590,6 +596,6 @@ class Trainer:
 
         while True:
             # Receiving the latest state from its environment each actor chooses an action according to its policy.
-            actors_ready = [actor.play_one_test_step.remote(0) for actor in self.actors]
+            actors_ready = [actor.play_one_step.remote(0, mode="testing") for actor in self.actors]
             ray.wait(actors_ready)
     # endregion
