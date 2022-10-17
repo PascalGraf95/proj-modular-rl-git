@@ -522,7 +522,11 @@ class SACLearner(Learner):
             critic_prediction1 = self.critic1([*state_batch, new_actions])
             critic_prediction2 = self.critic2([*state_batch, new_actions])
             critic_prediction = tf.minimum(critic_prediction1, critic_prediction2)
-            policy_loss = tf.reduce_mean(self.alpha * log_prob[:, self.burn_in:] - critic_prediction[:, self.burn_in:])
+            if self.recurrent:
+                policy_loss = tf.reduce_mean(
+                    self.alpha * log_prob[:, self.burn_in:] - critic_prediction[:, self.burn_in:])
+            else:
+                policy_loss = tf.reduce_mean(self.alpha * log_prob - critic_prediction)
 
         actor_grads = tape.gradient(policy_loss, self.actor_network.trainable_variables)
         self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor_network.trainable_variables))
