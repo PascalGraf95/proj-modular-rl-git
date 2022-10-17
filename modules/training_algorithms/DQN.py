@@ -70,9 +70,21 @@ class DQNActor(Actor):
             else:
                 target_prediction = self.critic_network(next_state_batch)
                 y = self.critic_network(state_batch).numpy()
-            target_batch = reward_batch + \
-                           (self.gamma ** self.n_steps) * np.max(target_prediction, axis=1, keepdims=True) * (
-                                       1 - done_batch)
+
+            # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains an
+            # idx giving the information which exploration policy was used during acting. This exploration policy
+            # contains the parameters gamma (n-step learning) and beta (intrinsic reward scaling factor).
+            if self.recurrent and self.policy_feedback:
+                self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
+                                       self.critic_prediction_network.output_shape[-1]))
+                # Get gammas through saved exploration policy indices within the sequences
+                for idx, sequence in enumerate(state_batch[-1]):
+                    self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
+
+            target_batch = reward_batch + np.multiply(np.multiply((self.gamma ** self.n_steps),
+                                                                  np.max(target_prediction, axis=1, keepdims=True)),
+                                                      (1 - done_batch))
+
             if self.recurrent:
                 time_step_array = np.arange(self.sequence_length)
                 mesh_x, mesh_y = np.meshgrid(time_step_array, batch_array)
@@ -111,6 +123,8 @@ class DQNActor(Actor):
         network_parameters[0]['Filters'] = network_settings["Filters"]
         network_parameters[0]['Units'] = network_settings["Units"]
         network_parameters[0]['TargetNetwork'] = False
+        network_parameters[0]['DuelingNetworks'] = network_settings["DuelingNetworks"]
+        network_parameters[0]['NoisyNetworks'] = network_settings["NoisyNetworks"]
         # - Input / Output / Initialization -
         network_parameters[0]['Input'] = environment_parameters.get('ObservationShapes')
         network_parameters[0]['Output'] = [environment_parameters.get('ActionShape')]
@@ -205,6 +219,8 @@ class DQNLearner(Learner):
         network_parameters[0]['Filters'] = network_settings["Filters"]
         network_parameters[0]['Units'] = network_settings["Units"]
         network_parameters[0]['TargetNetwork'] = True
+        network_parameters[0]['DuelingNetworks'] = network_settings["DuelingNetworks"]
+        network_parameters[0]['NoisyNetworks'] = network_settings["NoisyNetworks"]
         # - Input / Output / Initialization -
         network_parameters[0]['Input'] = environment_parameters.get('ObservationShapes')
         network_parameters[0]['Output'] = [environment_parameters.get('ActionShape')]
@@ -252,6 +268,16 @@ class DQNLearner(Learner):
             return None, None, self.training_step
         # endregion
 
+        # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains an idx
+        # giving the information which exploration policy was used during acting. This exploration policy contains the
+        # parameters gamma (n-step learning) and beta (intrinsic reward scaling factor).
+        if self.policy_feedback:
+            self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
+                                   self.critic.output_shape[-1]))
+            # Get gammas through saved exploration policy indices within the sequences
+            for idx, sequence in enumerate(state_batch[-1]):
+                self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
+
         # If the state is not terminal:
         # t = 𝑟 + 𝛾 * 𝑚𝑎𝑥_𝑎′ 𝑄̂(𝑠′,𝑎′) else t = r
         # target_prediction: (batch_size, time_steps, action_size) or (batch_size, action_size)
@@ -261,19 +287,17 @@ class DQNLearner(Learner):
             model_prediction_argmax = np.argmax(self.critic(next_state_batch).numpy(), axis=-1)
             if self.recurrent:
                 # target_batch: (32, 10, 1) or (32, 1)
-                target_batch = reward_batch + \
-                               (self.gamma ** self.n_steps) * \
-                               np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1) * \
-                               (1 - done_batch)
+                target_batch = reward_batch + np.multiply(np.multiply((self.gamma ** self.n_steps),
+                               np.expand_dims(target_prediction[mesh_y, mesh_x, model_prediction_argmax], axis=-1)),
+                                                          (1 - done_batch))
             else:
-                target_batch = reward_batch + \
-                               (self.gamma ** self.n_steps) * \
-                               np.expand_dims(target_prediction[batch_array, model_prediction_argmax], axis=-1) * \
-                               (1 - done_batch)
+                target_batch = reward_batch + np.multiply(np.multiply((self.gamma ** self.n_steps),
+                               np.expand_dims(target_prediction[batch_array, model_prediction_argmax], axis=-1)),
+                                                          (1 - done_batch))
         else:
-            target_batch = reward_batch + \
-                           (self.gamma ** self.n_steps) * tf.reduce_max(target_prediction, axis=-1, keepdims=True) * (
-                                       1 - done_batch)
+            target_batch = reward_batch + np.multiply(np.multiply((self.gamma ** self.n_steps),
+                                                                  tf.reduce_max(target_prediction, axis=-1,
+                                                                                keepdims=True)), (1 - done_batch))
 
         # Set the Q value of the chosen action to the target.
         # y: (32, 10, 5) or (32, 5)
@@ -284,12 +308,15 @@ class DQNLearner(Learner):
         else:
             y[batch_array, action_batch[:, 0].astype(int)] = target_batch[:, 0]
 
-        # Train the network on the training batch.
-        sample_errors = np.sum(np.abs(y - self.critic(state_batch)), axis=1)
+        # Calculate sample errors
+        sample_errors = np.abs(y - self.critic(state_batch))
         if self.recurrent:
             eta = 0.9
             sample_errors = eta * np.max(sample_errors[:, self.burn_in:], axis=1) + \
                             (1 - eta) * np.mean(sample_errors[:, self.burn_in:], axis=1)
+        sample_errors = np.sum(sample_errors, axis=1)
+
+        # Train the network on the training batch.
         value_loss = self.critic.train_on_batch(state_batch, y)
 
         # Update target network weights

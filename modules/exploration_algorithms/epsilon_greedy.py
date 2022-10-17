@@ -22,7 +22,7 @@ class EpsilonGreedy(ExplorationAlgorithm):
     def __init__(self, action_shape, state_shape, action_space, parameters, trainer_configuration, idx):
         self.action_shape = action_shape
         self.action_space = action_space
-        self.epsilon = parameters["Epsilon"]*parameters["ExplorationDegree"]
+        self.epsilon = parameters["Epsilon"]*parameters["ExplorationDegree"][idx]
         self.epsilon_decay = parameters["EpsilonDecay"]
         self.epsilon_min = parameters["EpsilonMin"]
         self.step_down = parameters["StepDown"]
@@ -34,7 +34,7 @@ class EpsilonGreedy(ExplorationAlgorithm):
         config_dict = EpsilonGreedy.__dict__
         return ExplorationAlgorithm.get_config(config_dict)
 
-    def act(self, decision_steps):
+    def act(self, decision_steps, terminal_steps):
         if len(decision_steps.agent_id):
             if np.random.rand() <= self.epsilon:
                 if self.action_space == "DISCRETE":
