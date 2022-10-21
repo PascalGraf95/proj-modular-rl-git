@@ -10,11 +10,10 @@ class GameResultsSideChannel(SideChannel):
     Side-Channel to communicate game results to determine Elo ratings with Airhockey environments.
     """
     def __init__(self) -> None:
-        super().__init__(uuid.UUID("2f487771-440f-4ffc-afd9-486650eb5b7b"))   
+        super().__init__(uuid.UUID("2f487771-440f-4ffc-afd9-486650eb5b7b"))
+        self.game_results = [0, 0, 0] 
 
     # implement this method to receive messages from Unity
     def on_message_received(self, msg: IncomingMessage) -> None:
         self.game_results = msg.read_float32_list()
-
-    
-
+        print(f"Received game result:  Agent score {self.game_results[0]}, Human score {self.game_results[1]}")

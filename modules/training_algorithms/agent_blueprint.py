@@ -5,6 +5,7 @@ from ..misc.logger import LocalLogger
 from ..misc.replay_buffer import LocalFIFOBuffer, LocalRecurrentBuffer
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
 from ..sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
+from ..sidechannel.airhockey_sidechannel import GameResultsSideChannel
 from ..curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
 import time
@@ -122,9 +123,10 @@ class Actor:
     def connect_to_unity_environment(self):
         self.engine_configuration_channel = EngineConfigurationChannel()
         self.curriculum_side_channel = CurriculumSideChannelTaskInfo()
+        self.sidechannel_airhockey = GameResultsSideChannel()
         self.environment = UnityEnvironment(file_name=self.environment_path,
                                             side_channels=[self.engine_configuration_channel,
-                                                           self.curriculum_side_channel], base_port=self.port)
+                                                           self.curriculum_side_channel, self.sidechannel_airhockey], base_port=self.port)
         self.environment.reset()
         return True
 
