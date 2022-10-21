@@ -16,4 +16,6 @@ class GameResultsSideChannel(SideChannel):
     # implement this method to receive messages from Unity
     def on_message_received(self, msg: IncomingMessage) -> None:
         self.game_results = msg.read_float32_list()
+        # convert to int
+        self.game_results = [int(x) for x in self.game_results]
         print(f"Received game result:  Agent score {self.game_results[0]}, Human score {self.game_results[1]}")
