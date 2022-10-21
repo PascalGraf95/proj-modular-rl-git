@@ -11,8 +11,10 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": true,
+            "python.autoComplete.extraPaths": ["./modules"],
             "args": [
-                "-m", "example"
+                "--model_path", "C:\\Users\\AI-Runner\\Desktop\\220824_205341_SAC_Airhockey_Selfplay_Multiagent",
+                "--mode", "testing"                
               ]
         }
     ]
