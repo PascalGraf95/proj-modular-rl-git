@@ -151,42 +151,19 @@ class Trainer:
         # If there is only one actor in training mode the degree of exploration should start at maximum. Otherwise,
         # each actor will be instantiated with a different degree of exploration. This only has an effect if the
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
-        # returns 0.
-        if actor_num == 1 and mode == "training":
-            exploration_degree = [1.0]
-        else:
-            exploration_degree = np.linspace(0, 1, actor_num)
-
-        # If there is only one actor in training mode the degree of exploration should start at maximum. Otherwise,
-        # each actor will be instantiated with a different degree of exploration. This only has an effect if the
-        # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
         # returns 0. If the Meta-Controller is used, a family of exploration policies is created, where the controller
         # later on can dynamically choose from.
         intrinsic_exploration_algorithms = ["ENM"]  # Will contain NGU, ECR, NGU-r, RND-alter with future updates...
-        if actor_num == 1 and mode == "training":
-            if exploration_algorithm in intrinsic_exploration_algorithms:
-                # One fixed exploration policy as there is only one actor
-                number_of_policies = 1
-                # Calculate exploration policy values based on agent57's concept
-                exploration_degree = get_exploration_policies(num_policies=number_of_policies,
-                                                              beta_max=self.trainer_configuration[
-                                                                  "ExplorationParameters"].get(
-                                                                  "MaxIntRewardScaling"))
-            else:
-                exploration_degree = [1.0]
-        elif mode == "training":
-            if exploration_algorithm in intrinsic_exploration_algorithms:
-                # One fixed exploration policy per actor if there is no meta-controller
-                number_of_policies = self.trainer_configuration["ActorNum"]
-                # Calculate exploration policy values based on agent57's concept
-                exploration_degree = get_exploration_policies(num_policies=number_of_policies,
-                                                              beta_max=self.trainer_configuration[
-                                                                  "ExplorationParameters"].get(
-                                                                  "MaxIntRewardScaling"))
-            else:
-                exploration_degree = np.linspace(0, 1, actor_num)
-        else:
-            exploration_degree = np.linspace(0, 1, actor_num)
+
+        # Calculate exploration policy values based on agent57's concept
+        # The exploration is now a list that contains a dictionary for each actor.
+        # Each dictionary contains a value for beta and gamma (utilized for intrinsic motivation)
+        # as well as a scaling values (utilized for epsilon greedy).
+        exploration_degree = get_exploration_policies(num_policies=actor_num,
+                                                      mode=mode,
+                                                      beta_max=self.trainer_configuration[
+                                                          "ExplorationParameters"].get(
+                                                          "MaxIntRewardScaling"))
 
         # Pass the exploration degree to the trainer configuration
         self.trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
@@ -332,7 +309,7 @@ class Trainer:
             # Receiving the latest state from its environment each actor chooses an action according to its policy
             # and/or its exploration algorithm. Furthermore, the reward and the info about the environment state (done)
             # is processed and stored in a local replay buffer for each actor.
-            actors_ready = [actor.play_one_step.remote(training_step, mode="training") for actor in self.actors]
+            actors_ready = [actor.play_one_step.remote(training_step) for actor in self.actors]
             # endregion
 
             # region --- Global Buffer and Logger ---
@@ -483,7 +460,7 @@ class Trainer:
             # Receiving the latest state from its environment each actor chooses an action according to its policy
             # and/or its exploration algorithm. Furthermore, the reward and the info about the environment state (done)
             # is processed and stored in a local replay buffer for each actor.
-            actors_ready = [actor.play_one_step.remote(mode="training") for actor in self.actors]
+            actors_ready = [actor.play_one_step.remote() for actor in self.actors]
             # endregion
 
             # region --- Curriculum Update ---
@@ -584,6 +561,6 @@ class Trainer:
 
         while True:
             # Receiving the latest state from its environment each actor chooses an action according to its policy.
-            actors_ready = [actor.play_one_step.remote(0, mode="testing") for actor in self.actors]
+            actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]
             ray.wait(actors_ready)
     # endregion

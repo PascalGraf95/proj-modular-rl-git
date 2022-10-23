@@ -26,10 +26,12 @@ def getsize(obj):
         objects = get_referents(*need_referents)
     return size
 
-def get_exploration_policies(num_policies: int = 1, beta_max: float = 0.3, gamma_max: float = 0.9999,
-                             gamma_middle: float = 0.997, gamma_min: float = 0.99):
+
+def get_exploration_policies(num_policies: int = 1, mode: str = "training", beta_max: float = 0.3,
+                             gamma_max: float = 0.9999, gamma_middle: float = 0.997, gamma_min: float = 0.99):
     """Calculate exploration policies consisting of (beta, gamma) pairs. Beta describes the intrinsic reward weighting
-    in comparison to the basic environment reward and gamma the discount factor.
+    in comparison to the basic environment reward and gamma describes the discount factor. Beta is modeled as sigmoid
+    function between 0 and beta max, gamma is modeled as negative exponential function between gamma_max and gamma_min.
 
     Parameters
     ----------
@@ -50,26 +52,33 @@ def get_exploration_policies(num_policies: int = 1, beta_max: float = 0.3, gamma
     -------
     dict_exploration_policies: dict
         Dictionary containing the respective beta and gamma values.
-        Data structure: {0: {'beta': _BETA_VALUE_MIN, 'gamma': _GAMMA_VALUE_MAX},
+        Data structure: [0: {'beta': _BETA_VALUE_MIN, 'gamma': _GAMMA_VALUE_MAX},
                          1: {'beta': _BETA_VALUE_AT_INDEX_1, 'gamma': _GAMMA_VALUE_AT_INDEX_1},
                          2: {'beta': _BETA_VALUE_AT_INDEX_2, 'gamma': _GAMMA_VALUE_AT_INDEX_2},
                          ...,
-                         total number of policies: {'beta': _BETA_VALUE_MAX, 'gamma': _GAMMA_VALUE_MIN}}
+                         total number of policies: {'beta': _BETA_VALUE_MAX, 'gamma': _GAMMA_VALUE_MIN}]
     """
 
     assert num_policies > 0, "Please specify a policy number larger than 0."
 
     # Calculate exploration policy pairs (beta, gamma)
-    dict_exploration_policies = {}
+    dict_exploration_policies = []
     if num_policies == 1:
-        # Set policy values to min values if only one single exploration policy is used
-        dict_exploration_policies[0] = {'beta': 0, 'gamma': gamma_max}
+        if mode == "training":
+            # Set policy values to min values if only one single exploration policy is used
+            dict_exploration_policies.append({'beta': 0, 'gamma': gamma_max, 'scaling': 1})
+        else:
+            # Set policy values to min values if only one single exploration policy is used
+            dict_exploration_policies.append({'beta': 0, 'gamma': gamma_max, 'scaling': 0})
         return dict_exploration_policies
     else:
-        # Otherwise iterate through policy indices and calculate respective betas and gammas
+        scaling_distribution = np.linspace(0, 1, num_policies)
+        # Otherwise, iterate through policy indices and calculate respective betas and gammas
         for idx in range(num_policies):
-            dict_exploration_policies[idx] = {'beta': get_beta(num_policies, beta_max, idx),
-                                              'gamma': get_gamma(num_policies, gamma_max, gamma_middle, gamma_min, idx)}
+            dict_exploration_policies.append({'beta': get_beta(num_policies, beta_max, idx),
+                                              'gamma': get_gamma(num_policies, gamma_max, gamma_middle,
+                                                                 gamma_min, idx),
+                                              'scaling': scaling_distribution[idx]})
         return dict_exploration_policies
 
 

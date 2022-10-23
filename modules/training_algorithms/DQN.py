@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 
 import numpy as np
-from tensorflow.keras.models import load_model
-from tensorflow.keras import Model
-from tensorflow.keras.optimizers import Adam
+from tensorflow import keras
+from keras.models import load_model
+from keras import Model
+from keras.optimizers import Adam
 from ..misc.network_constructor import construct_network
-from tensorflow.keras.models import clone_model
+from keras.models import clone_model
 from .agent_blueprint import Actor, Learner
 from datetime import datetime
 import os
 import ray
 import tensorflow as tf
-from tensorflow import keras
 
 
 @ray.remote

@@ -78,12 +78,12 @@ dqn:
 
 sac:
     Recurrent: true
-    BurnIn: 2
+    BurnIn: 0
     AdaptiveSequenceLength: false
     ActionFeedback: true
-    RewardFeedback: false
-    PolicyFeedback: false
-    SequenceLength: 10
+    RewardFeedback: true
+    PolicyFeedback: true
+    SequenceLength: 12
     Overlap: 3
     ActorNum: 8
     BatchSize: 32
@@ -126,7 +126,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: _debug_SAC_InvertedPendulum_EpsGreedy_actFeedback
+    TrainingID: _debug_SAC_3DBall_EpsGreedy_actFeedback
     TrainingInterval: 1
 cql:
     Recurrent: false

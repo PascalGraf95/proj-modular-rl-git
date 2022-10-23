@@ -47,7 +47,6 @@ class Actor:
         # requested from the learner and how long it's been since the last update
         self.network_update_requested = False
         self.steps_taken_since_network_update = 0
-        self.steps_taken_since_clone_network_update = 0
         self.network_update_frequency = 1000
         self.clone_network_update_frequency = 1000
         self.last_clone_update_step = -1
@@ -109,12 +108,11 @@ class Actor:
         self.prior_extrinsic_reward = 0
         self.prior_action = None
         self.exploration_degree = None
-        self.exploration_policy_idx = None
+        self.exploration_policy_idx = idx
         self.reward_correction_factor = 1
         self.steps_since_update = 0
 
         self.episode_begin = True
-        self.first_iteration = True
 
         # - Curriculum Learning Strategy & Engine Side Channel -
         self.engine_configuration_channel = None
@@ -166,6 +164,7 @@ class Actor:
 
     # region Property Query
     def is_minimum_capacity_reached(self):
+        # ToDo: Determine influence on training speed when chaning this parameter.
         return len(self.local_buffer) >= 10
 
     def is_network_update_requested(self, training_step):
@@ -322,12 +321,8 @@ class Actor:
         self.action_type = self.environment_configuration["ActionType"]
         self.action_shape = self.environment_configuration["ActionShape"]
 
-        # Initialize prior actions randomly if fed back as network inputs.
-        if self.action_feedback:
-            if self.action_type == "DISCRETE":
-                self.prior_action = np.random.randint(0, self.action_shape, (1,))
-            else:
-                self.prior_action = np.random.uniform(-1.0, 1.0, (self.action_shape,))
+        # Initialize prior actions randomly and prior rewards to 0, if action or reward feedback is enabled.
+        self.reset_observation_extensions()
 
         # Extend observation shapes given by environment through additional network inputs.
         modified_observation_shapes = modify_observation_shapes(self.environment_configuration["ObservationShapes"],
@@ -350,6 +345,7 @@ class Actor:
         # Instantiate a local logger and buffer.
         self.local_logger = LocalLogger(agent_num=self.agent_number)
         self.instantiate_local_buffer(trainer_configuration)
+        self.modify_local_buffer_gamma()
         return
     # endregion
 
@@ -363,18 +359,36 @@ class Actor:
 
     # region Recurrent Memory State Update and Reset
     def get_lstm_layers(self):
+        # Get the lstm layer in the provided network
+        # Sometimes the layer names vary, a LSTM layer might be called "lstm" or "lstm_2", etc.
+        # Make sure this function does not fail by getting the actual layers name from the network.
+        lstm_layer_name = ""
         if self.actor_network:
-            self.lstm = self.actor_network.get_layer("lstm")
+            for layer in self.actor_network.layers:
+                if "lstm" in layer.name:
+                    lstm_layer_name = layer.name
+            self.lstm = self.actor_network.get_layer(lstm_layer_name)
         elif self.critic_network:
-            self.lstm = self.critic_network.get_layer("lstm")
+            for layer in self.critic_network.layers:
+                if "lstm" in layer.name:
+                    lstm_layer_name = layer.name
+            self.lstm = self.critic_network.get_layer(lstm_layer_name)
 
+        # Get the number of units as well as states in the respective layer.
         self.lstm_units = self.lstm.units
         self.lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                            np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
+
+        # If in self-play there will be a clone of the actor model. Use the same workflow to acquire its
+        # lstm layer as well as unit number and state
         if self.behavior_clone_name:
-            self.clone_lstm = self.clone_actor_network.get_layer("lstm_3")
+            for layer in self.clone_actor_network.layers:
+                if "lstm" in layer.name:
+                    lstm_layer_name = layer.name
+            self.clone_lstm = self.clone_actor_network.get_layer(lstm_layer_name)
             self.clone_lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                                      np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
+
 
     def reset_actor_state(self):
         """This function resets the actors LSTM states to random values at the beginning of a new episode."""
@@ -437,64 +451,51 @@ class Actor:
     # endregion
 
     # region Environment Interaction
-    def play_one_step(self, training_step, mode="training"):
-
+    def play_one_step(self, training_step):
+        # region - Step Acquisition and Pre-Processing -
         # Step acquisition (steps contain states, done_flags and rewards)
         decision_steps, terminal_steps = AgentInterface.get_steps(self.environment, self.behavior_name)
         # Preprocess steps if a respective algorithm has been activated
         decision_steps, terminal_steps = self.preprocessing_algorithm.preprocess_observations(decision_steps,
                                                                                               terminal_steps)
-
         # Register terminal agents, so the hidden LSTM state is reset
         self.register_terminal_agents([a_id - self.agent_id_offset for a_id in terminal_steps.agent_id])
-        # Choose the next action either by exploring or exploiting
-        if mode == "training":
-            # Set/Reset variables and algorithms when agent reaches episodic borders
-            self.episodic_border_routine(terminal_steps)
-            # There are exploration algorithms that calculate intrinsic rewards each timestep
-            if self.intrinsic_exploration:
-                with tf.device(self.device):
-                    # Calculate intrinsic reward
-                    intrinsic_reward = self.exploration_algorithm.act(decision_steps, terminal_steps)
-                # Scale the intrinsic reward through exploration policies' beta.
-                intrinsic_reward *= self.exploration_degree[self.exploration_policy_idx]['beta']
-                # Extend step observation values
-                decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
-                # Some intrinsic exploration algorithms use epsilon greedy on top
-                actions = self.exploration_algorithm.epsilon_greedy(decision_steps)
-            else:
-                intrinsic_reward = 0
-                # Optionally extend step observation values for feedback of last steps' action
-                if self.action_feedback:
-                    decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
-                with tf.device(self.device):
-                    actions = self.exploration_algorithm.act(decision_steps, terminal_steps)
+        # endregion
 
-            if actions is None:
-                actions = self.act(decision_steps.obs,
-                                   agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
-                                   mode=self.mode)
-        else:
+        # region - Exploration and Action Determination -
+        # Set/Reset variables and algorithms when agent reaches episodic borders
+        self.episodic_border_routine(terminal_steps)
+        # There are exploration algorithms that calculate intrinsic rewards each timestep
+        intrinsic_reward = self.calculate_intrinsic_reward(decision_steps, terminal_steps)
+
+        if self.mode != "training":
             # OpenAI's Gym environments require explicit call for rendering
             if AgentInterface.get_interface_name() == "OpenAIGym":
                 self.environment.render()
-            # Values that were fed back as inputs during training must be set manually and according to the saved
-            # weight's name.
-            if self.policy_feedback:
-                self.exploration_policy_idx = 0
-            if self.reward_feedback:
-                intrinsic_reward = 0
-            # Extend step observation values with prior action, extrinsic reward, intrinsic reward, policy idx
-            decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
+
+            # ToDo: Parse the intrinsic reward as well as the exploration policy index from the saved model to the
+            #       model constructor. Until then 0, 0 will be utilized (exploration_policy_idx is set in constructor)
+            intrinsic_reward = 0
+
+        # In case these options have been enabled, the states are augmented with additional information, more precisely:
+        # the last chosen action, the last extrinsic & intrinsic reward as well as the exploration policy index.
+        decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
+        # Try to obtain a new action from the exploration algorithm.
+        actions = self.act_according_to_exploration_algorithm(decision_steps, terminal_steps)
+        # If no action is returned by the exploration algorithm, act greedily according to the actor network
+        if actions is None:
             actions = self.act(decision_steps.obs,
                                agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                mode=self.mode)
-            print(actions)
+        # Save the current values to append to the state in the next iteration via self.extend_observations
+        self.update_prior_metrics(intrinsic_reward, actions, decision_steps, terminal_steps)
+        # endregion
 
-        # Save current values for next iteration
-        self.save_current_metrics(intrinsic_reward, actions, decision_steps, terminal_steps)
-
-        # Do the same for the clone behavior if active
+        # region - Clone Behavior -
+        # The clone model architecture usually is an exact copy of the actor network. The weights however might be
+        # different depending on the provided model path. All steps in terms of step acquisition, preprocessing and
+        # state extension have to be done in the same way as for the original actor.
+        # ToDo: Add Border Routine, Intrinsic Reward Calculation and State Extensions to the clone model region.
         if self.behavior_clone_name:
             # Step acquisition (steps contain states, done_flags and rewards)
             clone_decision_steps, clone_terminal_steps = AgentInterface.get_steps(self.environment,
@@ -510,18 +511,15 @@ class Actor:
             clone_actions = self.act(clone_decision_steps.obs,
                                      agent_ids=[a_id - self.clone_agent_id_offset for a_id in clone_decision_steps.agent_id],
                                      mode=self.mode, clone=True)
-            self.steps_taken_since_clone_network_update += len(clone_decision_steps)
         else:
             clone_actions = None
+        # endregion
 
+        # region - Store interactions to local replay buffers and trackers -
+        # Add the intrinsic reward to the actual rewards if available.
+        reward_terminal = terminal_steps.reward + intrinsic_reward
+        reward_decision = decision_steps.reward + intrinsic_reward
         # Append steps and actions to the local replay buffer
-        if self.intrinsic_exploration and mode == "training":
-            reward_terminal = terminal_steps.reward + intrinsic_reward
-            reward_decision = decision_steps.reward + intrinsic_reward
-        else:
-            reward_terminal = terminal_steps.reward
-            reward_decision = decision_steps.reward
-
         self.local_buffer.add_new_steps(terminal_steps.obs, reward_terminal,
                                         [a_id - self.agent_id_offset for a_id in terminal_steps.agent_id],
                                         step_type="terminal")
@@ -537,21 +535,23 @@ class Actor:
         self.local_logger.track_episode(decision_steps.reward,
                                         [a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                         step_type="decision")
+        # endregion
 
+        # region - Check for reset condition and send actions to environment -
         # If enough steps have been taken, mark agent ready for updated network
         self.steps_taken_since_network_update += len(decision_steps)
-        # If all agents are in a terminal state reset the environment
+        # If all agents are in a terminal state reset the environment actively
         if self.local_buffer.check_reset_condition():
             AgentInterface.reset(self.environment)
             self.local_buffer.done_agents.clear()
-            # self.reset_actor_state()
-        # Otherwise take a step in the environment according to the chosen action
+        # Otherwise, take a step in the environment according to the chosen action
         else:
             try:
                 AgentInterface.step_action(self.environment, self.action_type,
                                            self.behavior_name, actions, self.behavior_clone_name, clone_actions)
             except RuntimeError:
                 print("RUNTIME ERROR")
+        # endregion
         return True
 
     def act(self, states, agent_ids=None, mode="training", clone=False):
@@ -599,7 +599,7 @@ class Actor:
         return self.local_buffer.sample(1, reset_buffer=False, random_samples=True)
     # endregion
 
-    # region Additional exploration functions
+    # region Additional Exploration Functions
     def episodic_border_routine(self, terminal_steps):
         """
         Reset specific variables and algorithms when agent reaches episodic begin or ending.
@@ -609,29 +609,11 @@ class Actor:
         terminal_steps:
             Contains the observation values, reward value and further information about the current step if terminal.
         """
+        # At the beginning of each episode certain values have to be (re)set. The prior action and rewards which
+        # can be utilized to extend the original observations are set to a random value or 0 respectively.
+        # Furthermore, at the very first episode
         if self.episode_begin:
-            # Reset reward and action metrics
-            if self.action_feedback:
-                if self.action_type == "DISCRETE":
-                    self.prior_action = np.random.randint(0, self.action_shape, (1,))
-                else:
-                    self.prior_action = np.random.uniform(-1.0, 1.0, (self.action_shape,))
-            if self.reward_feedback:
-                self.prior_intrinsic_reward = 0
-                self.prior_extrinsic_reward = 0
-
-            # Set new exploration policy index. Done once in the agent's lifetime.
-            # NOTE: If fed back during training and in case of testing, the exploration policy index must be set
-            #       manually to the one trained according to saved network weights.
-            if self.mode == "training":
-                # Set the value according to actor index
-                if self.first_iteration and self.intrinsic_exploration:
-                    self.exploration_policy_idx = self.exploration_algorithm.index
-                    # Additionally set local_buffer's gamma and calculate the individual gamma list per actor
-                    self.local_buffer.gamma = self.exploration_degree[self.exploration_policy_idx]["gamma"]
-                    self.local_buffer.gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
-                    self.first_iteration = False
-
+            self.reset_observation_extensions()
             self.episode_begin = False
 
         # Episode ending reached
@@ -640,6 +622,46 @@ class Actor:
             with tf.device(self.device):
                 # Reset exploration algorithm
                 self.exploration_algorithm.reset()
+
+    def reset_observation_extensions(self):
+        # Reset the prior actions to random values.
+        if self.action_feedback:
+            if self.action_type == "DISCRETE":
+                self.prior_action = np.random.randint(0, self.action_shape, (1,))
+            else:
+                self.prior_action = np.random.uniform(-1.0, 1.0, (self.action_shape,))
+        # Reset the intrinsic as well es extrinsic reward to 0.
+        if self.reward_feedback:
+            self.prior_intrinsic_reward = 0
+            self.prior_extrinsic_reward = 0
+
+    def modify_local_buffer_gamma(self):
+        # Set local_buffer's gamma and calculate the individual gamma list per actor
+        if self.mode == "training":
+            if self.intrinsic_exploration:
+                self.local_buffer.gamma = self.exploration_degree[self.exploration_policy_idx]["gamma"]
+                self.local_buffer.gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
+
+    def act_according_to_exploration_algorithm(self, decision_steps, terminal_steps):
+        if self.mode == "testing" or self.mode == "fastTesting":
+            return None
+        if self.intrinsic_exploration:
+            actions = self.exploration_algorithm.epsilon_greedy(decision_steps)
+        else:
+            with tf.device(self.device):
+                actions = self.exploration_algorithm.act(decision_steps, terminal_steps)
+        return actions
+
+    def calculate_intrinsic_reward(self, decision_steps, terminal_steps):
+        if self.intrinsic_exploration and self.mode == "training":
+            with tf.device(self.device):
+                # Calculate intrinsic reward
+                intrinsic_reward = self.exploration_algorithm.act(decision_steps, terminal_steps)
+                # Scale the intrinsic reward through exploration policies' beta.
+                intrinsic_reward *= self.exploration_degree[self.exploration_policy_idx]['beta']
+                return intrinsic_reward
+        else:
+            return 0
 
     def extend_observations(self, decision_steps, terminal_steps):
         """
@@ -679,7 +701,7 @@ class Actor:
                 terminal_steps.obs.append(np.array([[self.exploration_policy_idx]], dtype=np.float32))
         return decision_steps, terminal_steps
 
-    def save_current_metrics(self, current_intrinsic_reward, actions, decision_steps, terminal_steps):
+    def update_prior_metrics(self, current_intrinsic_reward, actions, decision_steps, terminal_steps):
         """
         Save current step values for upcoming step.
 

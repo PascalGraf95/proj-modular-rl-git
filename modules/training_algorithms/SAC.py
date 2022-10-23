@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 import numpy as np
-from tensorflow.keras.optimizers import Adam
+from tensorflow import keras
+from keras.optimizers import Adam
 from tensorflow import keras
 from .agent_blueprint import Actor, Learner
-from tensorflow.keras.models import load_model
+from keras.models import load_model
 from ..misc.network_constructor import construct_network
 import tensorflow as tf
-from tensorflow.keras.models import clone_model
-from tensorflow.keras import losses
+from keras.models import clone_model
+from keras import losses
 import tensorflow_probability as tfp
 import os
 import csv
@@ -87,14 +88,18 @@ class SACActor(Actor):
             critic_prediction = self.critic_network([*next_state_batch, next_actions])
             critic_target = critic_prediction * (1 - done_batch)
 
-            # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains an idx
-            # giving the information which exploration policy was used during acting. This exploration policy contains the
-            # parameters gamma (n-step learning) and beta (intrinsic reward scaling factor).
+            # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains
+            # an idx giving information which exploration policy was used during acting. This exploration policy
+            # implicitly encodes the parameter gamma (n-step learning) and beta (intrinsic reward scaling factor).
             if self.recurrent and self.policy_feedback:
-                self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
-                                       self.critic_network.output_shape[-1]))
-                # Get gammas through saved exploration policy indices within the sequences
+                # Create an empty array with shape (batch_size, sequence_length, 1)
+                self.gamma = np.empty((np.shape(state_batch[-1])[0], self.sequence_length, 1))
+
+                # The state batch with policy feedback is a list that contains:
+                # [actual state, (action, e_rew, i_rew,) pol_idx]
+                # Iterate through all sequences of gamma in the provided batch
                 for idx, sequence in enumerate(state_batch[-1]):
+                    # Set all gammas for the given sequence to be the gamma from first step in the given sequence.
                     self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
 
             # Train Both Critic Networks
@@ -474,14 +479,18 @@ class SACLearner(Learner):
             return None, None, self.training_step
         # endregion
 
-        # With additional policy feedback, the state batch contains an idx giving the information which exploration
-        # policy was used during acting. This exploration policy contains the parameters gamma (n-step learning) and
-        # beta (intrinsic reward scaling factor).
+        # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains
+        # an idx giving information which exploration policy was used during acting. This exploration policy
+        # implicitly encodes the parameter gamma (n-step learning) and beta (intrinsic reward scaling factor).
         if self.recurrent and self.policy_feedback:
-            self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
-                                   self.critic1.output_shape[-1]))
-            # Get gammas through saved exploration policy indices within the sequences
+            # Create an empty array with shape (batch_size, sequence_length, 1)
+            self.gamma = np.empty((np.shape(state_batch[-1])[0], self.sequence_length, 1))
+
+            # The state batch with policy feedback is a list that contains:
+            # [actual state, (action, e_rew, i_rew,) pol_idx]
+            # Iterate through all sequences of gamma in the provided batch
             for idx, sequence in enumerate(state_batch[-1]):
+                # Set all gammas for the given sequence to be the gamma from first step in the given sequence.
                 self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
 
         # region --- CRITIC TRAINING ---

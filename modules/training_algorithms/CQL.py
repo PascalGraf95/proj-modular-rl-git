@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 import numpy as np
-from tensorflow.keras.optimizers import Adam
 from tensorflow import keras
+from keras.optimizers import Adam
 from .agent_blueprint import Actor, Learner
-from tensorflow.keras.models import load_model
+from keras.models import load_model
 from ..misc.network_constructor import construct_network
 from ..misc.replay_buffer import LocalFIFOBuffer, LocalRecurrentBuffer
 from ..misc.demo_reader import get_demo_files, load_demonstration, steps_from_proto
 import tensorflow as tf
-from tensorflow.keras.models import clone_model
-from tensorflow.keras import losses
+from keras.models import clone_model
+from keras import losses
 import tensorflow_probability as tfp
 import os
 import ray

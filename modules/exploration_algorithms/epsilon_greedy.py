@@ -22,7 +22,7 @@ class EpsilonGreedy(ExplorationAlgorithm):
     def __init__(self, action_shape, state_shape, action_space, parameters, trainer_configuration, idx):
         self.action_shape = action_shape
         self.action_space = action_space
-        self.epsilon = parameters["Epsilon"]*parameters["ExplorationDegree"][idx]
+        self.epsilon = parameters["Epsilon"]*parameters["ExplorationDegree"][idx]["scaling"]
         self.epsilon_decay = parameters["EpsilonDecay"]
         self.epsilon_min = parameters["EpsilonMin"]
         self.step_down = parameters["StepDown"]
