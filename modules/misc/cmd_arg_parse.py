@@ -14,29 +14,30 @@ class CmdArgParse:
                             type=str, required=False, default=None)
         parser.add_argument('-ti', '--trainer_interface', help="Choose from 'MLAgentsV18' (Unity) and 'OpenAIGym'",
                             type=str, required=False, default='MLAgentsV18')
-        parser.add_argument('-ep', '--env_path', help="If you want torun multiple Unity actors in parallel you need to "
-                                                      "specify thepath to the Environment '.exe' here. In case of "
-                                                      "'OpenAIGym'enter the desired env name here instead, "
+        parser.add_argument('-ep', '--env_path', help="If you want to run multiple Unity actors in parallel you need to"
+                                                      " specify the path to the Environment '.exe' here. In case of "
+                                                      "'OpenAIGym 'enter the desired env name here instead, "
                                                       "e.g.'LunarLanderContinuous-v2'. If you want a CQL agent to "
                                                       "learn from demonstrations, an environment can be used to "
                                                       "evaluate the model on a regular basis. Please provide a path "
                                                       "or typeNone to connect directly to the Unity Editor. "
-                                                      "Otherwise, type'NoEnv' to proceed without evaluation.",
+                                                      "Otherwise, type 'NoEnv' to proceed without evaluation.",
                             type=str, required=False, default=None)
         parser.add_argument('-ta', '--train_algorithm', help="Choose from 'DQN', 'DDPG', 'TD3', 'SAC', 'CQL'", type=str,
                             required=False, default='SAC')
         parser.add_argument('-dp', '--demo_path', help="In case youwant to train the agent offline via "
                                                        "CQL please provide thepath for demonstrations.",
                             type=str, required=False, default=None)
-        parser.add_argument('-ea', '--exploration_algorithm', help="Choose from 'None', 'EpsilonGreedy', 'ICM', 'RND'",
+        parser.add_argument('-ea', '--exploration_algorithm', help="Choose from 'None', 'EpsilonGreedy', 'ICM', 'RND', "
+                                                                   "'ENM'",
                             type=str, required=False, default='None')
         parser.add_argument('-cs', '--curriculum_strategy', help="Choose from None, 'LinearCurriculum', "
                                                                  "('RememberingCurriculum', 'CrossFadeCurriculum' "
-                                                                 "are currentlydisabled)",
+                                                                 "are currently disabled)",
                             type=str, required=False, default=None)
         parser.add_argument('-pa', '--preprocessing_algorithm', help="Choose from 'None' and 'SemanticSegmentation'",
                             type=str, required=False, default='None')
-        parser.add_argument('-pp', '--preprocessing_path', help="Enterthe path for the preprocessing model if needed",
+        parser.add_argument('-pp', '--preprocessing_path', help="Enter the path for the preprocessing model if needed",
                             type=str,required=False, default='None')
         parser.add_argument('-sm', '--save_all_models', help="Determines if all models or only the actor will be saved "
                                                              "during training", type=bool, required=False, default=True)

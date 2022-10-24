@@ -611,7 +611,6 @@ class Actor:
         """
         # At the beginning of each episode certain values have to be (re)set. The prior action and rewards which
         # can be utilized to extend the original observations are set to a random value or 0 respectively.
-        # Furthermore, at the very first episode
         if self.episode_begin:
             self.reset_observation_extensions()
             self.episode_begin = False

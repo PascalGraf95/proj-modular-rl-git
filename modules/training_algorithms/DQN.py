@@ -71,14 +71,18 @@ class DQNActor(Actor):
                 target_prediction = self.critic_network(next_state_batch)
                 y = self.critic_network(state_batch).numpy()
 
-            # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains an
-            # idx giving the information which exploration policy was used during acting. This exploration policy
-            # contains the parameters gamma (n-step learning) and beta (intrinsic reward scaling factor).
+            # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains
+            # an idx giving information which exploration policy was used during acting. This exploration policy
+            # implicitly encodes the parameter gamma (n-step learning) and beta (intrinsic reward scaling factor).
             if self.recurrent and self.policy_feedback:
-                self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
-                                       self.critic_prediction_network.output_shape[-1]))
-                # Get gammas through saved exploration policy indices within the sequences
+                # Create an empty array with shape (batch_size, sequence_length, 1)
+                self.gamma = np.empty((np.shape(state_batch[-1])[0], self.sequence_length, 1))
+
+                # The state batch with policy feedback is a list that contains:
+                # [actual state, (action, e_rew, i_rew,) pol_idx]
+                # Iterate through all sequences of gamma in the provided batch
                 for idx, sequence in enumerate(state_batch[-1]):
+                    # Set all gammas for the given sequence to be the gamma from first step in the given sequence.
                     self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
 
             target_batch = reward_batch + np.multiply(np.multiply((self.gamma ** self.n_steps),
@@ -268,14 +272,18 @@ class DQNLearner(Learner):
             return None, None, self.training_step
         # endregion
 
-        # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains an idx
-        # giving the information which exploration policy was used during acting. This exploration policy contains the
-        # parameters gamma (n-step learning) and beta (intrinsic reward scaling factor).
-        if self.policy_feedback:
-            self.gamma = np.empty((np.shape(state_batch[-1])[0], np.shape(state_batch[-1])[1],
-                                   self.critic.output_shape[-1]))
-            # Get gammas through saved exploration policy indices within the sequences
+        # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains
+        # an idx giving information which exploration policy was used during acting. This exploration policy
+        # implicitly encodes the parameter gamma (n-step learning) and beta (intrinsic reward scaling factor).
+        if self.recurrent and self.policy_feedback:
+            # Create an empty array with shape (batch_size, sequence_length, 1)
+            self.gamma = np.empty((np.shape(state_batch[-1])[0], self.sequence_length, 1))
+
+            # The state batch with policy feedback is a list that contains:
+            # [actual state, (action, e_rew, i_rew,) pol_idx]
+            # Iterate through all sequences of gamma in the provided batch
             for idx, sequence in enumerate(state_batch[-1]):
+                # Set all gammas for the given sequence to be the gamma from first step in the given sequence.
                 self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
 
         # If the state is not terminal:
