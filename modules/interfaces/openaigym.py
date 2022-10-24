@@ -36,8 +36,12 @@ class OpenAIGymInterface:
         return gym.make(environment_path)
 
     @staticmethod
+    def get_interface_name():
+        return "OpenAIGym"
+
+    @staticmethod
     def get_behavior_name(env: gym.Env):
-        return None
+        return None, None
 
     @staticmethod
     def get_observation_shapes(env: gym.Env):
@@ -48,7 +52,7 @@ class OpenAIGymInterface:
         return env.action_space.sample()
 
     @staticmethod
-    def get_action_shape(env: gym.Env):
+    def get_action_shape(env: gym.Env, _placeholder):
         action_type = env.action_space
         if type(action_type) == gym.spaces.Discrete:
             return (action_type.n, )
@@ -67,6 +71,7 @@ class OpenAIGymInterface:
 
     @staticmethod
     def get_agent_number(env: gym.Env, behavior_name: str):
+        OpenAIGymInterface.reset(env)
         return 1, 0
 
     @staticmethod
