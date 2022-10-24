@@ -126,7 +126,8 @@ class Actor:
         self.sidechannel_airhockey = GameResultsSideChannel()
         self.environment = UnityEnvironment(file_name=self.environment_path,
                                             side_channels=[self.engine_configuration_channel,
-                                                           self.curriculum_side_channel, self.sidechannel_airhockey], base_port=self.port)
+                                                           self.curriculum_side_channel, self.sidechannel_airhockey],
+                                            base_port=self.port)
         self.environment.reset()
         return True
 
