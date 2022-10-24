@@ -3,7 +3,7 @@ import logging
 
 from modules.misc.replay_buffer import FIFOBuffer, PrioritizedBuffer
 from modules.misc.logger import GlobalLogger
-from modules.misc.utility import getsize
+from modules.misc.utility import getsize, get_exploration_policies
 
 import os
 import numpy as np
@@ -151,11 +151,33 @@ class Trainer:
         # If there is only one actor in training mode the degree of exploration should start at maximum. Otherwise,
         # each actor will be instantiated with a different degree of exploration. This only has an effect if the
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
-        # returns 0.
-        if actor_num == 1 and mode == "training":
-            exploration_degree = [1.0]
+        # returns 0. If the Meta-Controller is used, a family of exploration policies is created, where the controller
+        # later on can dynamically choose from.
+        intrinsic_exploration_algorithms = ["ENM"]  # Will contain NGU, ECR, NGU-r, RND-alter with future updates...
+
+        # Calculate exploration policy values based on agent57's concept
+        # The exploration is now a list that contains a dictionary for each actor.
+        # Each dictionary contains a value for beta and gamma (utilized for intrinsic motivation)
+        # as well as a scaling values (utilized for epsilon greedy).
+        exploration_degree = get_exploration_policies(num_policies=actor_num,
+                                                      mode=mode,
+                                                      beta_max=self.trainer_configuration[
+                                                          "ExplorationParameters"].get(
+                                                          "MaxIntRewardScaling"))
+
+        # Pass the exploration degree to the trainer configuration
+        self.trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
+
+        # Extension of agent inputs to accept values in addition to the environment observations (exploration policy
+        # index, ext. reward, int. reward) is only compatible with usage of intrinsic exploration algorithms.
+        if exploration_algorithm not in intrinsic_exploration_algorithms and mode == "training":
+            self.trainer_configuration["IntrinsicExploration"] = False
+            self.trainer_configuration["PolicyFeedback"] = False
+            self.trainer_configuration["RewardFeedback"] = False
+            print("\n\nExploration policy feedback and reward feedback automatically disabled as no intrinsic "
+                  "exploration algorithm is in use.\n\n")
         else:
-            exploration_degree = np.linspace(0, 1, actor_num)
+            self.trainer_configuration["IntrinsicExploration"] = True
 
         # - Actor Instantiation -
         # Create the desired number of actors using the ray "remote"-function. Each of them will construct their own
@@ -179,7 +201,7 @@ class Trainer:
 
         # For each actor instantiate the necessary modules
         for i, actor in enumerate(self.actors):
-            actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree[i])
+            actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree)
             # In case of Unity Environments set the rendering and simulation parameters.
             if self.interface == "MLAgentsV18":
                 if mode == "training":
