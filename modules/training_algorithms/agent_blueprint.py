@@ -584,7 +584,7 @@ class Learner:
         # For each training session folder search for all network checkpoints it contains
         for path in training_session_paths:
             for file in os.listdir(path):
-                if os.path.isdir(os.path.join(path, file)):
+                # if os.path.isdir(os.path.join(path, file)):
                     # Check if the respective folder is a model checkpoint. This is decided by the fact if the folder
                     # contains the keywords "Step" and "Reward" (which is ensured for all checkpoints created with this
                     # framework)
@@ -596,6 +596,7 @@ class Learner:
                         # To retrieve the training reward of the checkpoint, split the file string.
                         training_reward = [f for f in file.split("_") if "Reward" in f][0]
                         training_reward = training_reward.replace("Reward", "")
+                        training_reward = training_reward.replace(".h5", "")
 
                         # The unique identifier (key) is the training session name along with the training step
                         key = path.split("\\")[-1] + "_" + training_step
