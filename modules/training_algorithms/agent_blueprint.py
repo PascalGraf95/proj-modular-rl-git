@@ -604,7 +604,7 @@ class Learner:
                         # to its model paths
                         if key not in model_dictionary:
                             model_dictionary[key] = {"TrainingStep": int(training_step),
-                                                     "ELO": 0,
+                                                     "Rating": 0,
                                                      "Reward": float(training_reward),
                                                      "ModelPaths": [os.path.join(path, file)]}
 
@@ -613,16 +613,16 @@ class Learner:
         return model_dictionary
 
     @staticmethod
-    def create_elo_list_from_path(path, model_dictionary):
-        # Search for a csv file containing elo ratings for the models in the model dictionary.
+    def create_rating_list_from_path(path, model_dictionary):
+        # Search for a csv file containing ratings for the models in the model dictionary.
         # The file is expected to be under the model path.
-        if os.path.isfile(os.path.join(path, "elo_rating.csv")):
-            with open(os.path.join(path, "elo_rating.csv"), newline='') as csv_file:
+        if os.path.isfile(os.path.join(path, "rating_history.csv")):
+            with open(os.path.join(path, "rating_history.csv"), newline='') as csv_file:
                 csv_reader = csv.reader(csv_file)
                 next(csv_reader, None)  # Skip Header
                 for row in csv_reader:
                     if row[0] in model_dictionary:
-                        model_dictionary[row[0]]['ELO'] = row[1]
+                        model_dictionary[row[0]]['Rating'] = row[1]
 
     @staticmethod
     def get_model_key_from_dictionary(model_dictionary, mode="latest"):
@@ -643,7 +643,7 @@ class Learner:
             return sorted_key_list[-1]
         # Get the model with the highest elo. In case there is no elo rating this will return a random model.
         elif mode == "elo":
-            sorted_key_list = [key for key, val in sorted(model_dictionary.items(), key=lambda item: item[1]['ELO'])]
+            sorted_key_list = [key for key, val in sorted(model_dictionary.items(), key=lambda item: item[1]['Rating'])]
             return sorted_key_list[-1]
         # Otherwise, we expect the mode variable to contain the key itself (used for matches between two distinct models
         # for elo rating.

@@ -1,0 +1,2 @@
+game_id,opponent_id,score_self,score_opponent,rating_self,rating_deviation_self,volatility_self,rating_opponent,rating_deviation_opponent,volatility_opponent
+0,221213_SAC_Airhockey_Example_b,10,5,1700,250,0.05,1500,350,0.06
