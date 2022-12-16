@@ -9,7 +9,6 @@ from modules.misc.cmd_arg_parse import CmdArgParse
 np.set_printoptions(precision=2)
 # endregion
 
-
 def main():
     """ Modular Reinforcement Learning© main-function
     This function defines the parameters to instantiate a new trainer object which then creates one or multiple actors

@@ -24,7 +24,7 @@ class ExplorationAlgorithm:
                        }
         return config_dict
 
-    def act(self, decision_steps):
+    def act(self, decision_steps, terminal_steps):
         return
 
     def boost_exploration(self):
@@ -41,6 +41,12 @@ class ExplorationAlgorithm:
 
     def prevent_checkpoint(self):
         return False
+
+    def reset(self):
+        return
+
+    def epsilon_greedy(self, decision_steps):
+        return None
 
     @staticmethod
     def calculate_intrinsic_reward(replay_buffer: FIFOBuffer):
