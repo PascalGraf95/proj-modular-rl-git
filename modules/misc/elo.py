@@ -2,24 +2,20 @@ import math
 
 class Elo:
     # calculate standard Elo
-    def calculate_standard_elo(rating_a, rating_b, score_a, score_b, k):
+    def calculate_standard_elo(rating_a, rating_b, score, k=32):
         # calculate players expected score:
         # their probability of winning + half their probability of drawing
-        estimated_a = 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
-        estimated_b = 1 / (1 + 10 ** ((rating_a - rating_b) / 400))
+        estimated = 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
 
         # updating Elo-rating
-        if score_a > score_b:
-            rating_a_updated = rating_a + k * (1 - estimated_a)
-            rating_b_updated = rating_b + k * (0 - estimated_b)
-        elif score_b > score_a:
-            rating_a_updated = rating_a + k * (0 - estimated_a)
-            rating_b_updated = rating_b + k * (1 - estimated_b)
-        elif score_a == score_b:
-            rating_a_updated = rating_a + k * (0.5 - estimated_a)
-            rating_b_updated = rating_b + k * (0.5 - estimated_b)
+        if score == 1:
+            rating_updated = rating_a + k * (1 - estimated)
+        elif score == 0:
+            rating_updated = rating_a + k * (0 - estimated)
+        elif score == 0.5:
+            rating_updated = rating_a + k * (0.5 - estimated)            
 
-        return rating_a_updated, rating_b_updated
+        return rating_updated
 
 
     

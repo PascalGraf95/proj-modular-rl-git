@@ -151,8 +151,8 @@ class Actor:
                                                            self.curriculum_side_channel, self.sidechannel_airhockey],
                                             base_port=self.port)
         self.environment.reset()
-        return True
-
+        return True   
+    
     def connect_to_gym_environment(self):
         self.environment = AgentInterface.connect(self.environment_path)
         # Make sure continuous actions are always bound to the same action scaling
@@ -160,6 +160,10 @@ class Actor:
             self.environment = RescaleAction(self.environment, min_action=-1.0, max_action=1.0)
             print("\n\nEnvironment action space rescaled to -1.0...1.0.\n\n")
         AgentInterface.reset(self.environment)
+
+    def get_environment_sidechannels(self):
+        print(self.environment._side_channel_manager._side_channels_dict.keys())
+        
 
     def set_unity_parameters(self, **kwargs):
         self.engine_configuration_channel.set_configuration_parameters(**kwargs)
@@ -855,7 +859,6 @@ class Learner:
                                                      "Rating": 0,
                                                      "Reward": float(training_reward),
                                                      "ModelPaths": [os.path.join(path, file)]}
-
                         else:
                             model_dictionary[key]["ModelPaths"].append(os.path.join(path, file))
         return model_dictionary
