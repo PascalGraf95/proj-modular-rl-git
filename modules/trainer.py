@@ -557,12 +557,24 @@ class Trainer:
         """"""
         # Before starting the acting loop all actors need a copy of the latest network weights.
         [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True), 0) for actor in self.actors]
-        
+        rating_period = None
         while True:
             # Receiving the latest state from its environment each actor chooses an action according to its policy.
-            actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]
+            actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]            
             for actor in self.actors:
-                actor.get_side_channel_information.remote()
-                # TODO: write to file
+                # update the side channel information. For example this is used to update the game results history for the rating algorithm
+                # TODO: Get the id of the agents playing against each other from the tournament scheduler
+                actor.get_side_channel_information.remote(self.model_path)
+                # get the rating period
+                if rating_period is None:
+                    rating_period = actor.get_current_rating_period.remote(self.model_path)
+                # rating period changed
+                if rating_period != actor.get_current_rating_period.remote(self.model_path):
+                    # update the rating period
+                    rating_period = actor.get_current_rating_period.remote(self.model_path)
+                    # update the rating history
+                    actor.update_ratings.remote(self.model_path)
+                
+            # Wait for the actors to finish their environment steps
             ray.wait(actors_ready)
     # endregion
