@@ -115,24 +115,25 @@ class TestGlicko2(unittest.TestCase):
             rating_deviation = rating_histories[agent_name].iloc[-1]['rating_deviation']
             # get current agent volatility
             volatility = rating_histories[agent_name].iloc[-1]['volatility']
+            # calculate new rating
             rating_updated, rating_deviation_updated, volatility_updated = Glicko2.calculate_standard_glicko2(Glicko2, rating=rating, rating_deviation=rating_deviation, volatility=volatility, oppenents_in_period=game_history_df)            
             # create test results directory and csv files if they don't exist
             if not os.path.exists(self.test_tourney_results_path + '/' + agent_name):
                 os.makedirs(self.test_tourney_results_path + '/' + agent_name)
-                with open(self.test_tourney_results_path + '/' + agent_name + '/' + self.player_results_file, 'w') as file:
+                with open(self.test_tourney_results_path + '/' + agent_name + '/' + self.player_results_file, 'w', newline='') as file:
                     writer = csv.writer(file)
                     writer.writerow(['rating', 'rating_deviation', 'volatility'])
             # open csv file to append new ratings for current agent
-            with open(self.test_tourney_results_path + '/' + agent_name + '/' + self.player_results_file, 'a') as file:
+            with open(self.test_tourney_results_path + '/' + agent_name + '/' + self.player_results_file, 'a', newline='') as file:
                 # csv writer
                 writer = csv.writer(file)
-                # write new ratings at the end of the csv file
-                writer.writerow([rating_updated, rating_deviation_updated, volatility_updated])
+                # write new ratings at the end of the csv file without overwriting existing ratings
+                writer.writerow([rating_updated, rating_deviation_updated, volatility_updated])            
             
         # check if new ratings are correct
         # get agent0 rating history to pd.DataFrame
         agent0_rating_history = pd.read_csv(self.test_tourney_results_path + '/agent0/' + self.player_results_file)
-        # get last row
+        # get last row of agent0 rating history
         last_row = agent0_rating_history.iloc[-1]
         # check if new rating is correct
         self.assertEqual(round(last_row['rating'], 2), 1464.05)
