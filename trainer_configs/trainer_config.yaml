@@ -78,13 +78,13 @@ dqn:
 
 sac:
     Recurrent: true
-    BurnIn: 0
+    BurnIn: 3
     AdaptiveSequenceLength: false
     ActionFeedback: true
     RewardFeedback: true
     PolicyFeedback: true
-    SequenceLength: 12
-    Overlap: 3
+    SequenceLength: 10
+    Overlap: 4
     ActorNum: 8
     BatchSize: 32
     ClipGrad: 10.0
@@ -108,7 +108,7 @@ sac:
     LearningRateCritic: 0.0005
     LogAlpha: -1.0
     NSteps: 5
-    AdaptiveExploration: false
+    AdaptiveExploration: true
     NetworkUpdateFrequency: 50
     SelfPlayNetworkUpdateFrequency: 5000
     NetworkParameters:
@@ -118,16 +118,16 @@ sac:
         ActorVisualNetworkArchitecture: CNN
         CriticVectorNetworkArchitecture: Dense
         CriticVisualNetworkArchitecture: CNN
-    PrioritizedReplay: true
+    PrioritizedReplay: false
     PriorityAlpha: 0.8
     RewardNormalization: false
     ReplayCapacity: 100000
-    ReplayMinSize: 100
+    ReplayMinSize: 50
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: _debug_SAC_3DBall_EpsGreedy_actFeedback
-    TrainingInterval: 1
+    TrainingID: _debug_SAC_MC_RNDalter_fullFeed
+    TrainingInterval: 8
 cql:
     Recurrent: false
     BurnIn: 0

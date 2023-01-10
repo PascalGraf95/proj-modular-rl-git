@@ -25,11 +25,11 @@ class CmdArgParse:
                             type=str, required=False, default=None)
         parser.add_argument('-ta', '--train_algorithm', help="Choose from 'DQN', 'DDPG', 'TD3', 'SAC', 'CQL'", type=str,
                             required=False, default='SAC')
-        parser.add_argument('-dp', '--demo_path', help="In case youwant to train the agent offline via "
-                                                       "CQL please provide thepath for demonstrations.",
+        parser.add_argument('-dp', '--demo_path', help="In case you want to train the agent offline via "
+                                                       "CQL please provide the path for demonstrations.",
                             type=str, required=False, default=None)
         parser.add_argument('-ea', '--exploration_algorithm', help="Choose from 'None', 'EpsilonGreedy', 'ICM', 'RND', "
-                                                                   "'ENM'",
+                                                                   ", 'RNDAlter', 'ENM', 'NGU'",
                             type=str, required=False, default='None')
         parser.add_argument('-cs', '--curriculum_strategy', help="Choose from None, 'LinearCurriculum', "
                                                                  "('RememberingCurriculum', 'CrossFadeCurriculum' "
