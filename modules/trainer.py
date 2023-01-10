@@ -557,12 +557,12 @@ class Trainer:
         """"""
         # Before starting the acting loop all actors need a copy of the latest network weights.
         [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True), 0) for actor in self.actors]
-        [actor.get_environment_sidechannels.remote() for actor in self.actors]
-        # for actor in self.actors:
-        #     for sc in actor.environment.side_channels:
-        #         print(sc)
+        
         while True:
             # Receiving the latest state from its environment each actor chooses an action according to its policy.
             actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]
+            for actor in self.actors:
+                actor.get_side_channel_information.remote()
+                # TODO: write to file
             ray.wait(actors_ready)
     # endregion
