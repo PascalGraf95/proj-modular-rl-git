@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 import numpy as np
 import tensorflow as tf
-from ..misc.logger import LocalLogger
-from ..misc.replay_buffer import LocalFIFOBuffer, LocalRecurrentBuffer
-from ..misc.utility import modify_observation_shapes
-from ..misc.glicko2 import Glicko2
+from misc.logger import LocalLogger
+from misc.replay_buffer import LocalFIFOBuffer, LocalRecurrentBuffer
+from misc.utility import modify_observation_shapes
+from misc.glicko2 import Glicko2
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
-from ..sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
-from ..sidechannel.airhockey_sidechannel import GameResultsSideChannel
-from ..curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
+from sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
+from sidechannel.airhockey_sidechannel import GameResultsSideChannel
+from curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
 from collections import deque
 import time
