@@ -180,7 +180,9 @@ class Actor:
             # append new game results
             with open(os.path.join(model_path, self.game_results), 'a', newline='') as file:
                 writer = csv.writer(file)
-                writer.writerow([agent_id_a, agent_id_b, self.update_game_id(self, model_path), score_a, score_b, self.update_rating_period(self, model_path)])
+                game_id = self.update_game_id(model_path)
+                rating_period = self.update_rating_period(model_path)
+                writer.writerow([agent_id_a, agent_id_b, game_id, score_a, score_b, rating_period])
         else:
             # create new game results file
             with open(os.path.join(model_path, self.game_results), 'w', newline='') as file:
@@ -396,10 +398,10 @@ class Actor:
         global AgentInterface
 
         if interface == "MLAgentsV18":
-            from ..interfaces.mlagents_v18 import MlAgentsV18Interface as AgentInterface
+            from interfaces.mlagents_v18 import MlAgentsV18Interface as AgentInterface
 
         elif interface == "OpenAIGym":
-            from ..interfaces.openaigym import OpenAIGymInterface as AgentInterface
+            from interfaces.openaigym import OpenAIGymInterface as AgentInterface
         else:
             raise ValueError("An interface for {} is not (yet) supported by this trainer. "
                              "You can implement an interface yourself by utilizing the interface blueprint class "
@@ -412,7 +414,7 @@ class Actor:
         if exploration_algorithm == "EpsilonGreedy":
             from ..exploration_algorithms.epsilon_greedy import EpsilonGreedy as ExplorationAlgorithm
         elif exploration_algorithm == "None":
-            from ..exploration_algorithms.exploration_algorithm_blueprint import ExplorationAlgorithm
+            from exploration_algorithms.exploration_algorithm_blueprint import ExplorationAlgorithm
         elif exploration_algorithm == "ICM":
             from ..exploration_algorithms.intrinsic_curiosity_module import IntrinsicCuriosityModule as ExplorationAlgorithm
         elif exploration_algorithm == "RND":
@@ -427,7 +429,7 @@ class Actor:
         global PreprocessingAlgorithm
 
         if preprocessing_algorithm == "None":
-            from ..preprocessing.preprocessing_blueprint import PreprocessingAlgorithm
+            from preprocessing.preprocessing_blueprint import PreprocessingAlgorithm
         elif preprocessing_algorithm == "SemanticSegmentation":
             from ..preprocessing.semantic_segmentation import SemanticSegmentation as PreprocessingAlgorithm
         elif preprocessing_algorithm == "ArUcoMarkerDetection":

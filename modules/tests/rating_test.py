@@ -45,9 +45,9 @@ class TestGlicko2(unittest.TestCase):
         # check if rating history has correct columns
         self.assertEqual(list(rating_histories['Agent0'].columns), ['rating', 'rating_deviation', 'volatility'])        
         # check if rating history has correct values
-        self.assertEqual(rating_histories['agent_1'].iloc[0]['rating'], 1500)
-        self.assertEqual(rating_histories['agent_1'].iloc[0]['rating_deviation'], 200)
-        self.assertEqual(rating_histories['agent_1'].iloc[0]['volatility'], 0.06)
+        self.assertEqual(rating_histories['Agent0'].iloc[0]['rating'], 1500)
+        self.assertEqual(rating_histories['Agent0'].iloc[0]['rating_deviation'], 200)
+        self.assertEqual(rating_histories['Agent0'].iloc[0]['volatility'], 0.06)
 
     def test_getting_current_rating_period(self):
         rating_period = ab.get_current_rating_period(self, self.test_tourney_path) 
@@ -58,8 +58,10 @@ class TestGlicko2(unittest.TestCase):
         # delete test tourney results directory if it exists
         if os.path.exists(self.test_tourney_results_path):
             shutil.rmtree(self.test_tourney_results_path)
-        # add test game results to game results history
-        ab.update_game_results_history(self, self.test_tourney_path, 1, 0, 3, 'agent_1', 'agent_2')              
+        # create instance of Actor class
+        actor = ab(0, 0, 'testing', 'MLAgentsV18', 'None', 'None', 'None', 'test', 'test')
+        # add test game results to game results history        
+        ab.update_game_results_history(actor, self.test_tourney_path, 1, 0, 3, 'agent_1', 'agent_2')              
         # check if last row of game results history is correct
         with open(self.test_tourney_path + '/' + self.game_results, 'r') as f:
             reader = csv.reader(f)
@@ -67,16 +69,21 @@ class TestGlicko2(unittest.TestCase):
             self.assertEqual(last_row, ['agent_1', 'agent_2', '3', '1', '0', '0'])
         # delete last row of game results history to return to initial state
         with open(self.test_tourney_path + '/' + self.game_results, 'r') as f:
-            reader = csv.reader(f)
-            lines = list(reader)
-            lines.pop()
+            lines = f.readlines()
+            lines = lines[:-1]
+            with open(self.test_tourney_path + '/' + self.game_results, 'w') as f:
+                f.writelines(lines)
 
     def test_glicko2_calculation(self):        
         # delete test tourney results directory if it exists
         if os.path.exists(self.test_tourney_results_path):
             shutil.rmtree(self.test_tourney_results_path)
+        # create new test tourney results directory. Copy everything from rating test directory to rating test results directory
+        shutil.copytree(self.test_tourney_path, self.test_tourney_results_path)        
+        # create instance of Actor class
+        actor = ab(0, 0, 'testing', 'MLAgentsV18', 'None', 'None', 'None', 'test', 'test')
         # run glicko2 calculation
-        ab.update_ratings(self, self.test_tourney_path)         
+        ab.update_ratings(actor, self.test_tourney_results_path)         
         # check if new ratings are correct
         # get agent0 rating history to pd.DataFrame
         agent0_rating_history = pd.read_csv(self.test_tourney_results_path + '/agent0/' + self.player_results_file)
