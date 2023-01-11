@@ -16,6 +16,11 @@ from .resnet import create_res_net12
 import numpy as np
 import tensorflow as tf
 import os
+
+# Fix to avoid huge RAM allocation initiated by tf network construction -> necessary for CUDA >= 11.0
+gpus = tf.config.experimental.list_physical_devices("GPU")
+tf.config.experimental.set_memory_growth(gpus[0], True)
+
 os.environ["PATH"] += os.pathsep + 'C:/Graphviz/bin/'
 
 NormalDense = Dense

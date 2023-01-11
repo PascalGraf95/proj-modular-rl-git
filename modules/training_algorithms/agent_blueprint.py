@@ -163,7 +163,7 @@ class Actor:
         # Make sure continuous actions are always bound to the same action scaling
         if not (type(self.environment.action_space) == gym.spaces.Discrete):
             self.environment = RescaleAction(self.environment, min_action=-1.0, max_action=1.0)
-            print("\n\nEnvironment action space rescaled to -1.0...1.0.\n\n")
+            print("\n\nEnvironment action space automatically rescaled to -1.0...1.0.\n\n")
         AgentInterface.reset(self.environment)
 
     def set_unity_parameters(self, **kwargs):
@@ -522,17 +522,34 @@ class Actor:
                                    agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                    mode=self.mode)
         else:
+            # mode -> Testing
             # OpenAI's Gym environments require explicit call for rendering
             if AgentInterface.get_interface_name() == "OpenAIGym":
                 self.environment.render()
             # Values that were fed back as inputs during training must be set manually and according to the saved
             # weight's name.
             if self.policy_feedback:
-                self.exploration_policy_idx = 0
+                self.exploration_policy_idx = 1
+            intrinsic_reward = 0
+            
+            '''
+            # Intrinsic reward can also be calculated by exploration algorithm during testing (increase computational 
+            # workload)
             if self.reward_feedback:
+                with tf.device(self.device):
+                    # Calculate intrinsic reward by exploration algorithm
+                    intrinsic_reward = self.exploration_algorithm.act(decision_steps, terminal_steps)
+                # Scale the intrinsic reward through exploration policies' beta.
+                intrinsic_reward *= self.exploration_degree[self.exploration_policy_idx]['beta']
+            else:
                 intrinsic_reward = 0
+            '''
+
             # Extend step observation values with prior action, extrinsic reward, intrinsic reward, policy idx
             decision_steps, terminal_steps = self.extend_observations(decision_steps, terminal_steps)
+            if len(terminal_steps.obs[0]):
+                AgentInterface.reset(self.environment)
+
             actions = self.act(decision_steps.obs,
                                agent_ids=[a_id - self.agent_id_offset for a_id in decision_steps.agent_id],
                                mode=self.mode)

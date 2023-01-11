@@ -417,7 +417,7 @@ class SACLearner(Learner):
             eta = 0.9
             sample_errors = eta * np.max(sample_errors[:, self.burn_in:], axis=1) + \
                             (1 - eta) * np.mean(sample_errors[:, self.burn_in:], axis=1)
-        #sample_errors = np.sum(sample_errors, axis=1)
+        sample_errors = np.sum(sample_errors, axis=1)
 
         # Calculate Critic 1 and 2 Loss, utilizes custom mse loss function defined in Trainer-class
         value_loss1 = self.critic1.train_on_batch([*state_batch, action_batch], y)

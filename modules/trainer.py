@@ -187,7 +187,20 @@ class Trainer:
             else:
                 exploration_degree = np.linspace(0, 1, actor_num)
         else:
-            exploration_degree = np.linspace(0, 1, actor_num)
+            if meta_learning_algorithm == "MetaController":
+                number_of_policies = self.trainer_configuration["MetaLearningParameters"].get("NumExplorationPolicies")
+                exploration_degree = get_exploration_policies(num_policies=number_of_policies,
+                                                              beta_max=self.trainer_configuration[
+                                                                  "ExplorationParameters"].get("MaxIntRewardScaling"))
+            elif exploration_algorithm in intrinsic_exploration_algorithms:
+                # In case of testing with other intrinsic exploration algorithms, exploration policy index must be set
+                # within agent_blueprint.py/play_one_step() according so saved number within network weights
+                number_of_policies = self.trainer_configuration["ActorNum"]
+                exploration_degree = get_exploration_policies(num_policies=number_of_policies,
+                                                              beta_max=self.trainer_configuration[
+                                                              "ExplorationParameters"].get("MaxIntRewardScaling"))
+            else:
+                exploration_degree = np.linspace(0, 1, actor_num)
 
         # Pass the exploration degree to the trainer configuration
         self.trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
@@ -205,7 +218,7 @@ class Trainer:
             self.trainer_configuration["PolicyFeedback"] = False
             self.trainer_configuration["RewardFeedback"] = False
             print("\n\nExploration policy feedback and reward feedback automatically disabled as no intrinsic"
-                  "exploration algorithm is in use.\n\n")
+                  " exploration algorithm is in use.\n\n")
             if meta_learning_algorithm == "MetaController":
                 meta_learning_algorithm = "None"
         else:

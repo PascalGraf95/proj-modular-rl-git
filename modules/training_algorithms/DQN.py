@@ -95,12 +95,13 @@ class DQNActor(Actor):
 
             # Train the network on the training batch.
             if self.recurrent:
-                sample_errors = np.sum(np.abs(y - self.critic_prediction_network(state_batch)), axis=1)
+                sample_errors = np.abs(y - self.critic_prediction_network(state_batch))
             else:
-                sample_errors = np.sum(np.abs(y - self.critic_network(state_batch)), axis=1)
+                sample_errors = np.abs(y - self.critic_network(state_batch))
             if self.recurrent:
                 eta = 0.9
                 sample_errors = eta * np.max(sample_errors, axis=1) + (1 - eta) * np.mean(sample_errors, axis=1)
+            sample_errors = np.sum(sample_errors, axis=1)
         return sample_errors
 
     def update_actor_network(self, network_weights, total_episodes=0):

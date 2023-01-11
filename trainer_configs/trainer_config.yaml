@@ -82,20 +82,20 @@ dqn:
     SyncSteps: 500
     Tau: 0.01
     PrioritizedReplay: true
-    PriorityAlpha: 0.8
+    PriorityAlpha: 0.9
     RewardNormalization: false
-    TrainingID: MC_DQN_A57
-    TrainingInterval: 4
+    TrainingID: MC_DQN_A57r
+    TrainingInterval: 10
 
 sac:
     Recurrent: true
-    BurnIn: 10
+    BurnIn: 6
     AdaptiveSequenceLength: false
-    ActionFeedback: true
-    RewardFeedback: true
-    PolicyFeedback: true
-    SequenceLength: 50
-    Overlap: 17
+    ActionFeedback: false
+    RewardFeedback: false
+    PolicyFeedback: false
+    SequenceLength: 30
+    Overlap: 10
     ActorNum: 8
     BatchSize: 32
     ClipGrad: 10.0
@@ -109,13 +109,13 @@ sac:
         StepDown: false
         ObservationNormalization: false
         kNearest: 10
-        MaxIntRewardScaling: 0.1
+        MaxIntRewardScaling: 0.3
         ClusterDistance: 0.008
         KernelEpsilon: 0.01
-        MaximumSimilarity: 3
+        MaximumSimilarity: 4
         EpisodicMemoryCapacity: 600
         kECR: 5
-        BetaECR: 0.5
+        BetaECR: 1.0
     MetaLearningParameters:
         Epsilon: 0.3
         EpsilonDecay: 0.999
@@ -123,7 +123,7 @@ sac:
         StepDown: false
         NumExplorationPolicies: 12
         UCBWindowSize: 160
-        EpisodicCounting: false
+        EpisodicCounting: true
     Gamma: 0.99
     LearningRateActor: 0.0001
     LearningRateCritic: 0.0001
@@ -140,14 +140,14 @@ sac:
         CriticVectorNetworkArchitecture: Dense
         CriticVisualNetworkArchitecture: CNN
     PrioritizedReplay: true
-    PriorityAlpha: 0.8
+    PriorityAlpha: 0.9
     RewardNormalization: false
-    ReplayCapacity: 100000
+    ReplayCapacity: 80000
     ReplayMinSize: 50
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: MC_SAC_NGUr-raw
+    TrainingID: HU_SAC_A57
     TrainingInterval: 4
 
 cql:

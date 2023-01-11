@@ -9,9 +9,6 @@ np.set_printoptions(precision=2)
 
 import random
 import tensorflow as tf
-random.seed(997)
-np.random.seed(997)
-tf.random.set_seed(997)
 # endregion
 
 
@@ -31,7 +28,7 @@ def main():
     # Choose between "training", "testing" or "fastTesting"
     # If you want to test a trained model or continue learning from a checkpoint enter the model path below
     mode = "training"
-    model_path = None#r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\3_Software\proj-modular-reinforcement-learning\training\summaries\221017_133344__debug_CP_DQN_A57"
+    model_path = None #r"C:\Users\..."
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
@@ -41,16 +38,8 @@ def main():
     # If you want a CQL agent to learn from demonstrations, an environment can be used to evaluate the model on a
     # regular basis. Please provide a path or type None to connect directly to the Unity Editor. Otherwise, type
     # 'NoEnv' to proceed without evaluation.
-    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\Pyramids\Env.exe"
-    #environment_path = r"C:\Users\Martin\Desktop\HS Heilbronn\Master\Masterthesis\4_Unity\_built\3DBall\Skiing.exe"
-
-    #environment_path = r"CartPole-v1"
-    #environment_path = r"LunarLander-v2"
-    #environment_path = r"LunarLanderContinuous-v2"
-    environment_path = r"MountainCar-v0"
-    #environment_path = r"MountainCarContinuous-v0"
-    # environment_path = r"Humanoid-v4"
-    #environment_path = r"InvertedPendulum-v4"
+    #environment_path = r"C:\Users\..."
+    environment_path = r"CartPole-v1"
 
     # - Training Algorithm -
     # This is the core learning algorithm behind the RL Agent. While Deep Q-Learning / Deep Q Networks (DQN) presumably

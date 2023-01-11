@@ -397,7 +397,7 @@ class NeverGiveUpReach(ExplorationAlgorithm):
         similarity_score = np.percentile(reachability_buffer, 90)
 
         # Calculate ecr-reward
-        # 𝑟 = 𝛼 ∗ (𝛽 − 𝑠𝑖𝑚𝑖𝑙𝑎𝑟𝑖𝑡𝑦_𝑠𝑐𝑜𝑟𝑒), where 𝛼 is a simple reward scaling factor that is set outside this module
+        # 𝑟 = 𝛼 ∗ (𝛽 − 𝑠𝑖𝑚𝑖𝑙𝑎𝑟𝑖𝑡𝑦_𝑠𝑐𝑜𝑟𝑒), where 𝛼 is a simple reward scaling factor
         ecr_reward = self.alpha * (self.beta - similarity_score)
 
         # Add state to episodic memory if intrinsic reward is large enough
@@ -442,24 +442,32 @@ class NeverGiveUpReach(ExplorationAlgorithm):
 
     def get_training_data(self, sequence):
         """
-        Create ECR's training data through forming of random observation pairs and calculating whether the elements of those
-        pairs are reachable from one to each other within k-steps. Allocation process is done randomly and differs from
-        the original paper where a sliding window based approach is used.
+        Create ECR training data through forming random embedded observation pairs and calculating whether the elements
+        of those pairs are reachable one from each other within k-steps. The comparator model predicts two classes with
+        the first one being "non-reachable" and the second one being "reachable". Therefore, the returned labels within
+        this function consist of a list with two elements, where the first one indicates the probability that the states
+        ARE NOT reachable and the second one the probability that the states ARE reachable. This gives the label
+        formulation:
+            -> non-reachable:  [1,0]
+            -> reachable:      [0,1]
+
+        ***NOTE***
+        Generation of observation pairs is done randomly and differs from the original paper where a sliding window
+        based approach is used that does not fit here, as it generates random amounts of pairs each iteration.
 
         Parameters
         ----------
         sequence:
-            Contains the observation values of a sequence from the state_batch.
+            Contains the embedded observation values of a sequence from the state_batch.
 
         Returns
         -------
         x1:
-            First elements of the observation index pairs.
+            First elements of the embedded observation index pairs.
         x2:
-            Second elements of the observation index pairs.
-        labels: int
-            Reachability between x1 and x2 elements and therefore the ground truth of the training data. (0 == not
-            reachable within k-steps, 1 == reachable within k-steps)
+            Second elements of the embedded observation index pairs.
+        labels: list
+            Reachability between x1 and x2 elements. ([1, 0] == not reachable, [0, 1] == reachable)
         """
         # Shuffle sequence indices randomly
         np.random.shuffle(self.sequence_indices)
