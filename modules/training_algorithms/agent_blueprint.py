@@ -259,6 +259,12 @@ class Actor:
         elif exploration_algorithm == "NGU":
             from ..exploration_algorithms.never_give_up import NeverGiveUp as ExplorationAlgorithm
             self.intrinsic_exploration = True
+        elif exploration_algorithm == "ECR":
+            from ..exploration_algorithms.episodic_curiosity_through_reachability import EpisodicCuriosity as ExplorationAlgorithm
+            self.intrinsic_exploration = True
+        elif exploration_algorithm == "NGUr":
+            from ..exploration_algorithms.never_give_up_reach import NeverGiveUpReach as ExplorationAlgorithm
+            self.intrinsic_exploration = True
         else:
             raise ValueError("There is no {} exploration algorithm.".format(exploration_algorithm))
 

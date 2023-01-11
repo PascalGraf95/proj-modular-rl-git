@@ -153,7 +153,7 @@ class Trainer:
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
         # returns 0. If the Meta-Controller is used, a family of exploration policies is created, where the controller
         # later on can dynamically choose from.
-        intrinsic_exploration_algorithms = ["ENM", "RNDAlter", "NGU"]
+        intrinsic_exploration_algorithms = ["ENM", "RNDAlter", "NGU", "ECR", "NGUr"]
 
         # Calculate exploration policy values based on agent57's concept
         # The exploration is now a list that contains a dictionary for each actor.
