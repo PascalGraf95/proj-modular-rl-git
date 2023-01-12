@@ -1,5 +1,5 @@
 import numpy as np
-from ..misc.replay_buffer import FIFOBuffer
+from misc.replay_buffer import FIFOBuffer
 
 
 class ExplorationAlgorithm:
