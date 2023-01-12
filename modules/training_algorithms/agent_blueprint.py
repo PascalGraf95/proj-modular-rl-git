@@ -25,6 +25,7 @@ class Actor:
                  preprocessing_algorithm: str,
                  preprocessing_path: str,
                  exploration_algorithm: str,
+                 meta_learning_algorithm: str,
                  environment_path: str = "",
                  demonstration_path: str = "",
                  device: str = '/cpu:0'):
@@ -113,6 +114,11 @@ class Actor:
         self.reward_correction_factor = 1
         self.steps_since_update = 0
 
+        # - Meta Learning Algorithm -
+        self.meta_learning_configuration = None
+        self.meta_learning_algorithm = None
+        self.use_meta_controller = False
+
         self.episode_begin = True
 
         # - Curriculum Learning Strategy & Engine Side Channel -
@@ -130,6 +136,7 @@ class Actor:
         # preprocessing algorithm.
         self.select_agent_interface(interface)
         self.select_exploration_algorithm(exploration_algorithm)
+        self.select_meta_learning_algorithm(meta_learning_algorithm)
         self.select_preprocessing_algorithm(preprocessing_algorithm)
 
         # Prediction Parameters
@@ -198,6 +205,9 @@ class Actor:
     def get_exploration_logs(self):
         return self.exploration_algorithm.get_logs()
 
+    def get_meta_learning_logs(self):
+        return self.meta_learning_algorithm.get_logs()
+
     def get_environment_configuration(self):
         return self.environment_configuration
 
@@ -222,6 +232,13 @@ class Actor:
         """
         self.exploration_configuration = ExplorationAlgorithm.get_config()
         return self.exploration_configuration
+
+    def get_meta_learning_configuration(self):
+        """Gather the parameters requested by the selectet meta-controller algorithm.
+        :return: None
+        """
+        self.meta_learning_configuration = MetaLearning.get_config()
+        return self.meta_learning_configuration
     # endregion
 
     # region Algorithm Selection
@@ -267,6 +284,17 @@ class Actor:
             self.intrinsic_exploration = True
         else:
             raise ValueError("There is no {} exploration algorithm.".format(exploration_algorithm))
+
+    def select_meta_learning_algorithm(self, meta_learning_algorithm):
+        global MetaLearning
+
+        if meta_learning_algorithm == "None":
+            from ..meta_learning.meta_learning_blueprint import MetaLearning
+        elif meta_learning_algorithm == "MetaController":
+            from ..meta_learning.meta_controller import MetaController as MetaLearning
+            self.use_meta_controller = True
+        else:
+            raise ValueError("There is no {} meta controller algorithm.".format(meta_learning_algorithm))
 
     def select_preprocessing_algorithm(self, preprocessing_algorithm):
         global PreprocessingAlgorithm
@@ -331,6 +359,13 @@ class Actor:
                                                           trainer_configuration["ExplorationParameters"],
                                                           trainer_configuration,
                                                           self.index)
+
+        # Instantiate the Meta Learning Algorithm according to the environment and training configuration.
+        self.meta_learning_algorithm = MetaLearning(self.environment_configuration["ActionShape"],
+                                                    self.environment_configuration["ObservationShapes"],
+                                                    self.environment_configuration["ActionType"],
+                                                    trainer_configuration["MetaLearningParameters"],
+                                                    self.index)
 
         # Action Parameters
         self.action_type = self.environment_configuration["ActionType"]
@@ -480,6 +515,7 @@ class Actor:
         # region - Exploration and Action Determination -
         # Set/Reset variables and algorithms when agent reaches episodic borders
         self.episodic_border_routine(terminal_steps)
+        self.meta_learning_routine(decision_steps, terminal_steps)
         # There are exploration algorithms that calculate intrinsic rewards each timestep
         intrinsic_reward = self.calculate_intrinsic_reward(decision_steps, terminal_steps)
 
@@ -490,6 +526,9 @@ class Actor:
 
             # ToDo: Parse the intrinsic reward as well as the exploration policy index from the saved model to the
             #       model constructor. Until then 0, 0 will be utilized (exploration_policy_idx is set in constructor)
+            # Values that were fed back as inputs during training must be set manually.
+            if self.policy_feedback:
+                self.exploration_policy_idx = 1
             intrinsic_reward = 0
 
         # In case these options have been enabled, the states are augmented with additional information, more precisely:
@@ -629,13 +668,39 @@ class Actor:
         if self.episode_begin:
             self.reset_observation_extensions()
             self.episode_begin = False
-
+            # Set new exploration policy index once per episode when using meta-controller.
+            # NOTE: If fed back during training and in case of testing, the exploration policy index must be set
+            #       manually to the one trained according to saved network weights.
+            if self.mode == "training" and self.use_meta_controller:
+                self.exploration_policy_idx = self.meta_learning_algorithm.act()
         # Episode ending reached
         if len(terminal_steps.obs[0]):
             self.episode_begin = True
             with tf.device(self.device):
                 # Reset exploration algorithm
                 self.exploration_algorithm.reset()
+                # Reset meta learning algorithm
+                self.meta_learning_algorithm.reset()
+
+    def meta_learning_routine(self, decision_steps, terminal_steps):
+        """
+        Execute the meta learning algorithm's learning step.
+
+        Parameters
+        ----------
+        decision_steps:
+            Contains the observation values, reward value and further information about the current step if not
+            terminal.
+        terminal_steps:
+            Contains the observation values, reward value and further information about the current step if terminal.
+        """
+        if self.use_meta_controller:
+            if len(decision_steps.reward):
+                self.meta_learning_algorithm.learning_step(self.exploration_policy_idx, decision_steps.reward)
+            else:
+                self.meta_learning_algorithm.learning_step(self.exploration_policy_idx, terminal_steps.reward)
+        else:
+            return
 
     def reset_observation_extensions(self):
         # Reset the prior actions to random values.
@@ -817,7 +882,8 @@ class Learner:
     def load_checkpoint_from_path_list(self, model_paths, clone=False):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
-    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False):
+    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
+                        checkpoint_condition=True, exploration_policy_index=0, intrinsic_reward=0):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
     @staticmethod

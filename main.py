@@ -60,6 +60,12 @@ def main():
     # Choose from "None", "EpsilonGreedy", "ICM" and "RND"
     exploration_algorithm = args.exploration_algorithm
 
+    # - Meta Learning Algorithm -
+    # The meta learning algorithm helps the RL Agent to learn how to learn. In the context of Agent57 the meta-
+    # controller is used to choose the exploration policy.
+    # Choose from "None", "MetaController"
+    meta_learning_algorithm = args.meta_learning_algorithm
+
     # - Curriculum Strategy -
     # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for
     # Unity Environments an option to choose a task level has been implemented. Notice, however, that in order to work
@@ -90,7 +96,7 @@ def main():
     # Parse the trainer configuration (make sure to select the right key)
     trainer.parse_training_parameters(args.training_parameters[0], args.training_parameters[1])
     # Instantiate the agent which consists of a learner and one or multiple actors
-    trainer.async_instantiate_agent(mode, preprocessing_algorithm, exploration_algorithm,
+    trainer.async_instantiate_agent(mode, preprocessing_algorithm, exploration_algorithm, meta_learning_algorithm,
                                     environment_path, model_path, preprocessing_path, demonstration_path, clone_path)
     # If you are trying to understand this project, the next place to continue exploring it would be the trainer file
     # in the respective directory (./modules/trainer.py)

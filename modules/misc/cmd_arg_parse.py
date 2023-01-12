@@ -30,7 +30,9 @@ class CmdArgParse:
                             type=str, required=False, default=None)
         parser.add_argument('-ea', '--exploration_algorithm', help="Choose from 'None', 'EpsilonGreedy', 'ICM', 'RND', "
                                                                    ", 'RNDAlter', 'ENM', 'NGU', 'ECR', 'NGUr'",
-                            type=str, required=False, default='None')
+                            type=str, required=False, default='NGU')
+        parser.add_argument('-me', '--meta_learning_algorithm', help="Choose from 'None', 'MetaController'",
+                            type=str, required=False, default='MetaController')
         parser.add_argument('-cs', '--curriculum_strategy', help="Choose from None, 'LinearCurriculum', "
                                                                  "('RememberingCurriculum', 'CrossFadeCurriculum' "
                                                                  "are currently disabled)",

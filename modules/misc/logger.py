@@ -120,6 +120,9 @@ class GlobalLogger:
         # Returns the best running average which will be updated on each call of the checkpoint condition function.
         return self.best_running_average_reward
 
+    def get_best_actor(self):
+        return self.best_actor
+
     def append(self, episode_lengths, episode_rewards, total_number_of_episodes, actor_idx=0):
         # Append episodes from the local buffers to this global buffer.
         if not episode_lengths:

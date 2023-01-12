@@ -26,11 +26,12 @@ class SACActor(Actor):
                  preprocessing_algorithm: str,
                  preprocessing_path: str,
                  exploration_algorithm: str,
+                 meta_learning_algorithm: str,
                  environment_path: str = "",
                  demonstration_path: str = "",
                  device: str = '/cpu:0'):
         super().__init__(idx, port, mode, interface, preprocessing_algorithm, preprocessing_path,
-                         exploration_algorithm, environment_path, demonstration_path, device)
+                         exploration_algorithm, meta_learning_algorithm, environment_path, demonstration_path, device)
 
     def act(self, states, agent_ids=None, mode="training", clone=False):
         # Check if any agent in the environment is not in a terminal state
@@ -426,18 +427,64 @@ class SACLearner(Learner):
                       "This is not an issue if you're planning to only test the model.")
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
-                        checkpoint_condition=True):
+                        checkpoint_condition=True, exploration_policy_index=None, intrinsic_reward=None):
         if not checkpoint_condition:
             return
-        self.actor_network.save(
-            os.path.join(path, "SAC_Actor_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
-        if save_all_models:
-            self.critic1.save(
-                os.path.join(path, "SAC_Critic1_Step{:06d}_Reward{:.2f}".format(training_step,
-                                                                                running_average_reward)))
-            self.critic2.save(
-                os.path.join(path, "SAC_Critic2_Step{:06d}_Reward{:.2f}".format(training_step,
-                                                                                running_average_reward)))
+        if exploration_policy_index is not None and intrinsic_reward is not None:
+            self.actor_network.save(
+                os.path.join(path, "SAC_Actor_Step{}_Reward{:.2f}_ExpPolicy{}_IR{:.4f}".format(training_step,
+                                                                                               running_average_reward,
+                                                                                               exploration_policy_index,
+                                                                                               intrinsic_reward)))
+            if save_all_models:
+                self.critic1.save(
+                    os.path.join(path, "SAC_Critic1_Step{:06d}_Reward{:.2f}_ExpPolicy{}_IR{:.4f}".format(training_step,
+                                                                                                     running_average_reward,
+                                                                                                     exploration_policy_index,
+                                                                                                     intrinsic_reward)))
+                self.critic2.save(
+                    os.path.join(path, "SAC_Critic2_Step{:06d}_Reward{:.2f}_ExpPolicy{}_IR{:.4f}".format(training_step,
+                                                                                                     running_average_reward,
+                                                                                                     exploration_policy_index,
+                                                                                                     intrinsic_reward)))
+        elif exploration_policy_index is not None:
+            self.actor_network.save(
+                os.path.join(path, "SAC_Actor_Step{:06d}_Reward{:.2f}_ExpPolicy{}".format(training_step,
+                                                                                      running_average_reward,
+                                                                                      exploration_policy_index)))
+            if save_all_models:
+                self.critic1.save(
+                    os.path.join(path, "SAC_Critic1_Step{:06d}_Reward{:.2f}_ExpPolicy{}".format(training_step,
+                                                                                            running_average_reward,
+                                                                                            exploration_policy_index)))
+                self.critic2.save(
+                    os.path.join(path, "SAC_Critic2_Step{:06d}_Reward{:.2f}_ExpPolicy{}".format(training_step,
+                                                                                            running_average_reward,
+                                                                                            exploration_policy_index)))
+        elif intrinsic_reward is not None:
+            self.actor_network.save(
+                os.path.join(path, "SAC_Actor_Step{:06d}_Reward{:.2f}_IR{:.4f}".format(training_step,
+                                                                                   running_average_reward,
+                                                                                   intrinsic_reward)))
+            if save_all_models:
+                self.critic1.save(
+                    os.path.join(path, "SAC_Critic1_Step{:06d}_Reward{:.2f}_IR{:.4f}".format(training_step,
+                                                                                         running_average_reward,
+                                                                                         intrinsic_reward)))
+                self.critic2.save(
+                    os.path.join(path, "SAC_Critic2_Step{:06d}_Reward{:.2f}_IR{:.4f}".format(training_step,
+                                                                                         running_average_reward,
+                                                                                         intrinsic_reward)))
+        else:
+            self.actor_network.save(
+                os.path.join(path, "SAC_Actor_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
+            if save_all_models:
+                self.critic1.save(
+                    os.path.join(path, "SAC_Critic1_Step{:06d}_Reward{:.2f}".format(training_step,
+                                                                                    running_average_reward)))
+                self.critic2.save(
+                    os.path.join(path, "SAC_Critic2_Step{:06d}_Reward{:.2f}".format(training_step,
+                                                                                    running_average_reward)))
     # endregion
 
     # region --- Learning ---
