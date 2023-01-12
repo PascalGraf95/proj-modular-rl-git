@@ -55,6 +55,17 @@ dqn:
         KernelEpsilon: 0.01
         MaximumSimilarity: 4
         EpisodicMemoryCapacity: 600
+        kECR: 5
+        BetaECR: 1.0
+    MetaLearningParameters:
+        Epsilon: 0.3
+        EpsilonDecay: 0.999
+        EpsilonMin: 0.02
+        StepDown: false
+        ExplorationPolicies: 12
+        UCBWindowSize: 160
+        UCBBeta: 1
+        EpisodicCounting: true
     Gamma: 0.99
     LearningRate: 0.0001
     NSteps: 5
@@ -78,13 +89,13 @@ dqn:
 
 sac:
     Recurrent: true
-    BurnIn: 0
+    BurnIn: 3
     AdaptiveSequenceLength: false
     ActionFeedback: true
     RewardFeedback: true
     PolicyFeedback: true
-    SequenceLength: 12
-    Overlap: 3
+    SequenceLength: 10
+    Overlap: 4
     ActorNum: 8
     BatchSize: 32
     ClipGrad: 10.0
@@ -92,7 +103,7 @@ sac:
         FeatureSpaceSize: 18
         CuriosityScalingFactor: 0.03
         LearningRate: 0.00005
-        Epsilon: 0.25
+        Epsilon: 0.99
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
         StepDown: false
@@ -103,12 +114,23 @@ sac:
         KernelEpsilon: 0.01
         MaximumSimilarity: 4
         EpisodicMemoryCapacity: 600
+        kECR: 5
+        BetaECR: 1.0
+    MetaLearningParameters:
+        Epsilon: 0.3
+        EpsilonDecay: 0.999
+        EpsilonMin: 0.02
+        StepDown: false
+        ExplorationPolicies: 12
+        UCBWindowSize: 160
+        UCBBeta: 1
+        EpisodicCounting: false
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
     LogAlpha: -1.0
     NSteps: 5
-    AdaptiveExploration: false
+    AdaptiveExploration: true
     NetworkUpdateFrequency: 50
     SelfPlayNetworkUpdateFrequency: 5000
     NetworkParameters:
@@ -118,16 +140,16 @@ sac:
         ActorVisualNetworkArchitecture: CNN
         CriticVectorNetworkArchitecture: Dense
         CriticVisualNetworkArchitecture: CNN
-    PrioritizedReplay: true
+    PrioritizedReplay: false
     PriorityAlpha: 0.8
     RewardNormalization: false
     ReplayCapacity: 100000
-    ReplayMinSize: 100
+    ReplayMinSize: 10
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: _debug_SAC_3DBall_EpsGreedy_actFeedback
-    TrainingInterval: 1
+    TrainingID: _debug_SAC_MC_NGUwMCTSCount
+    TrainingInterval: 10
 cql:
     Recurrent: false
     BurnIn: 0

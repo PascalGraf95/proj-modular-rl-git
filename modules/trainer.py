@@ -59,6 +59,11 @@ class Trainer:
         self.exploration_configuration = None
         self.exploration_algorithm = None
 
+        # - Meta Learning Algorithm -
+        # The meta learning algorithm has its own set of parameters defining the extent of meta learning.
+        self.meta_learning_configuration = None
+        self.meta_learning_algorithm = None
+
         # - Curriculum Learning Strategy -
         # The curriculum strategy determines when an agent has solved the current task level and is ready to proceed
         # to a higher difficulty.
@@ -132,7 +137,7 @@ class Trainer:
 
     # region Instantiation
     def async_instantiate_agent(self, mode: str, preprocessing_algorithm: str, exploration_algorithm: str,
-                                environment_path: str = None, model_path: str = None,
+                                meta_learning_algorithm: str, environment_path: str = None, model_path: str = None,
                                 preprocessing_path: str = None, demonstration_path: str = None, clone_path: str = None):
         """ Instantiate the agent consisting of learner and actor(s) and their respective submodules in an asynchronous
         fashion utilizing the ray library."""
@@ -153,13 +158,21 @@ class Trainer:
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
         # returns 0. If the Meta-Controller is used, a family of exploration policies is created, where the controller
         # later on can dynamically choose from.
-        intrinsic_exploration_algorithms = ["ENM"]  # Will contain NGU, ECR, NGU-r, RND-alter with future updates...
+        intrinsic_exploration_algorithms = ["ENM", "ECR", "RNDAlter", "NGU", "NGUr"]
 
         # Calculate exploration policy values based on agent57's concept
         # The exploration is now a list that contains a dictionary for each actor.
-        # Each dictionary contains a value for beta and gamma (utilized for intrinsic motivation)
-        # as well as a scaling values (utilized for epsilon greedy).
-        exploration_degree = get_exploration_policies(num_policies=actor_num,
+        # Each dictionary contains a value for beta and gamma (utilized for intrinsic motivation) as well as a scaling
+        # values (utilized for epsilon greedy). In case of the meta-controller being used, the exploration degrees are
+        # calculated based on a configurable amount of exploration policies.
+        if exploration_algorithm in intrinsic_exploration_algorithms:
+            if meta_learning_algorithm == "MetaController":
+                # Meta-Controller chooses from a range of exploration policies
+                number_of_policies = self.trainer_configuration["MetaLearningParameters"].get("ExplorationPolicies")
+            else:
+                # One fixed exploration policy per actor if there is no meta-controller
+                number_of_policies = self.trainer_configuration["ActorNum"]
+        exploration_degree = get_exploration_policies(num_policies=number_of_policies,
                                                       mode=mode,
                                                       beta_max=self.trainer_configuration[
                                                           "ExplorationParameters"].get(
@@ -168,14 +181,22 @@ class Trainer:
         # Pass the exploration degree to the trainer configuration
         self.trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
 
+        # Meta-Controller adapts the agents' exploration policy. Therefore, it requires the agent inputs to be extended
+        # manually by the exploration policy index used within the respective timestep.
+        if meta_learning_algorithm == "MetaController" and mode == "training":
+            self.trainer_configuration["PolicyFeedback"] = True
+
         # Extension of agent inputs to accept values in addition to the environment observations (exploration policy
-        # index, ext. reward, int. reward) is only compatible with usage of intrinsic exploration algorithms.
+        # index, ext. reward, int. reward) is only compatible with usage of intrinsic exploration algorithms. Moreover,
+        # meta_learning through meta-controller is also disabled if intrinsic exploration algorithms are not being used.
         if exploration_algorithm not in intrinsic_exploration_algorithms and mode == "training":
             self.trainer_configuration["IntrinsicExploration"] = False
             self.trainer_configuration["PolicyFeedback"] = False
             self.trainer_configuration["RewardFeedback"] = False
             print("\n\nExploration policy feedback and reward feedback automatically disabled as no intrinsic "
                   "exploration algorithm is in use.\n\n")
+            if meta_learning_algorithm == "MetaController":
+                meta_learning_algorithm = "None"
         else:
             self.trainer_configuration["IntrinsicExploration"] = True
 
@@ -189,6 +210,7 @@ class Trainer:
                                     preprocessing_algorithm,
                                     preprocessing_path,
                                     exploration_algorithm,
+                                    meta_learning_algorithm,
                                     environment_path,
                                     demonstration_path,
                                     '/cpu:0') for idx in range(actor_num)]
@@ -214,13 +236,15 @@ class Trainer:
                 else:
                     actor.set_unity_parameters.remote(time_scale=1, width=500, height=500)
 
-        # Get the environment and exploration configuration from the first actor.
+        # Get the environment, exploration and meta learning configuration from the first actor.
         # NOTE: ray remote-functions return IDs only. If you want the actual returned value of the function you need to
         # call ray.get() on the ID.
         environment_configuration = self.actors[0].get_environment_configuration.remote()
         self.environment_configuration = ray.get(environment_configuration)
         exploration_configuration = self.actors[0].get_exploration_configuration.remote()
         self.exploration_configuration = ray.get(exploration_configuration)
+        meta_learning_configuration = self.actors[0].get_meta_learning_configuration.remote()
+        self.meta_learning_configuration = ray.get(meta_learning_configuration)
 
         # - Learner Instantiation -
         # Create one learner capable of learning according to the selected algorithm utilizing the buffered actor
@@ -270,6 +294,7 @@ class Trainer:
                 _ = yaml.dump(self.trainer_configuration, file)
                 _ = yaml.dump(self.environment_configuration, file)
                 _ = yaml.dump(self.exploration_configuration, file)
+                _ = yaml.dump(self.meta_learning_configuration, file)
     # endregion
 
     # region Misc
@@ -278,7 +303,9 @@ class Trainer:
         checkpoint_condition = self.global_logger.check_checkpoint_condition.remote(training_step)
         self.learner.save_checkpoint.remote(os.path.join("training/summaries", self.logging_name),
                                             self.global_logger.get_best_running_average.remote(),
-                                            training_step, self.save_all_models, checkpoint_condition)
+                                            training_step, self.save_all_models, checkpoint_condition,
+                                            self.actors[ray.get(self.global_logger.get_best_actor.remote())].get_exploration_policy_index.remote(),
+                                            self.actors[ray.get(self.global_logger.get_best_actor.remote())].get_exploration_reward.remote())
         if self.remove_old_checkpoints:
             self.global_logger.remove_old_checkpoints.remote()
 
@@ -379,6 +406,8 @@ class Trainer:
             # be logged in the same interval.
             for idx, actor in enumerate(self.actors):
                 self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(), training_step,
+                                                   self.logging_frequency)
+                self.global_logger.log_dict.remote(actor.get_meta_learning_logs.remote(), training_step,
                                                    self.logging_frequency)
             # endregion
 
