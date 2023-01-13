@@ -3,18 +3,18 @@ import pandas as pd
 import shutil
 import csv
 import math
-from misc.elo import Elo
-from training_algorithms.agent_blueprint import Actor as ab
+from modules.misc.elo import *
+from modules.training_algorithms.agent_blueprint import Actor as ab
 import unittest
 
 class TestElo(unittest.TestCase):
     def test_elo_calculation(self):
         # test 
-        new_rating = Elo.calculate_standard_elo(1500, 1500, 1, 32)
+        new_rating = calculate_updated_elo(1500, 1500, 1, 32)
         self.assertEqual(new_rating, 1516)
-        new_rating = Elo.calculate_standard_elo(1500, 1500, 0, 32)
+        new_rating = calculate_updated_elo(1500, 1500, 0, 32)
         self.assertEqual(new_rating, 1484)
-        new_rating = Elo.calculate_standard_elo(1500, 1500, 0.5, 32)
+        new_rating = calculate_updated_elo(1500, 1500, 0.5, 32)
         self.assertEqual(new_rating, 1500)
 
 class HelperFunctions():

@@ -12,6 +12,7 @@ from datetime import datetime
 import os
 import ray
 import tensorflow as tf
+from modules.misc.model_path_handling import get_model_key_from_dictionary
 
 
 @ray.remote
@@ -173,8 +174,9 @@ class DQNLearner(Learner):
 
     # endregion
 
-    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None, clone_model_path=None):
-        super().__init__(trainer_configuration, environment_configuration, model_path, clone_model_path)
+    def __init__(self, mode, trainer_configuration, environment_configuration, model_dictionary=None,
+                 clone_model_dictionary=None):
+        super().__init__(trainer_configuration, environment_configuration, model_dictionary, clone_model_dictionary)
         # Networks
         self.critic: keras.Model
         self.critic_target: keras.Model
@@ -190,7 +192,7 @@ class DQNLearner(Learner):
             # Network Construction
             self.build_network(trainer_configuration["NetworkParameters"], environment_configuration)
             # Try to load pretrained models if provided. Otherwise, this method does nothing.
-            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
+            model_key = get_model_key_from_dictionary(self.model_dictionary, mode="latest")
             if model_key:
                 self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
             # TODO: Implement Clone model and self-play
@@ -201,9 +203,9 @@ class DQNLearner(Learner):
 
         # Load trained Models
         elif mode == 'testing':
-            assert model_path, "No model path entered."
+            assert len(self.model_dictionary), "No model path provided or no appropriate model present in given path."
             # Try to load pretrained models if provided. Otherwise, this method does nothing.
-            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
+            model_key = get_model_key_from_dictionary(self.model_dictionary, mode="latest")
             if model_key:
                 self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
 

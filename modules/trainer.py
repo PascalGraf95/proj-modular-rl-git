@@ -4,6 +4,7 @@ import logging
 from modules.misc.replay_buffer import FIFOBuffer, PrioritizedBuffer
 from modules.misc.logger import GlobalLogger
 from modules.misc.utility import getsize, get_exploration_policies
+from modules.misc.model_path_handling import create_model_dictionary_from_path
 
 import os
 import numpy as np
@@ -12,8 +13,6 @@ import time
 
 import yaml
 import ray
-
-from pynput.keyboard import Key, Listener
 
 
 class Trainer:
@@ -81,6 +80,13 @@ class Trainer:
         self.remove_old_checkpoints = False
         self.interface = None
 
+        # - Self-Play Tournament -
+        self.model_dictionary = None
+        self.clone_model_dictionary = None
+        self.tournament_schedule = None
+        self.games_played_in_fixture = 0
+        self.games_per_fixture = None
+
     # region Algorithm Choice
     def select_training_algorithm(self, training_algorithm):
         """ Imports the agent (actor, learner) blueprint according to the algorithm choice."""
@@ -130,12 +136,14 @@ class Trainer:
         return Learner.validate_action_space(self.agent_configuration, self.environment_configuration)
     # endregion
 
-    # region Instantiation
+    # region ---Instantiation ---
     def async_instantiate_agent(self, mode: str, preprocessing_algorithm: str, exploration_algorithm: str,
                                 environment_path: str = None, model_path: str = None,
                                 preprocessing_path: str = None, demonstration_path: str = None, clone_path: str = None):
         """ Instantiate the agent consisting of learner and actor(s) and their respective submodules in an asynchronous
         fashion utilizing the ray library."""
+
+        # region - Multiprocessing Initialization and Actor Number Determination
         # Initialize ray for parallel multiprocessing.
         ray.init()
         # Alternatively, use the following code line to enable debugging (with ray >= 2.0.X)
@@ -147,7 +155,9 @@ class Trainer:
             actor_num = 1
         else:
             actor_num = self.trainer_configuration.get("ActorNum")
+        # endregion
 
+        # region - Exploration Degree Determination -
         # If there is only one actor in training mode the degree of exploration should start at maximum. Otherwise,
         # each actor will be instantiated with a different degree of exploration. This only has an effect if the
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
@@ -178,8 +188,14 @@ class Trainer:
                   "exploration algorithm is in use.\n\n")
         else:
             self.trainer_configuration["IntrinsicExploration"] = True
+        # endregion
 
-        # - Actor Instantiation -
+        # region - Model Dictionary Creation -
+        self.model_dictionary = create_model_dictionary_from_path(model_path)
+        self.clone_model_dictionary = create_model_dictionary_from_path(clone_path)
+        # endregion
+
+        # region - Actor Instantiation and Environment Connection -
         # Create the desired number of actors using the ray "remote"-function. Each of them will construct their own
         # environment, exploration algorithm and preprocessing algorithm instances. The actors are distributed along
         # the cpu cores and threads, which means their number in the trainer configuration should not extend the maximum
@@ -213,7 +229,9 @@ class Trainer:
                     actor.set_unity_parameters.remote(time_scale=1000, width=500, height=500)
                 else:
                     actor.set_unity_parameters.remote(time_scale=1, width=500, height=500)
+        # endregion
 
+        # region - Environment & Exploration Configuration Query -
         # Get the environment and exploration configuration from the first actor.
         # NOTE: ray remote-functions return IDs only. If you want the actual returned value of the function you need to
         # call ray.get() on the ID.
@@ -221,15 +239,16 @@ class Trainer:
         self.environment_configuration = ray.get(environment_configuration)
         exploration_configuration = self.actors[0].get_exploration_configuration.remote()
         self.exploration_configuration = ray.get(exploration_configuration)
+        # endregion
 
-        # - Learner Instantiation -
+        # region - Learner Instantiation and Network Construction -
         # Create one learner capable of learning according to the selected algorithm utilizing the buffered actor
         # experiences. If a model path is given, the respective networks will continue to learn from this checkpoint.
         # If a clone path is given, it will be used as starting point for self-play.
         self.learner = Learner.remote(mode, self.trainer_configuration,
                                       self.environment_configuration,
-                                      model_path,
-                                      clone_path)
+                                      self.model_dictionary,
+                                      self.clone_model_dictionary)
 
         # Initialize the actor network for each actor
         network_ready = [actor.build_network.remote(self.trainer_configuration.get("NetworkParameters"),
@@ -237,8 +256,9 @@ class Trainer:
                          for idx, actor in enumerate(self.actors)]
         # Wait for the networks to be built
         ray.wait(network_ready)
+        # endregion
 
-        # - Global Buffer -
+        # region - Global Buffer -
         # The global buffer stores the experiences from each actor which will be sampled during the training loop in
         # order to train the Learner networks. If the prioritized replay buffer is enabled, samples will not be chosen
         # with uniform probability but considering their priority, i.e. their "unpredictability".
@@ -250,8 +270,9 @@ class Trainer:
         if mode == "training":
             # Initialize the global curriculum strategy, but only in training mode
             self.global_curriculum_strategy = CurriculumStrategy.remote()
+        # endregion
 
-        # - Global Logger -
+        # region - Global Logger and Log File -
         # The global logger writes the current training stats to a tensorboard event file which can be viewed in the
         # browser. This will only be done, if the agent is in training mode.
         self.logging_name = \
@@ -270,6 +291,7 @@ class Trainer:
                 _ = yaml.dump(self.trainer_configuration, file)
                 _ = yaml.dump(self.environment_configuration, file)
                 _ = yaml.dump(self.exploration_configuration, file)
+        # endregion
     # endregion
 
     # region Misc
@@ -395,29 +417,6 @@ class Trainer:
 
             # TODO: Add an option to affect the training process with keyboard events.
             #       E.g. Skip Level, Boost Exploration, Render Test Episode
-
-    def on_press(self, key):
-        try:
-            x = key.char
-        except AttributeError:
-            return
-
-        if key.char == "t":
-            print("Testing Mode")
-            if self.interface == "MLAgentsV18":
-                self.actors[0].set_unity_parameters.remote(time_scale=1,
-                                                           width=500, height=500,
-                                                           quality_level=5,
-                                                           target_frame_rate=60,
-                                                           capture_frame_rate=60)
-        elif key.char == "z":
-            print("Training Mode")
-            if self.interface == "MLAgentsV18":
-                self.actors[0].set_unity_parameters.remote(time_scale=1000,
-                                                           width=10, height=10,
-                                                           quality_level=1,
-                                                           target_frame_rate=-1,
-                                                           capture_frame_rate=60)
 
     def async_adapt_sequence_length(self, training_step):
         """"""
@@ -556,25 +555,16 @@ class Trainer:
     def async_testing_loop(self):
         """"""
         # Before starting the acting loop all actors need a copy of the latest network weights.
-        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True), 0) for actor in self.actors]
+        [actor.update_actor_network.remote(
+            self.learner.get_actor_network_weights.remote(True), 0) for actor in self.actors]
         rating_period = None
         while True:
             # Receiving the latest state from its environment each actor chooses an action according to its policy.
-            actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]            
-            for actor in self.actors:
-                # update the side channel information. For example this is used to update the game results history for the rating algorithm
-                # TODO: Get the id of the agents playing against each other from the tournament scheduler
-                actor.get_side_channel_information.remote(self.model_path)
-                # get the rating period
-                if rating_period is None:
-                    rating_period = actor.get_current_rating_period.remote(self.model_path)
-                # rating period changed
-                if rating_period != actor.get_current_rating_period.remote(self.model_path):
-                    # update the rating period
-                    rating_period = actor.get_current_rating_period.remote(self.model_path)
-                    # update the rating history
-                    actor.update_ratings.remote(self.model_path)
-                
+            actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]
             # Wait for the actors to finish their environment steps
             ray.wait(actors_ready)
+
+    def async_tournament_loop(self):
+        # ToDo: Define
+        pass
     # endregion

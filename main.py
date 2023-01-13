@@ -83,6 +83,9 @@ def main():
     # Determine if old model checkpoints will be overwritten
     trainer.remove_old_checkpoints = args.remove_old_checkpoints
 
+    # - Self-Play Tournament -
+    trainer.games_per_fixture = args.games_per_fixture
+
     # endregion
 
     # region --- Initialization ---

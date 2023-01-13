@@ -24,6 +24,6 @@ modules/training_algorithms/__pycache__/SAC.cpython-39.pyc
 modules/sidechannel/__pycache__/airhockey_sidechannel.cpython-39.pyc
 modules/misc/__pycache__/elo.cpython-39.pyc
 modules/misc/__pycache__/glicko2.cpython-39.pyc
-modules/sidechannel/airhockey_sidechannel.py
+modules/sidechannel/airhockey_sidechannel.pyc
 modules/tests/__pycache__/__init__.cpython-39.pyc
 modules/tests/__pycache__/rating_test.cpython-39.pyc

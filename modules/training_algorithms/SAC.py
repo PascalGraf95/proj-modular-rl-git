@@ -14,6 +14,7 @@ import os
 import csv
 import ray
 import time
+from modules.misc.model_path_handling import get_model_key_from_dictionary
 
 tfd = tfp.distributions
 global AgentInterface
@@ -221,9 +222,10 @@ class SACLearner(Learner):
     ActionType = ['CONTINUOUS']
     NetworkTypes = ['Actor', 'Critic1', 'Critic2']
 
-    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None, clone_model_path=None):
+    def __init__(self, mode, trainer_configuration, environment_configuration, model_dictionary=None,
+                 clone_model_dictionary=None):
         # Call parent class constructor
-        super().__init__(trainer_configuration, environment_configuration, model_path, clone_model_path)
+        super().__init__(trainer_configuration, environment_configuration, model_dictionary, clone_model_dictionary)
 
         # region --- Object Variables ---
         # - Neural Networks -
@@ -265,12 +267,12 @@ class SACLearner(Learner):
             # information
             self.build_network(trainer_configuration.get("NetworkParameters"), environment_configuration)
             # Try to load pretrained models if provided. Otherwise, this method does nothing.
-            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
+            model_key = get_model_key_from_dictionary(self.model_dictionary, mode="latest")
             if model_key:
                 self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
             # In case of self-play try to load a clone model if provided. If there is a clone model but no distinct
             # path is provided, the agent actor's weights will be utilized.
-            clone_model_key = self.get_model_key_from_dictionary(self.clone_model_dictionary, mode="latest")
+            clone_model_key = get_model_key_from_dictionary(self.clone_model_dictionary, mode="latest")
             if clone_model_key:
                 self.load_checkpoint_from_path_list(self.clone_model_dictionary[clone_model_key]['ModelPaths'],
                                                     clone=True)
@@ -288,12 +290,12 @@ class SACLearner(Learner):
             # In case of testing there is no model construction, instead a model path must be provided.
             assert len(self.model_dictionary), "No model path provided or no appropriate model present in given path."
             # Try to load pretrained models if provided. Otherwise, this method does nothing.
-            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
+            model_key = get_model_key_from_dictionary(self.model_dictionary, mode="latest")
             if model_key:
                 self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
             # In case of self-play try to load a clone model if provided. If there is a clone model but no distinct
             # path is provided, the agent actor's weights will be utilized.
-            clone_model_key = self.get_model_key_from_dictionary(self.clone_model_dictionary, mode="latest")
+            clone_model_key = get_model_key_from_dictionary(self.clone_model_dictionary, mode="latest")
             if clone_model_key:
                 self.load_checkpoint_from_path_list(self.clone_model_dictionary[clone_model_key]['ModelPaths'],
                                                     clone=True)
