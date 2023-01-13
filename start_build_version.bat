@@ -1,0 +1,1 @@
+python main.py --mode testing --model_path C:\repos\Airhockey_Agent_Weights\in_use --trainer_interface MLAgentsV18 --train_algorithm SAC --env_path C:\repos\proj-air-hockey\Builds\AirHockey.exe
