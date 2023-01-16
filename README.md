@@ -1,5 +1,5 @@
 # >>> Modular Reinforcement Learning©
-*created and maintained by Pascal Graf 2022*
+*created and maintained by Pascal Graf 2023*
 
 **Documentation and instructions are incorporated into the code. To get started take a look at 
 the `main.py` file.**

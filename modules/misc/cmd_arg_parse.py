@@ -3,8 +3,8 @@ import argparse
 class CmdArgParse:
     def return_args(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument('-m', '--mode', help="Choose between 'training', 'testing' or 'fastTesting'", type=str,
-                            required=False, default="training")
+        parser.add_argument('-m', '--mode', help="Choose between 'training', 'testing', 'fastTesting' or 'tournament'",
+                            type=str, required=False, default="training")
         parser.add_argument('-mp', '--model_path', help="If you want to test a trained model "
                                                         "or continue learning from a "
                                                         "checkpoint enter the model path here.",
@@ -48,6 +48,12 @@ class CmdArgParse:
                                                                 "the right key (training algorithm) "
                                                                 "e.g. <path to yaml> <key>)", type=str, nargs=2,
                             required=False, default=['trainer_configs/trainer_config.yaml', 'sac'])
+        parser.add_argument('-gpf', '--games_per_fixture', help="Number of matches between each fixture in the "
+                                                                "tournament schedule.",
+                            type=int, default=10, required=False)
+        parser.add_argument('-hp', '--history_path', help="Path to the history csv file containing all "
+                                                          "played matches used to update player ratings.",
+                            type=str, default="./training/rating_history.csv", required=False)
 
         args = parser.parse_args()
         return args

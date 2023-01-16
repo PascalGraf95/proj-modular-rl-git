@@ -10,6 +10,7 @@ from modules.sidechannel.curriculum_sidechannel import CurriculumSideChannelTask
 from modules.sidechannel.game_results_sidechannel import GameResultsSideChannel
 from modules.curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
+from modules.misc.model_path_handling import get_model_key_from_dictionary
 from collections import deque
 import time
 import ray
@@ -143,10 +144,6 @@ class Actor:
         self.mode = mode
         self.port = port
         self.index = idx
-
-        # - Rating -
-        self.player_results_file = 'rating_history.csv'
-        self.game_results = 'game_results.csv'
 
     # region Environment Connection and Side Channel Communication
     def connect_to_unity_environment(self):
@@ -408,7 +405,10 @@ class Actor:
     def build_network(self, network_parameters, environment_parameters):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
-    def update_actor_network(self, network_weights, forced=False):
+    def update_actor_network(self, network_weights):
+        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    def update_clone_network(self, network_weights):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
     # endregion
 
@@ -835,6 +835,9 @@ class Learner:
     def get_actor_network_weights(self, update_requested):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
+    def get_clone_network_weights(self, update_requested, clone_from_actor=False):
+        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
     def build_network(self, network_parameters, environment_parameters):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
@@ -851,6 +854,21 @@ class Learner:
     # region Checkpoints
     def load_checkpoint_from_path_list(self, model_paths, clone=False):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    def load_checkpoint_by_mode(self, mode='latest', mode_two=None):
+        # Try to load pretrained models if provided. Otherwise, this method does nothing.
+        model_key = get_model_key_from_dictionary(self.model_dictionary, mode=mode)
+        if model_key:
+            self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
+        # In case of self-play try to load a clone model if provided. If there is a clone model but no distinct
+        # path is provided, the agent actor's weights will be utilized.
+        if mode_two:
+            clone_model_key = get_model_key_from_dictionary(self.clone_model_dictionary, mode=mode_two)
+        else:
+            clone_model_key = get_model_key_from_dictionary(self.clone_model_dictionary, mode=mode)
+        if clone_model_key:
+            self.load_checkpoint_from_path_list(self.clone_model_dictionary[clone_model_key]['ModelPaths'],
+                                                clone=True)
 
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")

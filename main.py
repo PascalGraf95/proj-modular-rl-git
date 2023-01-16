@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------------------
-# >>> Modular Reinforcement Learning© created and maintained by Pascal Graf 2022 <<<
+# >>> Modular Reinforcement Learning© created and maintained by Pascal Graf 2023 <<<
 # ----------------------------------------------------------------------------------
 
 # region --- Imports ---
@@ -8,6 +8,7 @@ from modules.trainer import Trainer
 from modules.misc.cmd_arg_parse import CmdArgParse
 np.set_printoptions(precision=2)
 # endregion
+
 
 def main():
     """ Modular Reinforcement Learning© main-function
@@ -85,16 +86,19 @@ def main():
 
     # - Self-Play Tournament -
     trainer.games_per_fixture = args.games_per_fixture
+    trainer.history_path = args.history_path
 
     # endregion
 
     # region --- Initialization ---
 
+    #
+    trainer.create_model_dictionaries(model_path, clone_path)
     # Parse the trainer configuration (make sure to select the right key)
     trainer.parse_training_parameters(args.training_parameters[0], args.training_parameters[1])
     # Instantiate the agent which consists of a learner and one or multiple actors
     trainer.async_instantiate_agent(mode, preprocessing_algorithm, exploration_algorithm,
-                                    environment_path, model_path, preprocessing_path, demonstration_path, clone_path)
+                                    environment_path, preprocessing_path, demonstration_path)
     # If you are trying to understand this project, the next place to continue exploring it would be the trainer file
     # in the respective directory (./modules/trainer.py)
 
@@ -103,12 +107,11 @@ def main():
     # region --- Training / Testing ---
     # Play new episodes until the training/testing is manually interrupted
     if mode == "training":
-        if curriculum_strategy and curriculum_strategy != "None":
-            trainer.async_training_loop_curriculum()
-        else:
-            trainer.async_training_loop()
-    else:
+        trainer.async_training_loop()
+    elif mode == "testing" or mode == "fastTesting":
         trainer.async_testing_loop()
+    else:
+        trainer.async_tournament_loop()
     # endregion
 
 

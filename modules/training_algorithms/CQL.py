@@ -220,7 +220,7 @@ class CQLActor(Actor):
             return sample_errors
         return None
 
-    def update_actor_network(self, network_weights, total_episodes=0):
+    def update_actor_network(self, network_weights):
         if self.environment_path != "NoEnv":
             if not len(network_weights):
                 return

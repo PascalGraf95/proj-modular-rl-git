@@ -107,7 +107,7 @@ class DQNActor(Actor):
                 sample_errors = eta * np.max(sample_errors, axis=1) + (1 - eta) * np.mean(sample_errors, axis=1)
         return sample_errors
 
-    def update_actor_network(self, network_weights, total_episodes=0):
+    def update_actor_network(self, network_weights):
         if not len(network_weights):
             return
         self.critic_network.set_weights(network_weights[0])
@@ -210,7 +210,30 @@ class DQNLearner(Learner):
                 self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
 
     def get_actor_network_weights(self, update_requested):
+        """
+        Return the weights from the learner in order to copy them to the actor networks, but only if the
+        update requested flag is true.
+        :param update_requested: Flag that determines if actual weights are returned for the actor.
+        :return: An empty list or a list containing  keras network weights for each model.
+        """
+        if not update_requested:
+            return []
         return [self.critic.get_weights()]
+
+    def get_clone_network_weights(self, update_requested, clone_from_actor=False):
+        """
+        Return the weights from the learner in order to copy them to the clone actor networks, but only if the
+        update requested flag is true.
+        :param update_requested: Flag that determines if actual weights are returned for the actor.
+        :param clone_from_actor: Flag that determines if the clone network keeps its designated own set of weights
+        or if the weights are copied from the actor network.
+        :return: An empty list or a list containing  keras network weights for each model.
+        """
+        if not update_requested:
+            return []
+        if clone_from_actor or not self.clone_model_dictionary:
+            return[self.critic.get_weights()]
+        return [self.clone_actor_network.get_weights()]
 
     def build_network(self, network_settings, environment_parameters):
         # Create a list of dictionaries with 1 entry, one for each network
