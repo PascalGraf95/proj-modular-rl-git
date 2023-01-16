@@ -1,20 +1,31 @@
 import tensorflow as tf
+from tensorflow import keras
+from keras.layers import Dense, LSTM
 import numpy as np
 import time
-
+import ray
+gpus = tf.config.experimental.list_physical_devices("GPU")
+tf.config.experimental.set_memory_growth(gpus[0], True)
 np.random.seed(42)
 tf.random.set_seed(42)
 
 
+@ray.remote
 class Mooodel():
     def __init__(self):
-        input_layer = tf.keras.Input(shape=(None, 2))
-        lstm_out, hidden_state, cell_state = tf.keras.layers.LSTM(3, return_state=True)(input_layer)
-        output = tf.keras.layers.Dense(2)(lstm_out)
-        self.model = tf.keras.Model(inputs=input_layer, outputs=[output, hidden_state, cell_state])
-        self.lstm = self.model.get_layer("lstm")
-        print(self.lstm.units)
+        input_layer = tf.keras.Input(shape=2)
+        x = Dense(1)(input_layer)
+        # x = tf.keras.layers.LSTM(4, return_state=False)(x)
+        # x = tf.keras.layers.Dense(2)(x)
+        self.model = tf.keras.Model(inputs=input_layer, outputs=x)
 
+    def get_model(self):
+        return self.model
+
+    def predict_with_model(self, x):
+        return self.model(x)
+
+    """
     def get_zero_initial_state(self, inputs):
         return [tf.zeros((2, 3)), tf.zeros((2, 3))]
 
@@ -27,37 +38,17 @@ class Mooodel():
     def set_initial_state(self, states):
         self.initial_state = states
         self.lstm.get_initial_state = lambda x: states
-
-    def __call__(self, inputs, states=None):
-        """
-        if states is None:
-            self.lstm.get_initial_state = self.get_zero_initial_state
-
-        else:
-            self.initial_state = states
-            self.lstm.get_initial_state = self.get_initial_state
-        """
-
-        return self.model(inputs)
+    """
 
 
 if __name__ == '__main__':
-    lstm_state = [np.ones((2, 3), dtype=np.float32), np.ones((2, 3), dtype=np.float32)]
-    #print(lstm_state)
-    #print(lstm_state[0].shape)
-    #print(tf.zeros(3).shape)
-    #lstm_state[0][0] = np.zeros(3)
-    #lstm_state[1][0] = np.zeros(3)
-    print(lstm_state)
+    ray.init()
 
-    mdl = Mooodel()
+    model = Mooodel.remote()
     time.sleep(3)
-    x = np.random.rand(2, 1, 2).astype(np.float32)
-    out, hidden_state, cell_state = mdl(x)
-    print(np.mean(out))
-    mdl.set_initial_state([tf.convert_to_tensor(lstm_state[0]), tf.convert_to_tensor(lstm_state[1])])
-    out, hidden_state, cell_state = mdl(x)
-    print(np.mean(out))
-    mdl.set_zero_initial_state()
-    out, hidden_state, cell_state = mdl(x)
-    print(np.mean(out))
+
+    for i in range(100):
+        x = np.random.rand(2, 2).astype(np.float32)
+        out = model.predict_with_model.remote(x)
+        print(str(i) + ": " + str(ray.get(out)))
+        time.sleep(0.5)

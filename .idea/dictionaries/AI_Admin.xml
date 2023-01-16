@@ -2,6 +2,7 @@
   <dictionary name="AI-Admin">
     <words>
       <w>ddpg</w>
+      <w>executability</w>
       <w>graf</w>
       <w>mlagents</w>
       <w>showfile</w>

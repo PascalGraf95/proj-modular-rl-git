@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import numpy as np
+import tensorflow as tf
 from tensorflow import keras
 from keras.optimizers import Adam
 from tensorflow import keras
@@ -9,14 +10,13 @@ from ..misc.network_constructor import construct_network
 import tensorflow as tf
 from keras.models import clone_model
 from keras import losses
-import tensorflow_probability as tfp
+from tensorflow_probability import distributions as tfd
 import os
 import csv
 import ray
 import time
 from modules.misc.model_path_handling import get_model_key_from_dictionary
 
-tfd = tfp.distributions
 global AgentInterface
 
 
@@ -193,7 +193,7 @@ class SACActor(Actor):
 
         # region --- Build ---
         with tf.device(self.device):
-            self.actor_network = construct_network(network_parameters[0], plot_network_model=True)
+            self.actor_network = construct_network(network_parameters[0], plot_network_model=False)
             # TODO: only construct this if PER
             self.critic_network = construct_network(network_parameters[1])
             if self.recurrent:
@@ -203,10 +203,10 @@ class SACActor(Actor):
                 network_parameters.append(network_parameters[0].copy())
                 if self.recurrent:
                     network_parameters[3]['NetworkName'] = 'ActorCloneCopy{}'.format(self.index)
-                    self.clone_actor_network = construct_network(network_parameters[3], plot_network_model=True)
+                    self.clone_actor_network = construct_network(network_parameters[3], plot_network_model=False)
                 else:
                     network_parameters[2]['NetworkName'] = 'ActorCloneCopy{}'.format(self.index)
-                    self.clone_actor_network = construct_network(network_parameters[2], plot_network_model=True)
+                    self.clone_actor_network = construct_network(network_parameters[2], plot_network_model=False)
             if self.recurrent:
                 # In case of recurrent neural networks, the lstm layers need to be accessible so that the hidden and
                 # cell states can be modified manually.
@@ -428,14 +428,14 @@ class SACLearner(Learner):
         if not checkpoint_condition:
             return
         self.actor_network.save(
-            os.path.join(path, "SAC_Actor_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
+            os.path.join(path, "SAC_Actor_Step{:06d}_Reward{:.2f}.h5".format(training_step, running_average_reward)))
         if save_all_models:
             self.critic1.save(
-                os.path.join(path, "SAC_Critic1_Step{:06d}_Reward{:.2f}".format(training_step,
-                                                                                running_average_reward)))
+                os.path.join(path, "SAC_Critic1_Step{:06d}_Reward{:.2f}.h5".format(training_step,
+                                                                                   running_average_reward)))
             self.critic2.save(
-                os.path.join(path, "SAC_Critic2_Step{:06d}_Reward{:.2f}".format(training_step,
-                                                                                running_average_reward)))
+                os.path.join(path, "SAC_Critic2_Step{:06d}_Reward{:.2f}.h5".format(training_step,
+                                                                                   running_average_reward)))
     # endregion
 
     # region --- Learning ---
