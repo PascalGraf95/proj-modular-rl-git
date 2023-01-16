@@ -75,14 +75,13 @@ dqn:
     PriorityAlpha: 0.8
     TrainingID: _debug_DQN_CartPole_TESTING
     TrainingInterval: 1
-
 sac:
     Recurrent: true
     BurnIn: 0
     AdaptiveSequenceLength: false
-    ActionFeedback: true
-    RewardFeedback: true
-    PolicyFeedback: true
+    ActionFeedback: false
+    RewardFeedback: false
+    PolicyFeedback: false
     SequenceLength: 12
     Overlap: 6
     ActorNum: 8
@@ -106,14 +105,14 @@ sac:
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -4.0
+    LogAlpha: -1.0
     NSteps: 4
     AdaptiveExploration: false
-    NetworkUpdateFrequency: 50
+    NetworkUpdateFrequency: 200
     SelfPlayNetworkUpdateFrequency: 100000
     NetworkParameters:
         Filters: 16
-        Units: 64
+        Units: 32
         ActorVectorNetworkArchitecture: Dense
         ActorVisualNetworkArchitecture: CNN
         CriticVectorNetworkArchitecture: Dense
@@ -126,7 +125,7 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_Airhockey_Selfplay_TFTEST
+    TrainingID: SAC_Airhockey_Selfplay_TournamentTest
     TrainingInterval: 10
 cql:
     Recurrent: false

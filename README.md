@@ -25,7 +25,7 @@ However, on Windows 10 this might throw 'Windows fatal exception' errors that DO
     - tensorflow-probability: 0.11.X (corresponds to tensorflow version)
   - **Option 2**:
     - tensorflow: 2.10.X
-    - tensorflow-probability: 0.11.X (corresponds to tensorflow version)
+    - tensorflow-probability: 0.18.X (corresponds to tensorflow version)
 ## Features
 - ###Interfaces:
   - Unity MlAgentsV18

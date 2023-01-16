@@ -7,7 +7,6 @@ from tensorflow import keras
 from .agent_blueprint import Actor, Learner
 from keras.models import load_model
 from ..misc.network_constructor import construct_network
-import tensorflow as tf
 from keras.models import clone_model
 from keras import losses
 from tensorflow_probability import distributions as tfd
