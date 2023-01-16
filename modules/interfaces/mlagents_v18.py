@@ -31,6 +31,9 @@ class MlAgentsV18Interface:
             return behavior_names[0], behavior_clone_names[0]
         return behavior_names[0], None
 
+    @staticmethod
+    def get_interface_name():
+        return "MLAgents"
 
     @staticmethod
     def get_observation_shapes(env=None, behavior_specs=None):

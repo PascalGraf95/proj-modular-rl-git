@@ -28,11 +28,14 @@ ddpg:
     TrainingInterval: 64
 dqn:
     Recurrent: true
-    BurnIn: 0
+    BurnIn: 2
     AdaptiveSequenceLength: false
-    SequenceLength: 20
-    Overlap: 5
-    ActorNum: 10
+    ActionFeedback: false
+    RewardFeedback: false
+    PolicyFeedback: false
+    SequenceLength: 10
+    Overlap: 3
+    ActorNum: 8
     ClipGrad: 10.0
     BatchSize: 32
     DoubleLearning: true
@@ -42,15 +45,21 @@ dqn:
         EpsilonDecay: 0.9995
         EpsilonMin: 0.025
         StepDown: false
-        FeatureSpaceSize: 8
+        FeatureSpaceSize: 18
         CuriosityScalingFactor: 0.01
-        LearningRate: 0.0005
+        LearningRate: 0.00005
         ObservationNormalization: false
+        kNearest: 10
+        MaxIntRewardScaling: 0.3
+        ClusterDistance: 0.008
+        KernelEpsilon: 0.01
+        MaximumSimilarity: 4
+        EpisodicMemoryCapacity: 600
     Gamma: 0.99
-    LearningRate: 0.0005
-    NSteps: 4
+    LearningRate: 0.0001
+    NSteps: 5
     NetworkParameters:
-        DuelingNetworks: false
+        DuelingNetworks: true
         NoisyNetworks: false
         Filters: 16
         Units: 64
@@ -62,28 +71,38 @@ dqn:
     SyncMode: soft_sync
     SyncSteps: 200
     Tau: 0.01
-    PrioritizedReplay: true
+    PrioritizedReplay: false
     PriorityAlpha: 0.8
-    TrainingID: DQN_PushBlock
+    TrainingID: _debug_DQN_CartPole_TESTING
     TrainingInterval: 1
+
 sac:
     Recurrent: true
     BurnIn: 0
     AdaptiveSequenceLength: false
+    ActionFeedback: true
+    RewardFeedback: true
+    PolicyFeedback: true
     SequenceLength: 12
     Overlap: 6
     ActorNum: 8
     BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
-        FeatureSpaceSize: 16
+        FeatureSpaceSize: 18
         CuriosityScalingFactor: 0.03
-        LearningRate: 0.001
-        Epsilon: 0.35
+        LearningRate: 0.00005
+        Epsilon: 0.25
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
         StepDown: false
         ObservationNormalization: false
+        kNearest: 10
+        MaxIntRewardScaling: 0.3
+        ClusterDistance: 0.008
+        KernelEpsilon: 0.01
+        MaximumSimilarity: 4
+        EpisodicMemoryCapacity: 600
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005

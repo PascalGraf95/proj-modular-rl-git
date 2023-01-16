@@ -88,8 +88,22 @@ class SACActor(Actor):
             critic_prediction = self.critic_network([*next_state_batch, next_actions])
             critic_target = critic_prediction * (1 - done_batch)
 
+            # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains
+            # an idx giving information which exploration policy was used during acting. This exploration policy
+            # implicitly encodes the parameter gamma (n-step learning) and beta (intrinsic reward scaling factor).
+            if self.recurrent and self.policy_feedback:
+                # Create an empty array with shape (batch_size, sequence_length, 1)
+                self.gamma = np.empty((np.shape(state_batch[-1])[0], self.sequence_length, 1))
+
+                # The state batch with policy feedback is a list that contains:
+                # [actual state, (action, e_rew, i_rew,) pol_idx]
+                # Iterate through all sequences of gamma in the provided batch
+                for idx, sequence in enumerate(state_batch[-1]):
+                    # Set all gammas for the given sequence to be the gamma from first step in the given sequence.
+                    self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
+
             # Train Both Critic Networks
-            y = reward_batch + (self.gamma ** self.n_steps) * critic_target
+            y = reward_batch + np.multiply((self.gamma ** self.n_steps), critic_target)
             sample_errors = np.abs(y - self.critic_network([*state_batch, action_batch]))
             # In case of a recurrent agent the priority has to be averaged over each sequence according to the
             # formula in the paper
@@ -465,6 +479,20 @@ class SACLearner(Learner):
             return None, None, self.training_step
         # endregion
 
+        # With additional network inputs, which is the case when using Agent57-concepts, the state batch contains
+        # an idx giving information which exploration policy was used during acting. This exploration policy
+        # implicitly encodes the parameter gamma (n-step learning) and beta (intrinsic reward scaling factor).
+        if self.recurrent and self.policy_feedback:
+            # Create an empty array with shape (batch_size, sequence_length, 1)
+            self.gamma = np.empty((np.shape(state_batch[-1])[0], self.sequence_length, 1))
+
+            # The state batch with policy feedback is a list that contains:
+            # [actual state, (action, e_rew, i_rew,) pol_idx]
+            # Iterate through all sequences of gamma in the provided batch
+            for idx, sequence in enumerate(state_batch[-1]):
+                # Set all gammas for the given sequence to be the gamma from first step in the given sequence.
+                self.gamma[idx][:] = self.exploration_degree[int(sequence[0][0])]['gamma']
+
         # region --- CRITIC TRAINING ---
         next_actions, next_log_prob = self.forward(next_state_batch)
 
@@ -479,7 +507,7 @@ class SACLearner(Learner):
 
         # Training Target Calculation with standard TD-Error + Temperature Parameter
         critic_target = (critic_target_prediction - self.alpha * next_log_prob) * (1 - done_batch)
-        y = reward_batch + (self.gamma ** self.n_steps) * critic_target
+        y = reward_batch + np.multiply((self.gamma ** self.n_steps), critic_target)
 
         # Possible Reward Normalization
         if self.reward_normalization:
@@ -503,7 +531,11 @@ class SACLearner(Learner):
             critic_prediction1 = self.critic1([*state_batch, new_actions])
             critic_prediction2 = self.critic2([*state_batch, new_actions])
             critic_prediction = tf.minimum(critic_prediction1, critic_prediction2)
-            policy_loss = tf.reduce_mean(self.alpha * log_prob[:, self.burn_in:] - critic_prediction[:, self.burn_in:])
+            if self.recurrent:
+                policy_loss = tf.reduce_mean(
+                    self.alpha * log_prob[:, self.burn_in:] - critic_prediction[:, self.burn_in:])
+            else:
+                policy_loss = tf.reduce_mean(self.alpha * log_prob - critic_prediction)
 
         actor_grads = tape.gradient(policy_loss, self.actor_network.trainable_variables)
         self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor_network.trainable_variables))

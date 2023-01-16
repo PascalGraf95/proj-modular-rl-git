@@ -148,7 +148,7 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
         config_dict = IntrinsicCuriosityModule.__dict__
         return ExplorationAlgorithm.get_config(config_dict)
 
-    def act(self, decision_steps):
+    def act(self, decision_steps, terminal_steps):
         return
 
     def get_logs(self):
