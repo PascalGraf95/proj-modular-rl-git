@@ -10,7 +10,7 @@ class GameResultsSideChannel(SideChannel):
     """
     def __init__(self) -> None:
         super().__init__(uuid.UUID("2f487771-440f-4ffc-afd9-486650eb5b7b"))
-        self.game_results = [0, 0, 0]
+        self.game_results = None
 
     def on_message_received(self, msg: IncomingMessage) -> None:
         # Convert the incoming message consisting of two floats to a list of integers.

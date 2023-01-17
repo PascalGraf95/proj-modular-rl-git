@@ -189,6 +189,7 @@ class Actor:
         # Else, return False.
         game_result = self.get_side_channel_information('game_results')
         if game_result:
+            print(game_result)
             self.append_to_game_results_history(game_result, history_path, player_keys)
             return True
         return False
@@ -201,13 +202,12 @@ class Actor:
             with open(history_path, 'w', newline='') as file:
                 writer = csv.writer(file)
                 writer.writerow(["game_id", "player_key_a", "player_key_b", "score_a", "score_b"])
-                pass
         else:
             # If so just append the latest game results to that file along with the player keys
             with open(history_path) as file:
                 # To get the game id, just count the number of rows.
                 reader = csv.DictReader(file)
-                game_id = sum(1 for _ in reader) - 1
+                game_id = sum(1 for _ in reader)
 
             with open(history_path, 'a', newline='') as file:
                 writer = csv.writer(file)

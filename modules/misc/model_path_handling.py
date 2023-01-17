@@ -88,4 +88,4 @@ def get_model_key_from_dictionary(model_dictionary, mode="latest"):
     # Otherwise, we expect the mode variable to contain the key itself (used for matches between two distinct models
     # for elo rating.
     else:
-        return model_dictionary[mode]
+        return mode

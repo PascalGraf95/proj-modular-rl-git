@@ -111,8 +111,8 @@ sac:
     NetworkUpdateFrequency: 200
     SelfPlayNetworkUpdateFrequency: 100000
     NetworkParameters:
-        Filters: 16
-        Units: 32
+        Filters: 32
+        Units: 64
         ActorVectorNetworkArchitecture: Dense
         ActorVisualNetworkArchitecture: CNN
         CriticVectorNetworkArchitecture: Dense

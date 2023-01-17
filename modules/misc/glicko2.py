@@ -1,8 +1,9 @@
 import math
 import pandas as pd
 
+
 # calculate standard Glicko2
-def calculate_updated_glicko2(rating, rating_deviation, volatility, oppenents_in_period, tau=0.5):
+def calculate_updated_glicko2(rating, rating_deviation, volatility, opponents_in_period, tau=0.5):
     """
     Function to calculate an updated glicko rating for a player a given the score of a played match between player a and
     player b as well as their previous rating estimates.
@@ -24,8 +25,8 @@ def calculate_updated_glicko2(rating, rating_deviation, volatility, oppenents_in
     oppenents = pd.DataFrame(columns=['my', 'phi', 'g', 'E', 's'])
     # Step 2: Convert ratings to Glicko-2 scale
     converted_rating, converted_rating_deviation = _convert_to_glicko2_scale(rating, rating_deviation)
-    for index, opponent in oppenents_in_period.iterrows():
-        score = _calculate_normalized_score(opponent['score'], opponent['opponent_score'])
+    for index, opponent in opponents_in_period.iterrows():
+        score = calculate_normalized_score(opponent['score'], opponent['opponent_score'])
         converted_rating_opponent, converted_rating_deviation_opponent = _convert_to_glicko2_scale(opponent['rating_opponent'], opponent['rating_deviation_opponent'])
         g = _calculate_g(converted_rating_deviation_opponent)
         e = _calculate_e(g, converted_rating, converted_rating_opponent)
@@ -78,7 +79,7 @@ def _calculate_v(g_list, e_list):
 
 
 # calculate score without taking account of margin of victory
-def _calculate_normalized_score(score_a, score_b):
+def calculate_normalized_score(score_a, score_b):
     """
     Given the score of a game return a normalized score between 0 and 1
     :param score_a: Score of player a

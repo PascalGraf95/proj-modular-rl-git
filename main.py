@@ -92,8 +92,10 @@ def main():
 
     # region --- Initialization ---
 
-    #
+    # Create a model dictionary and clone model dictionary from models in a path.
     trainer.create_model_dictionaries(model_path, clone_path)
+    # From the model dictionary and clone model dictionary create a tournament schedule
+    trainer.create_tournament_schedule()
     # Parse the trainer configuration (make sure to select the right key)
     trainer.parse_training_parameters(args.training_parameters[0], args.training_parameters[1])
     # Instantiate the agent which consists of a learner and one or multiple actors

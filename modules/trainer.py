@@ -298,11 +298,14 @@ class Trainer:
         self.clone_model_dictionary = create_model_dictionary_from_path(clone_path)
 
     def create_tournament_schedule(self):
-        self.tournament_schedule = set()
+        self.tournament_schedule = list()
+        tournament_tag_set = set()
         for model_key in self.model_dictionary.keys():
-            for clone_model_key in self.clone_model_dictionary.key():
+            for clone_model_key in self.clone_model_dictionary.keys():
                 if model_key != clone_model_key:
-                    self.tournament_schedule.add([model_key, clone_model_key])
+                    if model_key + "." + clone_model_key not in tournament_tag_set:
+                        tournament_tag_set.add(model_key + "." + clone_model_key)
+                        self.tournament_schedule.append([model_key, clone_model_key])
 
     def async_save_agent_models(self, training_step):
         """"""
@@ -470,7 +473,7 @@ class Trainer:
     def async_tournament_loop(self):
         # Get the first fixture keys and load the respective models into the learner
         player_keys = self.tournament_schedule[self.current_tournament_fixture_idx]
-        self.learner.load_checkpoint_by_mode(player_keys[0], player_keys[1])
+        self.learner.load_checkpoint_by_mode.remote(player_keys[0], player_keys[1])
 
         # Before starting the acting loop all actors need a copy of the latest network weights.
         [actor.update_actor_network.remote(
@@ -482,7 +485,7 @@ class Trainer:
         while True:
             # Receiving the latest state from its environment each actor chooses an action according to its policy.
             actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]
-            new_match_played = [actor.update_history_with_latest_game_results(
+            new_match_played = [actor.update_history_with_latest_game_results.remote(
                 history_path=self.history_path,
                 player_keys=player_keys) for actor
                 in self.actors]
@@ -491,7 +494,7 @@ class Trainer:
             new_match_played = ray.get(new_match_played)
             if new_match_played[0]:
                 self.games_played_in_fixture += 1
-                if self.games_played_in_fixture > self.games_per_fixture:
+                if self.games_played_in_fixture >= self.games_per_fixture:
                     self.current_tournament_fixture_idx += 1
                     self.games_played_in_fixture = 0
 
@@ -499,7 +502,7 @@ class Trainer:
                         break
 
                     player_keys = self.tournament_schedule[self.current_tournament_fixture_idx]
-                    self.learner.load_checkpoint_by_mode(player_keys[0], player_keys[1])
+                    self.learner.load_checkpoint_by_mode.remote(player_keys[0], player_keys[1])
 
                     [actor.update_actor_network.remote(
                         self.learner.get_actor_network_weights.remote(True)) for actor in self.actors]
