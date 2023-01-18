@@ -422,19 +422,17 @@ class SACLearner(Learner):
                 print("WARNING: Critic models for SAC not found. "
                       "This is not an issue if you're planning to only test the model.")
 
-    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
-                        checkpoint_condition=True):
+    def save_checkpoint(self, path, running_average_reward, training_step, checkpoint_condition=True):
         if not checkpoint_condition:
             return
         self.actor_network.save(
             os.path.join(path, "SAC_Actor_Step{:06d}_Reward{:.2f}.h5".format(training_step, running_average_reward)))
-        if save_all_models:
-            self.critic1.save(
-                os.path.join(path, "SAC_Critic1_Step{:06d}_Reward{:.2f}.h5".format(training_step,
-                                                                                   running_average_reward)))
-            self.critic2.save(
-                os.path.join(path, "SAC_Critic2_Step{:06d}_Reward{:.2f}.h5".format(training_step,
-                                                                                   running_average_reward)))
+        self.critic1.save(
+            os.path.join(path, "SAC_Critic1_Step{:06d}_Reward{:.2f}.h5".format(training_step,
+                                                                               running_average_reward)))
+        self.critic2.save(
+            os.path.join(path, "SAC_Critic2_Step{:06d}_Reward{:.2f}.h5".format(training_step,
+                                                                               running_average_reward)))
     # endregion
 
     # region --- Learning ---

@@ -14,6 +14,8 @@ import time
 import yaml
 import ray
 
+intrinsic_exploration_algorithms = ["ENM"]  # Will contain NGU, ECR, NGU-r, RND-alter with future updates...
+
 
 class Trainer:
     """ Modular Reinforcement Learning© Trainer-class
@@ -23,6 +25,7 @@ class Trainer:
     """
 
     def __init__(self):
+        # region --- Instance Variables ---
         # - Trainer Configuration -
         # The trainer configuration file contains all training parameters relevant for the chosen algorithm under the
         # selected key. Furthermore, the abbreviation of the chosen algorithm is stored as it might affect the
@@ -43,6 +46,10 @@ class Trainer:
         # of agents present. This configuration will be read from the environment right after establishing the
         # connection.
         self.environment_configuration = None
+        # Different interfaces allow the framework to communicate with different types of environments, e.g. the same
+        # functionality can be used when communicating with an OpenAI Gym environment as well as with a Unity
+        # Environment communicating via MLAgents
+        self.interface = None
 
         # - Agent -
         # The agent contains the intelligence of the whole algorithm. It's structure depends on the chosen RL
@@ -76,18 +83,33 @@ class Trainer:
         self.global_buffer = None
 
         # - Misc -
-        self.save_all_models = False
+        # A new set of models will be saved during training as soon as the agent improves in terms of reward. As there
+        # may be hundreds of models stored after a long training the following option allows to only keep the latest.
+        # However, sometimes it is useful to compare different intermediate models.
         self.remove_old_checkpoints = False
-        self.interface = None
 
-        # - Self-Play Tournament -
+        # - Loading Models -
+        # Provided a path with network models, these model dictionaries store a unique key for each model present
+        # along with information such as the number of steps it has been trained, the reward it reached and the
+        # respective paths. During continued training or testing usually the latest trained model is loaded.
+        # In tournament mode all models in the dictionaries will be tested and compared.
         self.model_dictionary = None
         self.clone_model_dictionary = None
+
+        # - Self-Play Tournament -
+        # In case of self-play where an agent competes with another agent a tournament can be arranged, where each
+        # agent in the model dictionary plays against each agent in the clone model dictionary. The tournament
+        # schedule stores all fixtures (pairings) to be played.
         self.tournament_schedule = None
+        # The fixture index stores information about which game is currently played from the tournament schedule.
         self.current_tournament_fixture_idx = 0
+        # To make up for stochastic policy behaviors each pairing should play multiple games.
         self.games_played_in_fixture = 0
         self.games_per_fixture = None
+        # After playing a csv file is created storing each game played along with the scores of the players.
         self.history_path = None
+
+        # endregion
 
     # region Algorithm Choice
     def select_training_algorithm(self, training_algorithm):
@@ -97,10 +119,6 @@ class Trainer:
         if training_algorithm == "DQN":
             from .training_algorithms.DQN import DQNActor as Actor
             from .training_algorithms.DQN import DQNLearner as Learner
-        elif training_algorithm == "DDPG":
-            from .training_algorithms.DDPG import DDPGAgent as Agent
-        elif training_algorithm == "TD3":
-            from .training_algorithms.TD3 import TD3Agent as Agent
         elif training_algorithm == "SAC":
             from .training_algorithms.SAC import SACActor as Actor
             from .training_algorithms.SAC import SACLearner as Learner
@@ -142,9 +160,21 @@ class Trainer:
     def async_instantiate_agent(self, mode: str, preprocessing_algorithm: str, exploration_algorithm: str,
                                 environment_path: str = None, preprocessing_path: str = None,
                                 demonstration_path: str = None):
-        """ Instantiate the agent consisting of learner and actor(s) and their respective submodules in an asynchronous
-        fashion utilizing the ray library."""
-
+        """
+        Instantiate the agent consisting of learner, actor(s) and their respective submodules in an asynchronous
+        fashion utilizing the ray library.
+        :param mode: Defines if training, testing or tournament will be performed.
+        :param preprocessing_algorithm: Defines if and in which way observations will be preprocessed before passed
+        through the actor / learner.
+        :param exploration_algorithm: Defines which algorithms are used to explore the state-action-space in the
+        environment.
+        :param environment_path: Can be either None to connect directly to Unity, a path to an exported Unity
+        environment, or the name of an OpenAI Gym environment.
+        :param preprocessing_path: Respective path for a preprocessing algorithm.
+        :param demonstration_path: Respective path for demonstrations utilized in Offline Reinforcement Learning, i.e.,
+        the CQL Algorithm.
+        :return:
+        """
         # region - Multiprocessing Initialization and Actor Number Determination
         # Initialize ray for parallel multiprocessing.
         ray.init()
@@ -160,18 +190,11 @@ class Trainer:
             actor_num = self.trainer_configuration.get("ActorNum")
         # endregion
 
-        # region - Exploration Degree Determination -
-        # If there is only one actor in training mode the degree of exploration should start at maximum. Otherwise,
-        # each actor will be instantiated with a different degree of exploration. This only has an effect if the
-        # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
-        # returns 0. If the Meta-Controller is used, a family of exploration policies is created, where the controller
-        # later on can dynamically choose from.
-        intrinsic_exploration_algorithms = ["ENM"]  # Will contain NGU, ECR, NGU-r, RND-alter with future updates...
-
-        # Calculate exploration policy values based on agent57's concept
-        # The exploration is now a list that contains a dictionary for each actor.
+        # region - Exploration Parameter Determination and Network Feedback -
+        # The exploration is a list that contains a dictionary for each actor (if multiple).
         # Each dictionary contains a value for beta and gamma (utilized for intrinsic motivation)
-        # as well as a scaling values (utilized for epsilon greedy).
+        # as well as a scaling value (utilized for epsilon greedy). If there is only one actor in training mode
+        # the scaling of exploration should start at maximum.
         exploration_degree = get_exploration_policies(num_policies=actor_num,
                                                       mode=mode,
                                                       beta_max=self.trainer_configuration[
@@ -181,8 +204,10 @@ class Trainer:
         # Pass the exploration degree to the trainer configuration
         self.trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
 
-        # Extension of agent inputs to accept values in addition to the environment observations (exploration policy
-        # index, ext. reward, int. reward) is only compatible with usage of intrinsic exploration algorithms.
+        # Network feedbacks are extensions of the agents input in addition to the environment observations.
+        # Those are a possible intrinsic reward, the external reward, a policy index and the last taken action.
+        # Some of them are only compatible with the usage of intrinsic exploration algorithms and should otherwise
+        # be deactivated.
         if exploration_algorithm not in intrinsic_exploration_algorithms and mode == "training":
             self.trainer_configuration["IntrinsicExploration"] = False
             self.trainer_configuration["PolicyFeedback"] = False
@@ -312,7 +337,7 @@ class Trainer:
         checkpoint_condition = self.global_logger.check_checkpoint_condition.remote(training_step)
         self.learner.save_checkpoint.remote(os.path.join("training/summaries", self.logging_name),
                                             self.global_logger.get_best_running_average.remote(),
-                                            training_step, self.save_all_models, checkpoint_condition)
+                                            training_step, checkpoint_condition)
         if self.remove_old_checkpoints:
             self.global_logger.remove_old_checkpoints.remote()
 

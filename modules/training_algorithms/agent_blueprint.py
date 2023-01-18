@@ -19,7 +19,6 @@ from gym.wrappers import RescaleAction
 
 import os
 import csv
-import pandas as pd
 
 
 class Actor:
@@ -870,7 +869,7 @@ class Learner:
             self.load_checkpoint_from_path_list(self.clone_model_dictionary[clone_model_key]['ModelPaths'],
                                                 clone=True)
 
-    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False):
+    def save_checkpoint(self, path, running_average_reward, training_step, checkpoint_condition=True):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
     # endregion
 

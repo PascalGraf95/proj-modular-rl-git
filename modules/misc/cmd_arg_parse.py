@@ -20,7 +20,7 @@ class CmdArgParse:
                                                       "e.g.'LunarLanderContinuous-v2'. If you want a CQL agent to "
                                                       "learn from demonstrations, an environment can be used to "
                                                       "evaluate the model on a regular basis. Please provide a path "
-                                                      "or typeNone to connect directly to the Unity Editor. "
+                                                      "or type None to connect directly to the Unity Editor. "
                                                       "Otherwise, type 'NoEnv' to proceed without evaluation.",
                             type=str, required=False, default=None)
         parser.add_argument('-ta', '--train_algorithm', help="Choose from 'DQN', 'DDPG', 'TD3', 'SAC', 'CQL'", type=str,

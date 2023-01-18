@@ -751,12 +751,14 @@ class CQLLearner(Learner):
         if not checkpoint_condition:
             return
         self.actor_network.save(
-            os.path.join(path, "SAC_CQL_Actor_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
-        if save_all_models:
-            self.critic1.save(
-                os.path.join(path, "SAC_CQL_Critic1_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
-            self.critic2.save(
-                os.path.join(path, "SAC_CQL_Critic2_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
+            os.path.join(path, "SAC_CQL_Actor_Step{:06d}_Reward{:.2f}.h5".format(training_step,
+                                                                                 running_average_reward)))
+        self.critic1.save(
+            os.path.join(path, "SAC_CQL_Critic1_Step{:06d}_Reward{:.2f}.h5".format(training_step,
+                                                                                   running_average_reward)))
+        self.critic2.save(
+            os.path.join(path, "SAC_CQL_Critic2_Step{:06d}_Reward{:.2f}.h5".format(training_step,
+                                                                                   running_average_reward)))
 
     def boost_exploration(self):
         self.log_alpha = tf.Variable(tf.ones(1) * -0.7,

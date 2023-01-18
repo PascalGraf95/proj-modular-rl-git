@@ -31,7 +31,7 @@ def main():
     # If you want to test a trained model or continue learning from a checkpoint enter the model path via command line
     mode = args.mode
     model_path = args.model_path
-    # If defined this path defines the clone's weights for selfplay training/testing. Otherwise, model_path will be
+    # If defined this path defines the clone's weights for self-play training/testing. Otherwise, model_path will be
     # used.
     clone_path = args.clone_path
 
@@ -50,7 +50,7 @@ def main():
     # is the most famous algorithm it can only act in environments with discrete action space. The three others
     # in their current implementation only support continuous action spaces. Of those three Soft Actor-Critic (SAC)
     # is the most recent and preferred option.
-    # Choose from "DQN", "DDPG", "TD3", "SAC", "CQL"
+    # Choose from "DQN", "SAC", "CQL"
     trainer.select_training_algorithm(args.train_algorithm)
     # In case you want to train the agent offline via CQL please provide the path for demonstrations.
     demonstration_path = args.demo_path 
@@ -79,9 +79,7 @@ def main():
     preprocessing_path = args.preprocessing_path
 
     # - Misc -
-    # Determine if all models or only the actor will be saved during training
-    trainer.save_all_models = args.save_all_models
-    # Determine if old model checkpoints will be overwritten
+    # Determine if old model checkpoints will be overwritten or kept.
     trainer.remove_old_checkpoints = args.remove_old_checkpoints
 
     # - Self-Play Tournament -
@@ -90,12 +88,16 @@ def main():
 
     # endregion
 
-    # region --- Initialization ---
+    # region --- Trainer Initialization ---
 
-    # Create a model dictionary and clone model dictionary from models in a path.
+    # Given a path with one or more trained models the following function creates a dictionary that contains a unique
+    # key for each model along with the corresponding model paths, the number of steps it's been trained for, the reward
+    # it reached and possibly a (elo) rating. The same is done for a clone of the original model in case of self-play.
     trainer.create_model_dictionaries(model_path, clone_path)
-    # From the model dictionary and clone model dictionary create a tournament schedule
+    # With the model dictionaries create a tournament schedule can be created where each model plays against every
+    # other model. This is only necessary for self-play environments in tournament mode.
     trainer.create_tournament_schedule()
+
     # Parse the trainer configuration (make sure to select the right key)
     trainer.parse_training_parameters(args.training_parameters[0], args.training_parameters[1])
     # Instantiate the agent which consists of a learner and one or multiple actors
@@ -107,11 +109,15 @@ def main():
     # endregion
 
     # region --- Training / Testing ---
-    # Play new episodes until the training/testing is manually interrupted
+    # In training mode the actors play new episodes while the learner trains neural networks based on experiences
+    # until the program is cancelled manually.
     if mode == "training":
         trainer.async_training_loop()
+    # In testing mode the actors play with already trained models until the program is cancelled manually. There is no
+    # improvement since the learner is not doing anything.
     elif mode == "testing" or mode == "fastTesting":
         trainer.async_testing_loop()
+    # The tournament loop plays all matches in the respective schedule and writes their results into a csv file.
     else:
         trainer.async_tournament_loop()
     # endregion

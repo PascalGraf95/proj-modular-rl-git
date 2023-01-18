@@ -379,8 +379,7 @@ class DQNLearner(Learner):
                 if not self.critic:
                     raise FileNotFoundError("Could not find all necessary model files.")
 
-    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
-                        checkpoint_condition=True):
+    def save_checkpoint(self, path, running_average_reward, training_step, checkpoint_condition=True):
         if not checkpoint_condition:
             return
         self.critic.save(
