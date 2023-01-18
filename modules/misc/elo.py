@@ -2,6 +2,7 @@ import math
 from modules.misc.glicko2 import *
 import csv
 import os
+import numpy as np
 
 
 def calculate_updated_elo(rating_a, rating_b, score, k=32):
@@ -16,22 +17,17 @@ def calculate_updated_elo(rating_a, rating_b, score, k=32):
     """
     # Calculate the expected score given the ratings of player a and b
     # their probability of winning + half their probability of drawing
-    estimated = 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
+    expected_score_a = 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
+    expected_score_b = 1 / (1 + 10 ** ((rating_a - rating_b) / 400))
 
-    # Depending on the actual game result return an updated rating for player a.
-    if score == 1:
-        # Player a won
-        return rating_a + k * (1 - estimated), rating_b + k * (0 - estimated)
+    # Calculate the actual transformed score for a and b
+    score_a = score
+    score_b = np.abs(score - 1)
 
-    elif score == 0:
-        # Player b won
-        return rating_a + k * (0 - estimated), rating_b + k * (1 - estimated)
-    elif score == 0.5:
-        # Draw
-        return rating_a + k * (0.5 - estimated), rating_b + k * (0.5 - estimated)
-
-    print("WARNING: Invalid score value of {:.3f} when trying to calculate elo rating!".format(score))
-    return rating_a, rating_b
+    # Calculate the updated rating based on the difference of the expected and the actual score.
+    rating_a = rating_a + k * (score_a - expected_score_a)
+    rating_b = rating_b + k * (score_b - expected_score_b)
+    return min(max(rating_a, 0), 4000), min(max(rating_b, 0), 4000)
 
 
 def main():

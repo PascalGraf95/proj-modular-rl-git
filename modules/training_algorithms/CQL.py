@@ -628,7 +628,7 @@ class CQLLearner(Learner):
         concat_value_stack1 = tf.concat([random_action_values1, state_stack_value1, next_state_stack_value1], axis=1)
         concat_value_stack2 = tf.concat([random_action_values2, state_stack_value2, next_state_stack_value2], axis=1)
 
-        #endregion
+        # endregion
 
         # Calculate Critic 1 and 2 Loss, utilizes custom mse loss function defined in Trainer-class
         with tf.GradientTape() as tape:
@@ -671,7 +671,7 @@ class CQLLearner(Learner):
         self.critic2_optimizer.apply_gradients(zip(critic_grads[1], self.critic2.trainable_variables))
         self.cql_alpha_optimizer.apply_gradients(zip(critic_grads[2], [self.cql_log_alpha]))
         total_value_loss = total_value_loss1 + total_value_loss2 / 2
-        cql_loss = cql_loss1 + cql_loss2 / 2
+        cql_loss = (cql_loss1 + cql_loss2) / 2
         # endregion
 
         # region --- ACTOR TRAINING ---
