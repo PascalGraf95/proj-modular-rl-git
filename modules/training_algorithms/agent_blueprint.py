@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 import numpy as np
 import tensorflow as tf
-from ..misc.logger import LocalLogger
-from ..misc.replay_buffer import LocalFIFOBuffer, LocalRecurrentBuffer
-from ..misc.utility import modify_observation_shapes
+from modules.misc.logger import LocalLogger
+from modules.misc.replay_buffer import LocalFIFOBuffer, LocalRecurrentBuffer
+from modules.misc.utility import modify_observation_shapes
+from modules.misc.glicko2 import *
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
-from ..sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
-from ..sidechannel.airhockey_sidechannel import GameResultsSideChannel
-from ..curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
+from modules.sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
+from modules.sidechannel.game_results_sidechannel import GameResultsSideChannel
+from modules.curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
+from modules.misc.model_path_handling import get_model_key_from_dictionary
 from collections import deque
 import time
 import ray
@@ -17,6 +19,7 @@ from gym.wrappers import RescaleAction
 
 import os
 import csv
+import pandas as pd
 
 
 class Actor:
@@ -119,6 +122,7 @@ class Actor:
         self.engine_configuration_channel = None
         self.curriculum_communicator = None
         self.curriculum_side_channel = None
+        self.game_result_side_channel = None
         self.target_task_level = 0
 
         # - Preprocessing Algorithm -
@@ -141,14 +145,14 @@ class Actor:
         self.port = port
         self.index = idx
 
-    # region Environment Connection
+    # region Environment Connection and Side Channel Communication
     def connect_to_unity_environment(self):
         self.engine_configuration_channel = EngineConfigurationChannel()
         self.curriculum_side_channel = CurriculumSideChannelTaskInfo()
-        self.sidechannel_airhockey = GameResultsSideChannel()
+        self.game_result_side_channel = GameResultsSideChannel()
         self.environment = UnityEnvironment(file_name=self.environment_path,
                                             side_channels=[self.engine_configuration_channel,
-                                                           self.curriculum_side_channel, self.sidechannel_airhockey],
+                                                           self.curriculum_side_channel, self.game_result_side_channel],
                                             base_port=self.port)
         self.environment.reset()
         return True
@@ -157,17 +161,62 @@ class Actor:
         self.environment = AgentInterface.connect(self.environment_path)
         # Make sure continuous actions are always bound to the same action scaling
         if not (type(self.environment.action_space) == gym.spaces.Discrete):
-            self.environment = RescaleAction(self.environment, min_action=-1.0, max_action=1.0)
+            self.environment = RescaleAction(self.environment, -1.0, 1.0)
             print("\n\nEnvironment action space rescaled to -1.0...1.0.\n\n")
         AgentInterface.reset(self.environment)
 
     def set_unity_parameters(self, **kwargs):
         self.engine_configuration_channel.set_configuration_parameters(**kwargs)
+
+    def get_side_channel_information(self, side_channel='game_results'):
+        # Given the side channel name, check if Unity has sent any new information.
+        if side_channel == 'game_results':
+            # Get the latest game results from the respective side channel.
+            # This returns None if there has no match concluded since the last query. Otherwise, results is a list that
+            # consists of two integers, i.e., the scores of both players in the last match.
+            return self.game_result_side_channel.get_game_results()
+        return None
+    # endregion
+
+    # region Self Play Rating
+    def update_history_with_latest_game_results(self, history_path, player_keys):
+        """
+        This function gets the latest game results from the respective Unity side channel, then prompts the update
+        of the game history and induces an update of the actor models when appropriate.
+        :return: True if a result has been appended to the result history.
+        """
+        # Read the latest game results from the side channel. If existent, induce an update of the game history.
+        # Else, return False.
+        game_result = self.get_side_channel_information('game_results')
+        if game_result:
+            print(game_result)
+            self.append_to_game_results_history(game_result, history_path, player_keys)
+            return True
+        return False
+
+    @staticmethod
+    def append_to_game_results_history(game_result, history_path, player_keys):
+        # Check if there already exists a respective history file of played games.
+        # Otherwise, create it.
+        if not os.path.isfile(history_path):
+            with open(history_path, 'w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(["game_id", "player_key_a", "player_key_b", "score_a", "score_b"])
+        else:
+            # If so just append the latest game results to that file along with the player keys
+            with open(history_path) as file:
+                # To get the game id, just count the number of rows.
+                reader = csv.DictReader(file)
+                game_id = sum(1 for _ in reader)
+
+            with open(history_path, 'a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow([game_id, player_keys[0], player_keys[1], game_result[0], game_result[1]])
     # endregion
 
     # region Property Query
     def is_minimum_capacity_reached(self):
-        # ToDo: Determine influence on training speed when chaning this parameter.
+        # ToDo: Determine influence on training speed when changing this parameter.
         return len(self.local_buffer) >= 10
 
     def is_network_update_requested(self, training_step):
@@ -229,10 +278,10 @@ class Actor:
         global AgentInterface
 
         if interface == "MLAgentsV18":
-            from ..interfaces.mlagents_v18 import MlAgentsV18Interface as AgentInterface
+            from modules.interfaces.mlagents_v18 import MlAgentsV18Interface as AgentInterface
 
         elif interface == "OpenAIGym":
-            from ..interfaces.openaigym import OpenAIGymInterface as AgentInterface
+            from modules.interfaces.openaigym import OpenAIGymInterface as AgentInterface
         else:
             raise ValueError("An interface for {} is not (yet) supported by this trainer. "
                              "You can implement an interface yourself by utilizing the interface blueprint class "
@@ -356,7 +405,10 @@ class Actor:
     def build_network(self, network_parameters, environment_parameters):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
-    def update_actor_network(self, network_weights, forced=False):
+    def update_actor_network(self, network_weights):
+        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    def update_clone_network(self, network_weights):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
     # endregion
 
@@ -391,7 +443,6 @@ class Actor:
             self.clone_lstm = self.clone_actor_network.get_layer(lstm_layer_name)
             self.clone_lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                                      np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
-
 
     def reset_actor_state(self):
         """This function resets the actors LSTM states to random values at the beginning of a new episode."""
@@ -741,7 +792,8 @@ class Learner:
     ActionType = []
     NetworkTypes = []
 
-    def __init__(self, trainer_configuration, environment_configuration, model_path=None, clone_model_path=None):
+    def __init__(self, trainer_configuration, environment_configuration, model_dictionary=None,
+                 clone_model_dictionary=None):
         # Environment Configuration
         self.action_shape = environment_configuration.get('ActionShape')
         self.observation_shapes = environment_configuration.get('ObservationShapes')
@@ -774,15 +826,16 @@ class Learner:
         self.set_gpu_growth()  # Important step to avoid tensorflow OOM errors when running multiprocessing!
 
         # - Model Weights -
-        # Structures to store information about the given pretrained models (and clone models in case of selfplay)
-        self.model_dir = model_path
-        self.model_dictionary = self.create_model_dictionary_from_path(model_path)
-        self.clone_model_dir = clone_model_path
-        self.clone_model_dictionary = self.create_model_dictionary_from_path(clone_model_path)
+        # Structures to store information about the given pretrained models (and clone models in case of self-play)
+        self.model_dictionary = model_dictionary
+        self.clone_model_dictionary = clone_model_dictionary
     # endregion
 
     # region Network Construction and Transfer
     def get_actor_network_weights(self, update_requested):
+        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
+
+    def get_clone_network_weights(self, update_requested, clone_from_actor=False):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
     def build_network(self, network_parameters, environment_parameters):
@@ -799,103 +852,26 @@ class Learner:
     # endregion
 
     # region Checkpoints
-    def load_checkpoint(self, model_path, clone_path):
-        raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
     def load_checkpoint_from_path_list(self, model_paths, clone=False):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
 
+    def load_checkpoint_by_mode(self, mode='latest', mode_two=None):
+        # Try to load pretrained models if provided. Otherwise, this method does nothing.
+        model_key = get_model_key_from_dictionary(self.model_dictionary, mode=mode)
+        if model_key:
+            self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
+        # In case of self-play try to load a clone model if provided. If there is a clone model but no distinct
+        # path is provided, the agent actor's weights will be utilized.
+        if mode_two:
+            clone_model_key = get_model_key_from_dictionary(self.clone_model_dictionary, mode=mode_two)
+        else:
+            clone_model_key = get_model_key_from_dictionary(self.clone_model_dictionary, mode=mode)
+        if clone_model_key:
+            self.load_checkpoint_from_path_list(self.clone_model_dictionary[clone_model_key]['ModelPaths'],
+                                                clone=True)
+
     def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
-    @staticmethod
-    def create_model_dictionary_from_path(model_path):
-        if not model_path or not os.path.isdir(model_path):
-            return {}
-        # First, determine if the provided model path contains multiple training folders of which each might contain
-        # multiple model checkpoints itself. This is decided by the fact if the folders in the path contain a date at
-        # the beginning (which is ensured for all new training sessions with this framework)
-        training_session_paths = []
-        for file in os.listdir(model_path):
-            if os.path.isdir(os.path.join(model_path, file)):
-                if file[:6].isdigit():
-                    training_session_paths.append(os.path.join(model_path, file))
-        # In case there is any file path in this list, we expect to be in the top folder containing one or multiple
-        # training sessions of which each might hold one or multiple trained models. Otherwise, the provided path
-        # already points to one specific training session.
-        if len(training_session_paths) == 0 and model_path:
-            training_session_paths.append(model_path)
-
-        # Create a dictionary to store all provided models by a unique identifier, along with their paths, elo, etc.
-        model_dictionary = {}
-        # For each training session folder search for all network checkpoints it contains
-        for path in training_session_paths:
-            for file in os.listdir(path):
-                if os.path.isdir(os.path.join(path, file)) or os.path.isfile(os.path.join(path, file) and ".h5" in file):
-                    # Check if the respective folder is a model checkpoint. This is decided by the fact if the folder
-                    # contains the keywords "Step" and "Reward" (which is ensured for all checkpoints created with this
-                    # framework)
-                    if "Step" in file and "Reward" in file:
-                        # To retrieve the training step of the checkpoint, split the file string.
-                        training_step = [f for f in file.split("_") if "Step" in f][0]
-                        training_step = training_step.replace("Step", "")
-
-                        # To retrieve the training reward of the checkpoint, split the file string.
-                        training_reward = [f for f in file.split("_") if "Reward" in f][0]
-                        training_reward = training_reward.replace("Reward", "").replace(".h5", "")
-
-                        # The unique identifier (key) is the training session name along with the training step
-                        key = path.split("\\")[-1] + "_" + training_step
-
-                        # If the key is not already in the dictionary, append it. Otherwise, just add the current model
-                        # to its model paths
-                        if key not in model_dictionary:
-                            model_dictionary[key] = {"TrainingStep": int(training_step),
-                                                     "ELO": 0,
-                                                     "Reward": float(training_reward),
-                                                     "ModelPaths": [os.path.join(path, file)]}
-
-                        else:
-                            model_dictionary[key]["ModelPaths"].append(os.path.join(path, file))
-        return model_dictionary
-
-    @staticmethod
-    def create_elo_list_from_path(path, model_dictionary):
-        # Search for a csv file containing elo ratings for the models in the model dictionary.
-        # The file is expected to be under the model path.
-        if os.path.isfile(os.path.join(path, "elo_rating.csv")):
-            with open(os.path.join(path, "elo_rating.csv"), newline='') as csv_file:
-                csv_reader = csv.reader(csv_file)
-                next(csv_reader, None)  # Skip Header
-                for row in csv_reader:
-                    if row[0] in model_dictionary:
-                        model_dictionary[row[0]]['ELO'] = row[1]
-
-    @staticmethod
-    def get_model_key_from_dictionary(model_dictionary, mode="latest"):
-        # If the model dictionary is empty return None
-        if len(model_dictionary) == 0:
-            return None
-        # Get the most recent model by date and time.
-        if mode == "latest":
-            sorted_key_list = sorted(list(model_dictionary.keys()))
-            return sorted_key_list[-1]
-        # Get a random model.
-        elif mode == "random":
-            key_list = list(model_dictionary.keys())
-            return np.random.choice(key_list, 1)[0]
-        # Get the model with the highest reward (might not be representative for different trainings).
-        elif mode == "best":
-            sorted_key_list = [key for key, val in sorted(model_dictionary.items(), key=lambda item: item[1]['Reward'])]
-            return sorted_key_list[-1]
-        # Get the model with the highest elo. In case there is no elo rating this will return a random model.
-        elif mode == "elo":
-            sorted_key_list = [key for key, val in sorted(model_dictionary.items(), key=lambda item: item[1]['ELO'])]
-            return sorted_key_list[-1]
-        # Otherwise, we expect the mode variable to contain the key itself (used for matches between two distinct models
-        # for elo rating.
-        else:
-            return model_dictionary[mode]
     # endregion
 
     # region Learning

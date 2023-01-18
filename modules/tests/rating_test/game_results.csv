@@ -1,0 +1,4 @@
+agent_id_a,agent_id_b,game_id,score_a,score_b,rating_period
+Agent0,Agent1,0,1,0,0
+Agent0,Agent2,1,0,1,0
+Agent0,Agent3,2,0,1,0

@@ -7,7 +7,6 @@ from tensorflow import keras
 from .agent_blueprint import Actor, Learner
 from keras.models import load_model
 from ..misc.network_constructor import construct_network
-import tensorflow as tf
 from keras.models import clone_model
 from keras import losses
 from tensorflow_probability import distributions as tfd
@@ -15,6 +14,7 @@ import os
 import csv
 import ray
 import time
+from modules.misc.model_path_handling import get_model_key_from_dictionary
 
 global AgentInterface
 
@@ -112,21 +112,19 @@ class SACActor(Actor):
                 sample_errors = eta * np.max(sample_errors, axis=1) + (1 - eta) * np.mean(sample_errors, axis=1)
         return sample_errors
 
-    def update_actor_network(self, network_weights, total_episodes=0):
+    def update_actor_network(self, network_weights):
         if not len(network_weights):
             return
         self.actor_network.set_weights(network_weights[0])
         self.critic_network.set_weights(network_weights[1])
         if self.recurrent:
             self.actor_prediction_network.set_weights(network_weights[0])
-        if self.is_clone_network_update_requested(total_episodes) and self.behavior_clone_name:
-            if total_episodes == 0 and len(network_weights) == 3:
-                self.clone_actor_network.set_weights(network_weights[2])
-            else:
-                self.clone_actor_network.set_weights(network_weights[0])
-            print("Clone Network has been updated at step {}".format(total_episodes))
-            self.steps_taken_since_clone_network_update = 0
         self.steps_taken_since_network_update = 0
+
+    def update_clone_network(self, network_weights):
+        if not len(network_weights) or not self.behavior_clone_name:
+            return
+        self.clone_actor_network.set_weights(network_weights[0])
 
     def build_network(self, network_settings, environment_parameters):
         # Create a list of dictionaries with 4 entries, one for each network
@@ -221,9 +219,10 @@ class SACLearner(Learner):
     ActionType = ['CONTINUOUS']
     NetworkTypes = ['Actor', 'Critic1', 'Critic2']
 
-    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None, clone_model_path=None):
+    def __init__(self, mode, trainer_configuration, environment_configuration, model_dictionary=None,
+                 clone_model_dictionary=None):
         # Call parent class constructor
-        super().__init__(trainer_configuration, environment_configuration, model_path, clone_model_path)
+        super().__init__(trainer_configuration, environment_configuration, model_dictionary, clone_model_dictionary)
 
         # region --- Object Variables ---
         # - Neural Networks -
@@ -264,16 +263,7 @@ class SACLearner(Learner):
             # Construct or load the required neural networks based on the trainer configuration and environment
             # information
             self.build_network(trainer_configuration.get("NetworkParameters"), environment_configuration)
-            # Try to load pretrained models if provided. Otherwise, this method does nothing.
-            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
-            if model_key:
-                self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
-            # In case of self-play try to load a clone model if provided. If there is a clone model but no distinct
-            # path is provided, the agent actor's weights will be utilized.
-            clone_model_key = self.get_model_key_from_dictionary(self.clone_model_dictionary, mode="latest")
-            if clone_model_key:
-                self.load_checkpoint_from_path_list(self.clone_model_dictionary[clone_model_key]['ModelPaths'],
-                                                    clone=True)
+            self.load_checkpoint_by_mode(mode='latest')
 
             # Compile Networks
             self.critic1.compile(optimizer=Adam(learning_rate=trainer_configuration.get('LearningRateCritic'),
@@ -287,28 +277,35 @@ class SACLearner(Learner):
         elif mode == 'testing' or mode == 'fastTesting':
             # In case of testing there is no model construction, instead a model path must be provided.
             assert len(self.model_dictionary), "No model path provided or no appropriate model present in given path."
-            # Try to load pretrained models if provided. Otherwise, this method does nothing.
-            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
-            if model_key:
-                self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
-            # In case of self-play try to load a clone model if provided. If there is a clone model but no distinct
-            # path is provided, the agent actor's weights will be utilized.
-            clone_model_key = self.get_model_key_from_dictionary(self.clone_model_dictionary, mode="latest")
-            if clone_model_key:
-                self.load_checkpoint_from_path_list(self.clone_model_dictionary[clone_model_key]['ModelPaths'],
-                                                    clone=True)
+            self.load_checkpoint_by_mode(mode='latest')
         # endregion
 
     # region --- Model Construction, Synchronisation, Weight Transfer and Loading ---
     def get_actor_network_weights(self, update_requested):
+        """
+        Return the weights from the learner in order to copy them to the actor networks, but only if the
+        update requested flag is true.
+        :param update_requested: Flag that determines if actual weights are returned for the actor.
+        :return: An empty list or a list containing  keras network weights for each model.
+        """
         if not update_requested:
             return []
-        if not len(self.clone_model_dictionary):
-            return [self.actor_network.get_weights(), self.critic1.get_weights()]
-        else:
-            return [self.actor_network.get_weights(),
-                    self.critic1.get_weights(),
-                    self.clone_actor_network.get_weights()]
+        return [self.actor_network.get_weights(), self.critic1.get_weights()]
+
+    def get_clone_network_weights(self, update_requested, clone_from_actor=False):
+        """
+        Return the weights from the learner in order to copy them to the clone actor networks, but only if the
+        update requested flag is true.
+        :param update_requested: Flag that determines if actual weights are returned for the actor.
+        :param clone_from_actor: Flag that determines if the clone network keeps its designated own set of weights
+        or if the weights are copied from the actor network.
+        :return: An empty list or a list containing  keras network weights for each model.
+        """
+        if not update_requested:
+            return []
+        if clone_from_actor or not self.clone_model_dictionary:
+            return[self.actor_network.get_weights()]
+        return [self.clone_actor_network.get_weights()]
 
     def build_network(self, network_settings, environment_parameters):
         # Create a list of dictionaries with 3 entries, one for each network
@@ -379,7 +376,7 @@ class SACLearner(Learner):
         # region --- Building ---
         # Build the networks from the network parameters
         self.actor_network = construct_network(network_parameters[0], plot_network_model=True)
-        if self.clone_model_dir:
+        if self.clone_model_dictionary:
             self.clone_actor_network = clone_model(self.actor_network)
         self.critic1, self.critic_target1 = construct_network(network_parameters[1], plot_network_model=True)
         self.critic2, self.critic_target2 = construct_network(network_parameters[2])

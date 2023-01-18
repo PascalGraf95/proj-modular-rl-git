@@ -4,6 +4,7 @@ import logging
 from modules.misc.replay_buffer import FIFOBuffer, PrioritizedBuffer
 from modules.misc.logger import GlobalLogger
 from modules.misc.utility import getsize, get_exploration_policies
+from modules.misc.model_path_handling import create_model_dictionary_from_path
 
 import os
 import numpy as np
@@ -12,8 +13,6 @@ import time
 
 import yaml
 import ray
-
-from pynput.keyboard import Key, Listener
 
 
 class Trainer:
@@ -81,6 +80,15 @@ class Trainer:
         self.remove_old_checkpoints = False
         self.interface = None
 
+        # - Self-Play Tournament -
+        self.model_dictionary = None
+        self.clone_model_dictionary = None
+        self.tournament_schedule = None
+        self.current_tournament_fixture_idx = 0
+        self.games_played_in_fixture = 0
+        self.games_per_fixture = None
+        self.history_path = None
+
     # region Algorithm Choice
     def select_training_algorithm(self, training_algorithm):
         """ Imports the agent (actor, learner) blueprint according to the algorithm choice."""
@@ -130,12 +138,14 @@ class Trainer:
         return Learner.validate_action_space(self.agent_configuration, self.environment_configuration)
     # endregion
 
-    # region Instantiation
+    # region ---Instantiation ---
     def async_instantiate_agent(self, mode: str, preprocessing_algorithm: str, exploration_algorithm: str,
-                                environment_path: str = None, model_path: str = None,
-                                preprocessing_path: str = None, demonstration_path: str = None, clone_path: str = None):
+                                environment_path: str = None, preprocessing_path: str = None,
+                                demonstration_path: str = None):
         """ Instantiate the agent consisting of learner and actor(s) and their respective submodules in an asynchronous
         fashion utilizing the ray library."""
+
+        # region - Multiprocessing Initialization and Actor Number Determination
         # Initialize ray for parallel multiprocessing.
         ray.init()
         # Alternatively, use the following code line to enable debugging (with ray >= 2.0.X)
@@ -143,11 +153,14 @@ class Trainer:
 
         # If the connection is established directly with the Unity Editor or if we are in testing mode, override
         # the number of actors with 1.
-        if not environment_path or mode == "testing" or mode == "fastTesting" or environment_path == "Unity":
+        if not environment_path or mode == "testing" or mode == "fastTesting" or mode == "tournament" or \
+                environment_path == "Unity":
             actor_num = 1
         else:
             actor_num = self.trainer_configuration.get("ActorNum")
+        # endregion
 
+        # region - Exploration Degree Determination -
         # If there is only one actor in training mode the degree of exploration should start at maximum. Otherwise,
         # each actor will be instantiated with a different degree of exploration. This only has an effect if the
         # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
@@ -178,8 +191,9 @@ class Trainer:
                   "exploration algorithm is in use.\n\n")
         else:
             self.trainer_configuration["IntrinsicExploration"] = True
+        # endregion
 
-        # - Actor Instantiation -
+        # region - Actor Instantiation and Environment Connection -
         # Create the desired number of actors using the ray "remote"-function. Each of them will construct their own
         # environment, exploration algorithm and preprocessing algorithm instances. The actors are distributed along
         # the cpu cores and threads, which means their number in the trainer configuration should not extend the maximum
@@ -209,11 +223,13 @@ class Trainer:
                                                       width=10, height=10,
                                                       quality_level=1,
                                                       target_frame_rate=-1)
-                elif mode == "fastTesting":
+                elif mode == "fastTesting" or mode == "tournament":
                     actor.set_unity_parameters.remote(time_scale=1000, width=500, height=500)
                 else:
                     actor.set_unity_parameters.remote(time_scale=1, width=500, height=500)
+        # endregion
 
+        # region - Environment & Exploration Configuration Query -
         # Get the environment and exploration configuration from the first actor.
         # NOTE: ray remote-functions return IDs only. If you want the actual returned value of the function you need to
         # call ray.get() on the ID.
@@ -221,15 +237,16 @@ class Trainer:
         self.environment_configuration = ray.get(environment_configuration)
         exploration_configuration = self.actors[0].get_exploration_configuration.remote()
         self.exploration_configuration = ray.get(exploration_configuration)
+        # endregion
 
-        # - Learner Instantiation -
+        # region - Learner Instantiation and Network Construction -
         # Create one learner capable of learning according to the selected algorithm utilizing the buffered actor
         # experiences. If a model path is given, the respective networks will continue to learn from this checkpoint.
         # If a clone path is given, it will be used as starting point for self-play.
         self.learner = Learner.remote(mode, self.trainer_configuration,
                                       self.environment_configuration,
-                                      model_path,
-                                      clone_path)
+                                      self.model_dictionary,
+                                      self.clone_model_dictionary)
 
         # Initialize the actor network for each actor
         network_ready = [actor.build_network.remote(self.trainer_configuration.get("NetworkParameters"),
@@ -237,8 +254,9 @@ class Trainer:
                          for idx, actor in enumerate(self.actors)]
         # Wait for the networks to be built
         ray.wait(network_ready)
+        # endregion
 
-        # - Global Buffer -
+        # region - Global Buffer -
         # The global buffer stores the experiences from each actor which will be sampled during the training loop in
         # order to train the Learner networks. If the prioritized replay buffer is enabled, samples will not be chosen
         # with uniform probability but considering their priority, i.e. their "unpredictability".
@@ -250,8 +268,9 @@ class Trainer:
         if mode == "training":
             # Initialize the global curriculum strategy, but only in training mode
             self.global_curriculum_strategy = CurriculumStrategy.remote()
+        # endregion
 
-        # - Global Logger -
+        # region - Global Logger and Log File -
         # The global logger writes the current training stats to a tensorboard event file which can be viewed in the
         # browser. This will only be done, if the agent is in training mode.
         self.logging_name = \
@@ -270,9 +289,24 @@ class Trainer:
                 _ = yaml.dump(self.trainer_configuration, file)
                 _ = yaml.dump(self.environment_configuration, file)
                 _ = yaml.dump(self.exploration_configuration, file)
+        # endregion
     # endregion
 
     # region Misc
+    def create_model_dictionaries(self, model_path, clone_path):
+        self.model_dictionary = create_model_dictionary_from_path(model_path)
+        self.clone_model_dictionary = create_model_dictionary_from_path(clone_path)
+
+    def create_tournament_schedule(self):
+        self.tournament_schedule = list()
+        tournament_tag_set = set()
+        for model_key in self.model_dictionary.keys():
+            for clone_model_key in self.clone_model_dictionary.keys():
+                if model_key != clone_model_key:
+                    if model_key + "." + clone_model_key not in tournament_tag_set:
+                        tournament_tag_set.add(model_key + "." + clone_model_key)
+                        self.tournament_schedule.append([model_key, clone_model_key])
+
     def async_save_agent_models(self, training_step):
         """"""
         checkpoint_condition = self.global_logger.check_checkpoint_condition.remote(training_step)
@@ -300,7 +334,10 @@ class Trainer:
         total_episodes = 0
         training_step = 0
         # Before starting the acting and training loop all actors need a copy of the latest network weights.
-        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True), total_episodes)
+        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True))
+         for actor in self.actors]
+        # In case of self-play the clone network needs the latest weights as well.
+        [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(True))
          for actor in self.actors]
         # endregion
 
@@ -363,7 +400,11 @@ class Trainer:
             # region --- Network Update and Checkpoint Saving ---
             # Check if the actor networks request to be updated with the latest network weights from the learner.
             [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
-                actor.is_network_update_requested.remote(training_step)), self.global_logger.get_total_episodes.remote())
+                actor.is_network_update_requested.remote(training_step)))
+                for actor in self.actors]
+            # Check if the clone networks request to be updated with the latest network weights from the learner.
+            [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(
+                actor.is_clone_network_update_requested.remote(self.global_logger.get_total_episodes.remote()), True))
                 for actor in self.actors]
 
             # Check if a new best reward has been achieved, if so save the models
@@ -396,29 +437,6 @@ class Trainer:
             # TODO: Add an option to affect the training process with keyboard events.
             #       E.g. Skip Level, Boost Exploration, Render Test Episode
 
-    def on_press(self, key):
-        try:
-            x = key.char
-        except AttributeError:
-            return
-
-        if key.char == "t":
-            print("Testing Mode")
-            if self.interface == "MLAgentsV18":
-                self.actors[0].set_unity_parameters.remote(time_scale=1,
-                                                           width=500, height=500,
-                                                           quality_level=5,
-                                                           target_frame_rate=60,
-                                                           capture_frame_rate=60)
-        elif key.char == "z":
-            print("Training Mode")
-            if self.interface == "MLAgentsV18":
-                self.actors[0].set_unity_parameters.remote(time_scale=1000,
-                                                           width=10, height=10,
-                                                           quality_level=1,
-                                                           target_frame_rate=-1,
-                                                           capture_frame_rate=60)
-
     def async_adapt_sequence_length(self, training_step):
         """"""
         # Only applies if the network is recurrent and the respective flag is set to true
@@ -437,130 +455,58 @@ class Trainer:
                 self.learner.update_sequence_length.remote(self.trainer_configuration)
                 self.global_buffer.reset.remote()
 
-    def async_training_loop_curriculum(self):
-        """"""
-        # region --- Initialization ---
-        total_episodes = 0
-        # If there is a learning curriculum, the properties of the initial task have to be acquired first.
-        # This is done by connecting to and reading from a custom side channel. The information about the task contain
-        # the total number of tasks, the current task level, the number of episode to average the reward over and the
-        # transition value to proceed to the next task.
-        unity_responded, task_properties = self.actors[0].get_task_properties.remote(False)
-        # If Unity responded to the request, i.e. if there is a side channel and a curriculum, update the global
-        # curriculum strategy instance.
-        self.global_curriculum_strategy.update_task_properties.remote(unity_responded, task_properties)
-
-        # Before starting the acting and training loop all actors need a copy of the latest network weights.
-        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True), total_episodes)
-         for actor in self.actors]
-        # endregion
-
-        while True:
-            # region --- Acting ---
-            # Receiving the latest state from its environment each actor chooses an action according to its policy
-            # and/or its exploration algorithm. Furthermore, the reward and the info about the environment state (done)
-            # is processed and stored in a local replay buffer for each actor.
-            actors_ready = [actor.play_one_step.remote() for actor in self.actors]
-            # endregion
-
-            # region --- Curriculum Update ---
-            # This part of the code checks if all environments are up-to-date in terms of the current task level.
-            # First it checks if Unity responded with the latest task information. If not then the first actor requests
-            # the latest information from its environment. The Unity responded global flag is reset upon level change.
-            unity_responded_global = self.global_curriculum_strategy.has_unity_responded.remote()
-            unity_responded, task_properties = self.actors[0].get_task_properties.remote(unity_responded_global)
-            # If Unity responded to the request update the global curriculum strategy instance.
-            self.global_curriculum_strategy.update_task_properties.remote(unity_responded, task_properties)
-            # If
-            [actor.send_target_task_level.remote(unity_responded_global) for actor in self.actors]
-            # endregion
-
-            # region --- Global Buffer and Logger ---
-            # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
-            # In case of Prioritized Experience Replay let the actor calculate an initial priority first.
-            sample_error_list = []
-            for idx, actor in enumerate(self.actors):
-                # Gather samples from the local buffer of an actor.
-                samples, indices = actor.get_new_samples.remote()
-                # Calculate an initial priority based on the temporal difference error of the critic network.
-                if self.trainer_configuration["PrioritizedReplay"]:
-                    sample_errors = actor.get_sample_errors.remote(samples)
-                    sample_error_list.append(sample_errors)
-                    # Append the received samples to the global buffer.
-                    self.global_buffer.append_list.remote(samples, sample_errors)
-                else:
-                    # Append the received samples to the global buffer.
-                    self.global_buffer.append_list.remote(samples)
-                # Request the latest episode stats from the actor containing episode rewards and lengths and append them
-                # to the global logger which will write them to the tensorboard.
-                self.global_logger.append.remote(*actor.get_new_stats.remote(), actor_idx=idx)
-            # endregion
-
-            # region --- Training Process ---
-            # This code section is responsible for the actual training process of the involved neural networks.
-
-            # Sample a new batch of transitions from the global replay buffer. Their indices matter in case of a
-            # Prioritized Replay Buffer (PER) because their priorities need to be updated afterwards.
-            samples, indices = self.global_buffer.sample.remote(self.trainer_configuration,
-                                                                self.trainer_configuration.get("BatchSize"))
-            # Some exploration algorithms assign an intrinsic reward on top of the extrinsic reward to each sample.
-            # This reward is usually based upon the novelty of a visited state and aims to promote exploring the
-            # environment.
-            samples = self.actors[0].get_intrinsic_rewards.remote(samples)
-
-            # Train the learner networks with the batch and observe the resulting metrics.
-            training_metrics, sample_errors, training_step = self.learner.learn.remote(samples)
-
-            # In case of a PER update the buffer priorities with the temporal difference errors
-            self.global_buffer.update.remote(indices, sample_errors)
-            # Train the actors exploration algorithm with the same batch
-            [actor.exploration_learning_step.remote(samples) for actor in self.actors]
-            # endregion
-
-            # region --- Network Update and Checkpoint Saving ---
-            # Check if the actor networks request to be updated with the latest network weights from the learner.
-            [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
-                actor.is_network_update_requested.remote()), total_episodes)
-                for actor in self.actors]
-
-            # Check if a new best reward has been achieved, if so save the models
-            self.async_save_agent_models(training_step)
-            # endregion
-
-            # Check if the reward threshold for a level change has been reached
-            _, max_reward, total_episodes = self.global_logger.get_current_max_stats.remote(
-                self.global_curriculum_strategy.get_average_episodes.remote())
-            task_level_condition = \
-                self.global_curriculum_strategy.check_task_level_change_condition.remote(max_reward,
-                                                                                         total_episodes)
-            # If level change condition is met, register the level change
-            self.global_logger.register_level_change.remote(task_level_condition)
-            target_task_level = self.global_curriculum_strategy.get_new_task_level.remote(task_level_condition)
-            for actor in self.actors:
-                actor.set_new_target_task_level.remote(target_task_level)
-
-            # Log training results to Tensorboard
-            self.global_logger.log_dict.remote(training_metrics, training_step, self.logging_frequency)
-            for idx, actor in enumerate(self.actors):
-                self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(idx), training_step,
-                                                   self.logging_frequency)
-
-            # In case of recurrent training, check if the sequence length should be adapted
-            self.async_adapt_sequence_length(training_step)
-
-            # Wait for the actors to finish their environment steps and learner to finish the learning step
-            ray.wait(actors_ready)
-            ray.wait([training_metrics])
-            ray.wait(sample_error_list)
-
     def async_testing_loop(self):
         """"""
         # Before starting the acting loop all actors need a copy of the latest network weights.
-        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True), 0)
+        [actor.update_actor_network.remote(
+            self.learner.get_actor_network_weights.remote(True)) for actor in self.actors]
+        # In case of self-play the clone network needs the latest weights as well.
+        [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(True))
          for actor in self.actors]
 
         while True:
             # Receiving the latest state from its environment each actor chooses an action according to its policy.
             actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]
+            # Wait for the actors to finish their environment steps
             ray.wait(actors_ready)
+
+    def async_tournament_loop(self):
+        # Get the first fixture keys and load the respective models into the learner
+        player_keys = self.tournament_schedule[self.current_tournament_fixture_idx]
+        self.learner.load_checkpoint_by_mode.remote(player_keys[0], player_keys[1])
+
+        # Before starting the acting loop all actors need a copy of the latest network weights.
+        [actor.update_actor_network.remote(
+            self.learner.get_actor_network_weights.remote(True)) for actor in self.actors]
+        # In case of self-play the clone network needs the latest weights as well.
+        [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(True))
+         for actor in self.actors]
+
+        while True:
+            # Receiving the latest state from its environment each actor chooses an action according to its policy.
+            actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]
+            new_match_played = [actor.update_history_with_latest_game_results.remote(
+                history_path=self.history_path,
+                player_keys=player_keys) for actor
+                in self.actors]
+            # Wait for the actors to finish their environment steps
+            ray.wait(actors_ready)
+            new_match_played = ray.get(new_match_played)
+            if new_match_played[0]:
+                self.games_played_in_fixture += 1
+                if self.games_played_in_fixture >= self.games_per_fixture:
+                    self.current_tournament_fixture_idx += 1
+                    self.games_played_in_fixture = 0
+
+                    if self.current_tournament_fixture_idx >= len(self.tournament_schedule):
+                        break
+
+                    player_keys = self.tournament_schedule[self.current_tournament_fixture_idx]
+                    self.learner.load_checkpoint_by_mode.remote(player_keys[0], player_keys[1])
+
+                    [actor.update_actor_network.remote(
+                        self.learner.get_actor_network_weights.remote(True)) for actor in self.actors]
+                    [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(True))
+                     for actor in self.actors]
+
     # endregion
