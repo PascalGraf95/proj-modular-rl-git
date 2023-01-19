@@ -8,6 +8,7 @@ from modules.misc.glicko2 import *
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
 from modules.sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
 from modules.sidechannel.game_results_sidechannel import GameResultsSideChannel
+from modules.sidechannel.environment_info_sidechannel import EnvironmentInfoSideChannel
 from modules.curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
 from modules.misc.model_path_handling import get_model_key_from_dictionary
@@ -150,9 +151,12 @@ class Actor:
         self.engine_configuration_channel = EngineConfigurationChannel()
         self.curriculum_side_channel = CurriculumSideChannelTaskInfo()
         self.game_result_side_channel = GameResultsSideChannel()
+        self.environment_info_side_channel = EnvironmentInfoSideChannel()
         self.environment = UnityEnvironment(file_name=self.environment_path,
                                             side_channels=[self.engine_configuration_channel,
-                                                           self.curriculum_side_channel, self.game_result_side_channel],
+                                                           self.curriculum_side_channel, 
+                                                           self.game_result_side_channel, 
+                                                           self.environment_info_side_channel],
                                             base_port=self.port)
         self.environment.reset()
         return True
@@ -175,6 +179,11 @@ class Actor:
             # This returns None if there has no match concluded since the last query. Otherwise, results is a list that
             # consists of two integers, i.e., the scores of both players in the last match.
             return self.game_result_side_channel.get_game_results()
+        elif side_channel == 'environment_info':
+            # Get the latest environment information from the respective side channel.
+            # This returns None if there environment info retrieved. Otherwise, it returns 
+            # a dictionary with the environment info like reward composition.
+            return self.environment_info_side_channel.get_environment_information_from_string()
         return None
     # endregion
 
