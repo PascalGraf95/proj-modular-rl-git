@@ -16,9 +16,14 @@ class EnvironmentInfoSideChannel(SideChannel):
         self.environment_information_string = msg.read_string()
 
     def get_environment_information_from_string(self):
-        # convert incoming string in the form of "key1 value1,key2 value2,..." to a dictionary
+        # convert incoming string in the form of "key1 value1,key2 value2,..." to a tuple
         if self.environment_information_string:
-            self.environment_information = dict(item.split(" ") for item in self.environment_information.split(","))
+            # split add ',' and convert to list
+            kvp_string_list = self.environment_information_string.split(",")
+            # split the strings in the list into key and value and add to a tuple to have non exclusive keys
+            self.environment_information = tuple(item.split(" ") for item in kvp_string_list)
+            # remove empty last element of tuple
+            self.environment_information = self.environment_information[:-1]
             return self.environment_information
         return None
         
