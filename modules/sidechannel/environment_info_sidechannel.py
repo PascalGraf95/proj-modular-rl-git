@@ -1,5 +1,6 @@
 from mlagents_envs.side_channel.side_channel import SideChannel, IncomingMessage
 import uuid
+import re
 
 
 class EnvironmentInfoSideChannel(SideChannel):
@@ -16,14 +17,22 @@ class EnvironmentInfoSideChannel(SideChannel):
         self.environment_information_string = msg.read_string()
 
     def get_environment_information_from_string(self):
-        # convert incoming string in the form of "key1 value1,key2 value2,..." to a tuple
+        # convert incoming string in the form of "key1 value1,key2 value2,..." to a dictionary
         if self.environment_information_string:
-            # split add ',' and convert to list
-            kvp_string_list = self.environment_information_string.split(",")
-            # split the strings in the list into key and value and add to a tuple to have non exclusive keys
-            self.environment_information = tuple(item.split(" ") for item in kvp_string_list)
-            # remove empty last element of tuple
-            self.environment_information = self.environment_information[:-1]
+            # split at ',' and ' ' and convert to list
+            item_list = re.split(",|\s", self.environment_information_string)
+            item_list = item_list[:-1]
+            self.environment_information = {}
+            for i in range(len(item_list)):
+                if i % 2 == 0:
+                    if item_list[i] in self.environment_information:
+                        if not isinstance(self.environment_information[item_list[i]], list):
+                            self.environment_information[item_list[i]] = [self.environment_information[item_list[i]]]
+                        self.environment_information[item_list[i]].append(item_list[i + 1])
+                    else:                        
+                        self.environment_information[item_list[i]] = item_list[i + 1]
+                else:
+                    continue
             return self.environment_information
         return None
         

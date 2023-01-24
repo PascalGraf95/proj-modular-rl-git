@@ -282,15 +282,19 @@ class Trainer:
             periodic_model_saving=(self.training_algorithm == 'CQL' or
                                    self.environment_configuration.get("BehaviorCloneName")))
         
-        # add additional environment information from side channel if available
-        self.environment_configuration = self.actors[0].get_side_channel_information.remote('environment_info')
-
+        # add additional environment information from side channel if available        
+        environment_info = self.actors[0].get_side_channel_information.remote('environment_info')
+        environment_info = ray.get(environment_info)
+        if environment_info == None:
+            environment_info = {"EnvironmentInfo": "Environment info from side channel is not available."}
+        
         # If training mode is enabled all configs are stored into a yaml file in the summaries folder
         if mode == 'training':
             if not os.path.isdir(os.path.join("./training/summaries", self.logging_name)):
                 os.makedirs(os.path.join("./training/summaries", self.logging_name))
             with open(os.path.join("./training/summaries", self.logging_name, "training_parameters.yaml"), 'w') as file:
                 _ = yaml.dump(self.trainer_configuration, file)
+                _ = yaml.dump(environment_info, file)
                 _ = yaml.dump(self.environment_configuration, file)
                 _ = yaml.dump(self.exploration_configuration, file)
         # endregion
