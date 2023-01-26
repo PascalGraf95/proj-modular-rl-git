@@ -30,7 +30,8 @@ class Actor:
                  environment_path: str = "",
                  demonstration_path: str = "",
                  device: str = '/cpu:0'):
-        # - Networks and Network Parameters -
+        # region --- Instance Parameters ---
+        # region - Networks and Network Parameters -
         # Depending on the chosen algorithm an actor utilizes the actor or critic network to determine its next action.
         self.actor_network = None
         self.critic_network = None
@@ -53,44 +54,57 @@ class Actor:
         self.network_update_frequency = 1000
         self.clone_network_update_frequency = 1000
         self.last_clone_update_step = -1
+        # endregion
 
-        # - Environment -
+        # region - Environment -
+        # Each actor interacts with a unique copy of the environment, receives states + rewards and sends new actions.
+        # The environment configuration contains information such as the state and action shapes. Instead of connecting
+        # directly to the environment in Unity, an executable can be exported and connected to via path.
         self.environment = None
         self.environment_configuration = None
         self.environment_path = environment_path
+        # endregion
 
-        # - Local Buffer -
+        # region - Local Buffer -
         # The local buffer stores experiences from previously played episodes until these are transferred to the global
         # buffer.
         self.local_buffer = None
         self.minimum_capacity_reached = False
+        # endregion
 
-        # - Recurrent Properties -
+        # region - Recurrent Properties -
         # Acting and learning utilizing a recurrent neural network introduces a new set of parameters and challenges.
         # Among these, is the need to store and reset the hidden states of the LSTM-layers.
         self.recurrent = None
         self.sequence_length = None
-        self.lstm = None
+        self.lstm_layer = None
         self.lstm_units = None
         self.lstm_state = None
-        self.clone_lstm = None
+        self.initial_lstm_state = None
+        self.clone_lstm_layer = None
         self.clone_lstm_state = None
+        self.clone_initial_lstm_state = None
+        # endregion
 
-        # - Local Logger -
+        # region - Local Logger -
         # Just as the local buffer, the local logger stores episode lengths and rewards from previously played episodes
         # until these are transferred to the global logger.
         self.local_logger = None
+        # endregion
 
-        # - Tensorflow Device -
+        # region - Tensorflow Device -
         # Working in an async fashion using ray makes it necessary to actively distribute processes among the CPU and
         # GPUs available. Each actor is usually placed on an individual CPU core/thread.
         self.device = device
+        # endregion
 
-        # - CQL -
+        # region - CQL -
+
         self.samples_buffered = False
         self.demonstration_path = demonstration_path
+        # endregion
 
-        # - Behavior Parameters -
+        # region - Behavior Parameters -
         # Information read from the environment.
         self.behavior_name = None
         self.behavior_clone_name = None
@@ -100,8 +114,9 @@ class Actor:
         self.agent_number = None
         self.agent_id_offset = None
         self.clone_agent_id_offset = None
+        # endregion
 
-        # - Exploration Algorithm -
+        # region - Exploration Algorithm -
         self.exploration_configuration = None
         self.exploration_algorithm = None
         self.adaptive_exploration = False
@@ -114,35 +129,41 @@ class Actor:
         self.exploration_policy_idx = idx
         self.reward_correction_factor = 1
         self.steps_since_update = 0
-
         self.episode_begin = True
+        # endregion
 
-        # - Curriculum Learning Strategy & Engine Side Channel -
+        # region - Curriculum Learning Strategy & Engine Side Channel -
         self.engine_configuration_channel = None
         self.curriculum_communicator = None
         self.curriculum_side_channel = None
         self.game_result_side_channel = None
         self.target_task_level = 0
+        # endregion
 
-        # - Preprocessing Algorithm -
+        # region - Preprocessing Algorithm -
         self.preprocessing_algorithm = None
         self.preprocessing_path = preprocessing_path
+        # endregion
 
-        # - Algorithm Selection -
+        # region - Prediction Parameters -
+        self.gamma = None
+        self.n_steps = None
+        # endregion
+
+        # region - Misc -
+        self.mode = mode
+        self.port = port
+        self.index = idx
+        # endregion
+        # endregion
+
+        # region --- Algorithm Selection ---
         # This section imports the relevant modules corresponding to the chosen interface, exploration algorithm and
         # preprocessing algorithm.
         self.select_agent_interface(interface)
         self.select_exploration_algorithm(exploration_algorithm)
         self.select_preprocessing_algorithm(preprocessing_algorithm)
-
-        # Prediction Parameters
-        self.gamma = None
-        self.n_steps = None
-
-        # - Misc -
-        self.mode = mode
-        self.port = port
-        self.index = idx
+        # endregion
 
     # region Environment Connection and Side Channel Communication
     def connect_to_unity_environment(self):
@@ -188,7 +209,6 @@ class Actor:
         # Else, return False.
         game_result = self.get_side_channel_information('game_results')
         if game_result:
-            print(game_result)
             self.append_to_game_results_history(game_result, history_path, player_keys)
             return True
         return False
@@ -201,22 +221,22 @@ class Actor:
             with open(history_path, 'w', newline='') as file:
                 writer = csv.writer(file)
                 writer.writerow(["game_id", "player_key_a", "player_key_b", "score_a", "score_b"])
-        else:
-            # If so just append the latest game results to that file along with the player keys
-            with open(history_path) as file:
-                # To get the game id, just count the number of rows.
-                reader = csv.DictReader(file)
-                game_id = sum(1 for _ in reader)
+                # ToDo: Add rating period
+        # If so just append the latest game results to that file along with the player keys
+        with open(history_path) as file:
+            # To get the game id, just count the number of rows.
+            reader = csv.DictReader(file)
+            game_id = sum(1 for _ in reader)
 
-            with open(history_path, 'a', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow([game_id, player_keys[0], player_keys[1], game_result[0], game_result[1]])
+        with open(history_path, 'a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([game_id, player_keys[0], player_keys[1], game_result[0], game_result[1]])
     # endregion
 
     # region Property Query
     def is_minimum_capacity_reached(self):
         # ToDo: Determine influence on training speed when changing this parameter.
-        return len(self.local_buffer) >= 10
+        return len(self.local_buffer) >= 50
 
     def is_network_update_requested(self, training_step):
         return self.steps_taken_since_network_update >= self.network_update_frequency
@@ -421,15 +441,15 @@ class Actor:
             for layer in self.actor_network.layers:
                 if "lstm" in layer.name:
                     lstm_layer_name = layer.name
-            self.lstm = self.actor_network.get_layer(lstm_layer_name)
+            self.lstm_layer = self.actor_network.get_layer(lstm_layer_name)
         elif self.critic_network:
             for layer in self.critic_network.layers:
                 if "lstm" in layer.name:
                     lstm_layer_name = layer.name
-            self.lstm = self.critic_network.get_layer(lstm_layer_name)
+            self.lstm_layer = self.critic_network.get_layer(lstm_layer_name)
 
         # Get the number of units as well as states in the respective layer.
-        self.lstm_units = self.lstm.units
+        self.lstm_units = self.lstm_layer.units
         self.lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                            np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
 
@@ -439,7 +459,7 @@ class Actor:
             for layer in self.clone_actor_network.layers:
                 if "lstm" in layer.name:
                     lstm_layer_name = layer.name
-            self.clone_lstm = self.clone_actor_network.get_layer(lstm_layer_name)
+            self.clone_lstm_layer = self.clone_actor_network.get_layer(lstm_layer_name)
             self.clone_lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                                      np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
 
@@ -474,23 +494,23 @@ class Actor:
             for idx, agent_id in enumerate(agent_ids):
                 clone_lstm_state[0][idx] = self.clone_lstm_state[0][agent_id]
                 clone_lstm_state[1][idx] = self.clone_lstm_state[1][agent_id]
-            self.clone_initial_state = [tf.convert_to_tensor(clone_lstm_state[0]),
+            self.clone_initial_lstm_state = [tf.convert_to_tensor(clone_lstm_state[0]),
                                         tf.convert_to_tensor(clone_lstm_state[1])]
-            self.clone_lstm.get_initial_state = self.get_initial_clone_state
+            self.clone_lstm_layer.get_initial_state = self.get_initial_clone_state
         else:
             lstm_state = [np.zeros((active_agent_number, self.lstm_units), dtype=np.float32),
                           np.zeros((active_agent_number, self.lstm_units), dtype=np.float32)]
             for idx, agent_id in enumerate(agent_ids):
                 lstm_state[0][idx] = self.lstm_state[0][agent_id]
                 lstm_state[1][idx] = self.lstm_state[1][agent_id]
-            self.initial_state = [tf.convert_to_tensor(lstm_state[0]), tf.convert_to_tensor(lstm_state[1])]
-            self.lstm.get_initial_state = self.get_initial_state
+            self.initial_lstm_state = [tf.convert_to_tensor(lstm_state[0]), tf.convert_to_tensor(lstm_state[1])]
+            self.lstm_layer.get_initial_state = self.get_initial_state
 
     def get_initial_state(self, inputs):
-        return self.initial_state
+        return self.initial_lstm_state
 
     def get_initial_clone_state(self, inputs):
-        return self.clone_initial_state
+        return self.clone_initial_lstm_state
 
     def update_lstm_states(self, agent_ids, lstm_state, clone=False):
         if not clone:
@@ -689,10 +709,9 @@ class Actor:
 
     def modify_local_buffer_gamma(self):
         # Set local_buffer's gamma and calculate the individual gamma list per actor
-        if self.mode == "training":
-            if self.intrinsic_exploration:
-                self.local_buffer.gamma = self.exploration_degree[self.exploration_policy_idx]["gamma"]
-                self.local_buffer.gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
+        if self.mode == "training" and self.intrinsic_exploration:
+            self.local_buffer.gamma = self.exploration_degree[self.exploration_policy_idx]["gamma"]
+            self.local_buffer.gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
 
     def act_according_to_exploration_algorithm(self, decision_steps, terminal_steps):
         if self.mode == "testing" or self.mode == "fastTesting":

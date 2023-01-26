@@ -36,7 +36,7 @@ class DQNActor(Actor):
         with tf.device(self.device):
             if self.recurrent:
                 # Set the initial LSTM states correctly according to the number of active agents
-                self.set_lstm_states(agent_ids)
+                self.set_lstm_states(agent_ids, clone=clone)
                 # In case of a recurrent network, the state input needs an additional time dimension
                 states = [tf.expand_dims(state, axis=1) for state in states]
                 action_values, hidden_state, cell_state = self.critic_network(states)

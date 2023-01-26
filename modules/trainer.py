@@ -208,14 +208,7 @@ class Trainer:
         # Those are a possible intrinsic reward, the external reward, a policy index and the last taken action.
         # Some of them are only compatible with the usage of intrinsic exploration algorithms and should otherwise
         # be deactivated.
-        if exploration_algorithm not in intrinsic_exploration_algorithms and mode == "training":
-            self.trainer_configuration["IntrinsicExploration"] = False
-            self.trainer_configuration["PolicyFeedback"] = False
-            self.trainer_configuration["RewardFeedback"] = False
-            print("\n\nExploration policy feedback and reward feedback automatically disabled as no intrinsic "
-                  "exploration algorithm is in use.\n\n")
-        else:
-            self.trainer_configuration["IntrinsicExploration"] = True
+        self.adapt_trainer_configuration(exploration_algorithm, mode)
         # endregion
 
         # region - Actor Instantiation and Environment Connection -
@@ -290,9 +283,6 @@ class Trainer:
                                                           priority_alpha=self.trainer_configuration["PriorityAlpha"])
         else:
             self.global_buffer = FIFOBuffer.remote(capacity=self.trainer_configuration["ReplayCapacity"])
-        if mode == "training":
-            # Initialize the global curriculum strategy, but only in training mode
-            self.global_curriculum_strategy = CurriculumStrategy.remote()
         # endregion
 
         # region - Global Logger and Log File -
@@ -350,13 +340,27 @@ class Trainer:
         else:
             return [key for key, val in trainer_configuration.items()]
         return self.trainer_configuration
+
+    def adapt_trainer_configuration(self, exploration_algorithm, mode):
+        """
+        Adapts the trainer configuration according to the selected exploration algorithm.
+        Deactivate some network feedbacks when no intrinsic exploration algorithm is active.
+        """
+        if exploration_algorithm not in intrinsic_exploration_algorithms and mode == "training":
+            self.trainer_configuration["IntrinsicExploration"] = False
+            self.trainer_configuration["PolicyFeedback"] = False
+            self.trainer_configuration["RewardFeedback"] = False
+            print("\n\nExploration policy feedback and reward feedback automatically disabled as no intrinsic "
+                  "exploration algorithm is in use.\n\n")
+        else:
+            self.trainer_configuration["IntrinsicExploration"] = True
+
     # endregion
 
     # region Environment Interaction
     def async_training_loop(self):
         """"""
         # region --- Initialization ---
-        total_episodes = 0
         training_step = 0
         # Before starting the acting and training loop all actors need a copy of the latest network weights.
         [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True))
@@ -385,7 +389,7 @@ class Trainer:
                 if self.trainer_configuration["PrioritizedReplay"]:
                     sample_errors = actor.get_sample_errors.remote(samples)
                     sample_error_list.append(sample_errors)
-                    # Append the received samples to the global buffer.
+                    # Append the received samples to the global buffer along with the sample errors.
                     self.global_buffer.append_list.remote(samples, sample_errors)
                 else:
                     # Append the received samples to the global buffer.
@@ -432,9 +436,10 @@ class Trainer:
                 actor.is_clone_network_update_requested.remote(self.global_logger.get_total_episodes.remote()), True))
                 for actor in self.actors]
 
-            # Check if a new best reward has been achieved, if so save the models
+            # Check if a new best reward has been achieved, if so save the models.
             self.async_save_agent_models(training_step)
             # endregion
+
             # region --- Tensorboard Logging ---
             # Every logging_frequency steps (usually set to 100 so the event file doesn't get to big for long trainings)
             # log the training metrics to the tensorboard.
@@ -443,9 +448,12 @@ class Trainer:
                                                training_step, 10)
             # Some exploration algorithms also return metrics that represent their training or decay state. These shall
             # be logged in the same interval.
-            for idx, actor in enumerate(self.actors):
-                self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(), training_step,
-                                                   self.logging_frequency)
+            # for idx, actor in enumerate(self.actors):
+            [self.global_logger.log_dict.remote(
+                actor.get_exploration_logs.remote(), training_step, self.logging_frequency)
+                for actor in self.actors]
+            # self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(), training_step,
+            #                                        self.logging_frequency)
             # endregion
 
             # region --- Waiting ---
@@ -456,11 +464,7 @@ class Trainer:
             ray.wait(actors_ready)
             ray.wait([training_metrics])
             ray.wait(sample_error_list)
-            ray.wait([sample_errors])
             # endregion
-
-            # TODO: Add an option to affect the training process with keyboard events.
-            #       E.g. Skip Level, Boost Exploration, Render Test Episode
 
     def async_adapt_sequence_length(self, training_step):
         """"""
