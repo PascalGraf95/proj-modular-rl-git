@@ -106,8 +106,9 @@ class GlobalLogger:
 
         # Tensorboard Writer
         if self.tensorboard:
-            self.tensorboard_writer = tf.summary.create_file_writer(log_dir)
-            self.logger_dict = {}
+            with tf.device(self.device):
+                self.tensorboard_writer = tf.summary.create_file_writer(log_dir)
+                self.logger_dict = {}
 
     def get_elapsed_time(self):
         # Returns the elapsed time since creation of this logger at the beginning of the training process.

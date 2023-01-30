@@ -457,6 +457,7 @@ class Trainer:
             # is processed and stored in a local replay buffer for each actor.
             actors_ready = [actor.play_one_step.remote(training_step) for actor in self.actors]
             # endregion
+
             # region --- Global Buffer and Logger ---
             # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
             # In case of Prioritized Experience Replay let the actor calculate an initial priority first.
@@ -496,6 +497,20 @@ class Trainer:
             [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
                 actor.is_network_update_requested.remote()))
                 for actor in self.actors]
+            # endregion
+
+            # region --- Tensorboard Logging ---
+            # Every logging_frequency steps (usually set to 100 so the event file doesn't get to big for long trainings)
+            # log the training metrics to the tensorboard.
+            self.global_logger.log_dict.remote(training_metrics, training_step, self.logging_frequency)
+            self.global_logger.log_dict.remote({"Losses/BufferLength": ray.get(self.global_buffer.__len__.remote())},
+                                               training_step, 10)
+            # Some exploration algorithms also return metrics that represent their training or decay state. These shall
+            # be logged in the same interval.
+            for idx, actor in enumerate(self.actors):
+                [self.global_logger.log_dict.remote(
+                    actor.get_exploration_logs.remote(), training_step, self.logging_frequency)
+                    for actor in self.actors]
             # endregion
 
             # region --- Waiting ---

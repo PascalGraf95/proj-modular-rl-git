@@ -355,7 +355,7 @@ class DQNLearner(Learner):
         # Update target network weights
         self.training_step += 1
         self.sync_models()
-        return {'Losses/Loss': value_loss}, sample_errors, self.training_step
+        return {'Losses/Loss': value_loss.numpy()}, sample_errors, self.training_step
 
     def boost_exploration(self):
         pass

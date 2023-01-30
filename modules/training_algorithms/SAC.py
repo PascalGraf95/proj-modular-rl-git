@@ -549,8 +549,8 @@ class SACLearner(Learner):
         self.steps_since_actor_update += 1
         self.sync_models()
 
-        return {'Losses/Loss': policy_loss + value_loss, 'Losses/PolicyLoss': policy_loss,
-                'Losses/ValueLoss': value_loss, 'Losses/AlphaLoss': alpha_loss,
+        return {'Losses/Loss': (policy_loss + value_loss).numpy(), 'Losses/PolicyLoss': policy_loss.numpy(),
+                'Losses/ValueLoss': value_loss, 'Losses/AlphaLoss': alpha_loss.numpy(),
                 'Losses/Alpha': tf.reduce_mean(self.alpha).numpy()}, sample_errors, self.training_step
     # endregion
 
