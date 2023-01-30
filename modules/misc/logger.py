@@ -1,10 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import os
-import matplotlib.pyplot as plt
-import shutil
 from collections import deque
-from tensorflow.python.summary.summary_iterator import summary_iterator
 from datetime import datetime
 import ray
 
@@ -72,7 +69,11 @@ class GlobalLogger:
                  tensorboard=True,
                  actor_num=1,
                  running_average_episodes=100,
-                 periodic_model_saving=False):
+                 periodic_model_saving=False,
+                 device: str = '/cpu:0'):
+        # Set CPU as device to run Tensorboard
+        self.device = device
+
         # Summary file path and logger creation time
         self.log_dir = log_dir
         self.creation_time = datetime.now()
@@ -210,16 +211,6 @@ class GlobalLogger:
                 return True
         return False
 
-    def register_level_change(self, task_level_condition):
-        # In case of level change reset all queues and running averages, so that models with lower reward will still
-        # be stored.
-        if task_level_condition:
-            self.best_running_average_reward = -10000
-            self.last_save_time_step = self.total_episodes_played
-            self.average_rewards = [-10000 for i in range(self.actor_num)]
-            self.episode_reward_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
-            self.episode_length_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
-
     def remove_old_checkpoints(self):
         def get_step_from_file(file):
             step = [f for f in file.split("_") if "Step" in f][0]
@@ -244,10 +235,8 @@ class GlobalLogger:
                         self.log_scalar(key, val, step)
                     self.last_logged_dict[key] = step
 
-
-
-
     def log_scalar(self, tag, value, step):
-        with self.tensorboard_writer.as_default():
-            tf.summary.scalar(tag, value, step)
-            self.tensorboard_writer.flush()
+        with tf.device(self.device):
+            with self.tensorboard_writer.as_default():
+                tf.summary.scalar(tag, value, step)
+                self.tensorboard_writer.flush()

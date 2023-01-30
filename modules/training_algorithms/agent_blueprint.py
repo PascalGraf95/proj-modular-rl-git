@@ -4,13 +4,10 @@ import tensorflow as tf
 from modules.misc.logger import LocalLogger
 from modules.misc.replay_buffer import LocalFIFOBuffer, LocalRecurrentBuffer
 from modules.misc.utility import modify_observation_shapes, set_gpu_growth
-from modules.misc.glicko2 import *
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
 from modules.sidechannel.game_results_sidechannel import GameResultsSideChannel
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
 from modules.misc.model_path_handling import get_model_key_from_dictionary
-from collections import deque
-import time
 import ray
 import gym
 from gym.wrappers import RescaleAction

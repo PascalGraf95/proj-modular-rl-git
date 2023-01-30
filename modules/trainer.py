@@ -211,7 +211,7 @@ class Trainer:
 
         # For each actor instantiate the necessary modules
         for i, actor in enumerate(self.actors):
-            actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree)
+            actor.instantiate_modules.remote(self.trainer_configuration)
             # In case of Unity Environments set the rendering and simulation parameters.
             if self.interface == "MLAgentsV18":
                 if mode == "training":
@@ -391,7 +391,6 @@ class Trainer:
 
             # Train the learner networks with the batch and observe the resulting metrics.
             training_metrics, sample_errors, training_step = self.learner.learn.remote(samples)
-
             # In case of a PER update the buffer priorities with the temporal difference errors
             self.global_buffer.update.remote(indices, sample_errors)
             # Train the actor's exploration algorithm with the same batch
@@ -430,8 +429,73 @@ class Trainer:
             [self.global_logger.log_dict.remote(
                 actor.get_exploration_logs.remote(), training_step, self.logging_frequency)
                 for actor in self.actors]
-            # self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(), training_step,
-            #                                        self.logging_frequency)
+            # endregion
+
+            # region --- Waiting ---
+            # When asynchronous ray processes don't finish in time they are added to a queue while the next loop starts.
+            # This leads to a memory leak filling up the RAM and after that even taking up hard drive storage. To
+            # prevent this behavior we explicitly wait for the most resource and time-consuming processes at the end of
+            # each iteration.
+            ray.wait(actors_ready)
+            ray.wait([training_metrics])
+            ray.wait(sample_error_list)
+            # endregion
+
+    def async_minimal_loop(self):
+        """"""
+        # region --- Initialization ---
+        training_step = 0
+        # Before starting the acting and training loop all actors need a copy of the latest network weights.
+        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True))
+         for actor in self.actors]
+        # endregion
+
+        while True:
+            # region --- Acting ---
+            # Receiving the latest state from its environment each actor chooses an action according to its policy
+            # and/or its exploration algorithm. Furthermore, the reward and the info about the environment state (done)
+            # is processed and stored in a local replay buffer for each actor.
+            actors_ready = [actor.play_one_step.remote(training_step) for actor in self.actors]
+            # endregion
+            # region --- Global Buffer and Logger ---
+            # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
+            # In case of Prioritized Experience Replay let the actor calculate an initial priority first.
+            sample_error_list = []
+            for idx, actor in enumerate(self.actors):
+                # Gather samples from the local buffer of an actor.
+                samples, indices = actor.get_new_samples.remote()
+                # Calculate an initial priority based on the temporal difference error of the critic network.
+                if self.trainer_configuration["PrioritizedReplay"]:
+                    sample_errors = actor.get_sample_errors.remote(samples)
+                    sample_error_list.append(sample_errors)
+                    # Append the received samples to the global buffer along with the sample errors.
+                    self.global_buffer.append_list.remote(samples, sample_errors)
+                else:
+                    # Append the received samples to the global buffer.
+                    self.global_buffer.append_list.remote(samples)
+                # Request the latest episode stats from the actor containing episode rewards and lengths and append them
+                # to the global logger which will write them to the tensorboard.
+                self.global_logger.append.remote(*actor.get_new_stats.remote(), actor_idx=idx)
+            # endregion
+
+            # region --- Training Process ---
+            # This code section is responsible for the actual training process of the involved neural networks.
+            # Sample a new batch of transitions from the global replay buffer. Their indices matter in case of a
+            # Prioritized Replay Buffer (PER) because their priorities need to be updated afterwards.
+            samples, indices = self.global_buffer.sample.remote(self.trainer_configuration,
+                                                                self.trainer_configuration.get("BatchSize"))
+
+            # Train the learner networks with the batch and observe the resulting metrics.
+            training_metrics, sample_errors, training_step = self.learner.learn.remote(samples)
+            # In case of a PER update the buffer priorities with the temporal difference errors
+            self.global_buffer.update.remote(indices, sample_errors)
+            # endregion
+
+            # region --- Network Update and Checkpoint Saving ---
+            # Check if the actor networks request to be updated with the latest network weights from the learner.
+            [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
+                actor.is_network_update_requested.remote()))
+                for actor in self.actors]
             # endregion
 
             # region --- Waiting ---
