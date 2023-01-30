@@ -65,11 +65,6 @@ class Trainer:
         self.exploration_configuration = None
         self.exploration_algorithm = None
 
-        # - Curriculum Learning Strategy -
-        # The curriculum strategy determines when an agent has solved the current task level and is ready to proceed
-        # to a higher difficulty.
-        self.global_curriculum_strategy = None
-
         # - Preprocessing Algorithm -
         # The preprocessing algorithm usually decreases the input size by extracting relevant information. The agent
         # will then only see this modified information when training and acting.
@@ -128,23 +123,6 @@ class Trainer:
         else:
             raise ValueError("There is no {} training algorithm.".format(training_algorithm))
 
-    def select_curriculum_strategy(self, curriculum_strategy):
-        """Imports the curriculum strategy according to the algorithm choice."""
-        global CurriculumStrategy
-
-        if curriculum_strategy == "None" or not curriculum_strategy:
-            from .curriculum_strategies.curriculum_strategy_blueprint import NoCurriculumStrategy as CurriculumStrategy
-        elif curriculum_strategy == "LinearCurriculum":
-            from .curriculum_strategies.linear_curriculum import LinearCurriculum as CurriculumStrategy
-        else:
-            raise ValueError("There is no {} curriculum strategy.".format(curriculum_strategy))
-        """
-        Currently Disabled:
-        elif curriculum_strategy == "RememberingCurriculum":
-            from ..curriculum_strategies.remembering_curriculum import RememberingCurriculum as CurriculumStrategy
-        elif curriculum_strategy == "CrossFadeCurriculum":
-            from ..curriculum_strategies.cross_fade_curriculum import CrossFadeCurriculum as CurriculumStrategy
-        """
     # endregion
 
     # region Validation
@@ -429,7 +407,7 @@ class Trainer:
             # region --- Network Update and Checkpoint Saving ---
             # Check if the actor networks request to be updated with the latest network weights from the learner.
             [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
-                actor.is_network_update_requested.remote(training_step)))
+                actor.is_network_update_requested.remote()))
                 for actor in self.actors]
             # Check if the clone networks request to be updated with the latest network weights from the learner.
             [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(

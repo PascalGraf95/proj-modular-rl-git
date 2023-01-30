@@ -61,14 +61,6 @@ def main():
     # Choose from "None", "EpsilonGreedy", "ICM" and "RND"
     exploration_algorithm = args.exploration_algorithm
 
-    # - Curriculum Strategy -
-    # Just like humans, a RL Agent learns best by steadily increasing the difficulty of the given task. Thus, for
-    # Unity Environments an option to choose a task level has been implemented. Notice, however, that in order to work
-    # the Unity environment needs special preparation (like a SideChannel reading the messages).
-    # Choose from None, "LinearCurriculum" ("RememberingCurriculum" and "CrossFadeCurriculum" are currently disabled)
-    curriculum_strategy = args.curriculum_strategy
-    trainer.select_curriculum_strategy(curriculum_strategy)
-
     # - Preprocessing Algorithm -
     # In some cases it can be useful to present not just the raw data from the environment to the RL Agent but to
     # apply some preprocessing first. In case of Semantic Segmentation, a previously trained Variational Autoencoder

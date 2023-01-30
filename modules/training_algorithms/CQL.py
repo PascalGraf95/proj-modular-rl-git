@@ -704,14 +704,6 @@ class CQLLearner(Learner):
                 'Losses/ValueLoss': value_loss, 'Losses/CQLLoss': cql_loss, 'Losses/CQLAlpha': cql_alpha.numpy(),
                 'Losses/Alpha': tf.reduce_mean(self.alpha).numpy()}, sample_errors, self.training_step
 
-    @staticmethod
-    def value_function_rescaling(x, eps=1e-3):
-        return np.sign(x) * (np.sqrt(np.abs(x) + 1) - 1) + eps * x
-
-    @staticmethod
-    def inverse_value_function_rescaling(h, eps=1e-3):
-        return np.sign(h) * (((np.sqrt(1 + 4 * eps * (np.abs(h) + 1 + eps)) - 1) / (2 * eps)) - 1)
-
     def sync_models(self):
         if self.sync_mode == "hard_sync":
             if not self.training_step % self.sync_steps and self.training_step > 0:
