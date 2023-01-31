@@ -20,7 +20,7 @@ class CmdArgParse:
                                                       "e.g.'LunarLanderContinuous-v2'. If you want a CQL agent to "
                                                       "learn from demonstrations, an environment can be used to "
                                                       "evaluate the model on a regular basis. Please provide a path "
-                                                      "or typeNone to connect directly to the Unity Editor. "
+                                                      "or type None to connect directly to the Unity Editor. "
                                                       "Otherwise, type 'NoEnv' to proceed without evaluation.",
                             type=str, required=False, default=None)
         parser.add_argument('-ta', '--train_algorithm', help="Choose from 'DQN', 'DDPG', 'TD3', 'SAC', 'CQL'", type=str,
@@ -31,16 +31,10 @@ class CmdArgParse:
         parser.add_argument('-ea', '--exploration_algorithm', help="Choose from 'None', 'EpsilonGreedy', 'ICM', 'RND', "
                                                                    "'ENM'",
                             type=str, required=False, default='None')
-        parser.add_argument('-cs', '--curriculum_strategy', help="Choose from None, 'LinearCurriculum', "
-                                                                 "('RememberingCurriculum', 'CrossFadeCurriculum' "
-                                                                 "are currently disabled)",
-                            type=str, required=False, default=None)
         parser.add_argument('-pa', '--preprocessing_algorithm', help="Choose from 'None' and 'SemanticSegmentation'",
                             type=str, required=False, default='None')
         parser.add_argument('-pp', '--preprocessing_path', help="Enter the path for the preprocessing model if needed",
                             type=str,required=False, default='None')
-        parser.add_argument('-sm', '--save_all_models', help="Determines if all models or only the actor will be saved "
-                                                             "during training", type=bool, required=False, default=True)
         parser.add_argument('-rmoc', '--remove_old_checkpoints', help="Determines if old model checkpoints will "
                                                                       "be overwritten",
                             type=bool, required=False, default=False)

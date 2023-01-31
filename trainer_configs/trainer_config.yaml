@@ -84,7 +84,7 @@ sac:
     PolicyFeedback: false
     SequenceLength: 12
     Overlap: 6
-    ActorNum: 8
+    ActorNum: 1
     BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:

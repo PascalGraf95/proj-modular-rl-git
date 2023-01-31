@@ -36,7 +36,7 @@ class DQNActor(Actor):
         with tf.device(self.device):
             if self.recurrent:
                 # Set the initial LSTM states correctly according to the number of active agents
-                self.set_lstm_states(agent_ids)
+                self.set_lstm_states(agent_ids, clone=clone)
                 # In case of a recurrent network, the state input needs an additional time dimension
                 states = [tf.expand_dims(state, axis=1) for state in states]
                 action_values, hidden_state, cell_state = self.critic_network(states)
@@ -355,7 +355,7 @@ class DQNLearner(Learner):
         # Update target network weights
         self.training_step += 1
         self.sync_models()
-        return {'Losses/Loss': value_loss}, sample_errors, self.training_step
+        return {'Losses/Loss': value_loss.numpy()}, sample_errors, self.training_step
 
     def boost_exploration(self):
         pass
@@ -379,8 +379,7 @@ class DQNLearner(Learner):
                 if not self.critic:
                     raise FileNotFoundError("Could not find all necessary model files.")
 
-    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
-                        checkpoint_condition=True):
+    def save_checkpoint(self, path, running_average_reward, training_step, checkpoint_condition=True):
         if not checkpoint_condition:
             return
         self.critic.save(
