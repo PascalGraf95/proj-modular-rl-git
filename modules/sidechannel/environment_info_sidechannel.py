@@ -7,6 +7,7 @@ class EnvironmentInfoSideChannel(SideChannel):
     """
     Side-Channel to communicate environment information like the reward composition.
     """
+
     def __init__(self) -> None:
         super().__init__(uuid.UUID("92744089-f2c0-49f9-ba9e-1968f1944e28"))
         self.environment_information_string = None
@@ -29,11 +30,9 @@ class EnvironmentInfoSideChannel(SideChannel):
                         if not isinstance(self.environment_information[item_list[i]], list):
                             self.environment_information[item_list[i]] = [self.environment_information[item_list[i]]]
                         self.environment_information[item_list[i]].append(item_list[i + 1])
-                    else:                        
+                    else:
                         self.environment_information[item_list[i]] = item_list[i + 1]
                 else:
                     continue
             return self.environment_information
-        return None
-        
-    
+        return {"EnvironmentInfo": "Environment info from side channel is not available."}

@@ -214,7 +214,7 @@ class Actor:
             return self.game_result_side_channel.get_game_results()
         elif side_channel == 'environment_info':
             # Get the latest environment information from the respective side channel.
-            # This returns None if there environment info retrieved. Otherwise, it returns 
+            # This returns None if no environment information are retrieved. Otherwise, it returns
             # a dictionary with the environment info like reward composition.
             return self.environment_info_side_channel.get_environment_information_from_string()
         return None
