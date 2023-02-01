@@ -4,6 +4,7 @@ from keras.layers import Dense, LSTM
 import numpy as np
 import time
 import ray
+
 gpus = tf.config.experimental.list_physical_devices("GPU")
 tf.config.experimental.set_memory_growth(gpus[0], True)
 np.random.seed(42)
