@@ -7,8 +7,9 @@ from ..misc.network_constructor import construct_network
 import tensorflow as tf
 from ..training_algorithms.agent_blueprint import Learner
 import itertools
-from tensorflow.keras import Input, Model
-from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
+from tensorflow import keras
+from keras import Input, Model
+from keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
 import time
 from collections import deque
 
@@ -20,12 +21,6 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
     Name = "RandomNetworkDistillation"
     ActionAltering = False
     IntrinsicReward = True
-
-    ParameterSpace = {
-        "FeatureSpaceSize": int,
-        "CuriosityScalingFactor": float,
-        "LearningRate": float,
-    }
 
     def __init__(self, action_shape, observation_shapes,
                  action_space,

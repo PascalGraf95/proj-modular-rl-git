@@ -27,12 +27,6 @@ class EpisodicNoveltyModule(ExplorationAlgorithm):
     ActionAltering = False
     IntrinsicReward = True
 
-    ParameterSpace = {
-        "FeatureSpaceSize": int,
-        "LearningRate": float,
-        "EpisodicMemoryCapacity": int
-    }
-
     def __init__(self, action_shape, observation_shape,
                  action_space,
                  parameters,
