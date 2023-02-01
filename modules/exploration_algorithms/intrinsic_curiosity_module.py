@@ -21,13 +21,6 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
     ActionAltering = False
     IntrinsicReward = True
 
-    ParameterSpace = {
-        "FeatureSpaceSize": int,
-        "CuriosityScalingFactor": float,
-        "ForwardLossWeight": float,
-        "LearningRate": float,
-    }
-
     def __init__(self, action_shape, observation_shapes, action_space, parameters, idx):
         self.action_space = action_space
         self.action_shape = action_shape

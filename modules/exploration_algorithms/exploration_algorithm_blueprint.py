@@ -7,8 +7,6 @@ class ExplorationAlgorithm:
     ActionAltering = False
     IntrinsicReward = False
 
-    ParameterSpace = {}
-
     def __init__(self, action_shape, observation_shape, action_space, parameters, trainer_configuration, idx):
         self.action_space = action_space
         self.action_shape = action_shape

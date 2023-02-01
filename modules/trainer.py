@@ -274,12 +274,17 @@ class Trainer:
             tensorboard=(mode == 'training'),
             periodic_model_saving=(self.training_algorithm == 'CQL' or
                                    self.environment_configuration.get("BehaviorCloneName")))
+        
+        # Add additional environment information from side channel if available.
+        environment_info = self.actors[0].get_side_channel_information.remote('environment_info')
+        
         # If training mode is enabled all configs are stored into a yaml file in the summaries folder
         if mode == 'training':
             if not os.path.isdir(os.path.join("./training/summaries", self.logging_name)):
                 os.makedirs(os.path.join("./training/summaries", self.logging_name))
             with open(os.path.join("./training/summaries", self.logging_name, "training_parameters.yaml"), 'w') as file:
                 _ = yaml.dump(self.trainer_configuration, file)
+                _ = yaml.dump(ray.get(environment_info), file)
                 _ = yaml.dump(self.environment_configuration, file)
                 _ = yaml.dump(self.exploration_configuration, file)
         # endregion
