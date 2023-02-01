@@ -14,6 +14,8 @@ import time
 import yaml
 import ray
 
+intrinsic_exploration_algorithms = ["ENM"]  # Will contain NGU, ECR, NGU-r, RND-alter with future updates...
+
 
 class Trainer:
     """ Modular Reinforcement Learning© Trainer-class
@@ -23,6 +25,7 @@ class Trainer:
     """
 
     def __init__(self):
+        # region --- Instance Variables ---
         # - Trainer Configuration -
         # The trainer configuration file contains all training parameters relevant for the chosen algorithm under the
         # selected key. Furthermore, the abbreviation of the chosen algorithm is stored as it might affect the
@@ -43,6 +46,10 @@ class Trainer:
         # of agents present. This configuration will be read from the environment right after establishing the
         # connection.
         self.environment_configuration = None
+        # Different interfaces allow the framework to communicate with different types of environments, e.g. the same
+        # functionality can be used when communicating with an OpenAI Gym environment as well as with a Unity
+        # Environment communicating via MLAgents
+        self.interface = None
 
         # - Agent -
         # The agent contains the intelligence of the whole algorithm. It's structure depends on the chosen RL
@@ -58,11 +65,6 @@ class Trainer:
         self.exploration_configuration = None
         self.exploration_algorithm = None
 
-        # - Curriculum Learning Strategy -
-        # The curriculum strategy determines when an agent has solved the current task level and is ready to proceed
-        # to a higher difficulty.
-        self.global_curriculum_strategy = None
-
         # - Preprocessing Algorithm -
         # The preprocessing algorithm usually decreases the input size by extracting relevant information. The agent
         # will then only see this modified information when training and acting.
@@ -76,18 +78,33 @@ class Trainer:
         self.global_buffer = None
 
         # - Misc -
-        self.save_all_models = False
+        # A new set of models will be saved during training as soon as the agent improves in terms of reward. As there
+        # may be hundreds of models stored after a long training the following option allows to only keep the latest.
+        # However, sometimes it is useful to compare different intermediate models.
         self.remove_old_checkpoints = False
-        self.interface = None
 
-        # - Self-Play Tournament -
+        # - Loading Models -
+        # Provided a path with network models, these model dictionaries store a unique key for each model present
+        # along with information such as the number of steps it has been trained, the reward it reached and the
+        # respective paths. During continued training or testing usually the latest trained model is loaded.
+        # In tournament mode all models in the dictionaries will be tested and compared.
         self.model_dictionary = None
         self.clone_model_dictionary = None
+
+        # - Self-Play Tournament -
+        # In case of self-play where an agent competes with another agent a tournament can be arranged, where each
+        # agent in the model dictionary plays against each agent in the clone model dictionary. The tournament
+        # schedule stores all fixtures (pairings) to be played.
         self.tournament_schedule = None
+        # The fixture index stores information about which game is currently played from the tournament schedule.
         self.current_tournament_fixture_idx = 0
+        # To make up for stochastic policy behaviors each pairing should play multiple games.
         self.games_played_in_fixture = 0
         self.games_per_fixture = None
+        # After playing a csv file is created storing each game played along with the scores of the players.
         self.history_path = None
+
+        # endregion
 
     # region Algorithm Choice
     def select_training_algorithm(self, training_algorithm):
@@ -97,10 +114,6 @@ class Trainer:
         if training_algorithm == "DQN":
             from .training_algorithms.DQN import DQNActor as Actor
             from .training_algorithms.DQN import DQNLearner as Learner
-        elif training_algorithm == "DDPG":
-            from .training_algorithms.DDPG import DDPGAgent as Agent
-        elif training_algorithm == "TD3":
-            from .training_algorithms.TD3 import TD3Agent as Agent
         elif training_algorithm == "SAC":
             from .training_algorithms.SAC import SACActor as Actor
             from .training_algorithms.SAC import SACLearner as Learner
@@ -110,23 +123,6 @@ class Trainer:
         else:
             raise ValueError("There is no {} training algorithm.".format(training_algorithm))
 
-    def select_curriculum_strategy(self, curriculum_strategy):
-        """Imports the curriculum strategy according to the algorithm choice."""
-        global CurriculumStrategy
-
-        if curriculum_strategy == "None" or not curriculum_strategy:
-            from .curriculum_strategies.curriculum_strategy_blueprint import NoCurriculumStrategy as CurriculumStrategy
-        elif curriculum_strategy == "LinearCurriculum":
-            from .curriculum_strategies.linear_curriculum import LinearCurriculum as CurriculumStrategy
-        else:
-            raise ValueError("There is no {} curriculum strategy.".format(curriculum_strategy))
-        """
-        Currently Disabled:
-        elif curriculum_strategy == "RememberingCurriculum":
-            from ..curriculum_strategies.remembering_curriculum import RememberingCurriculum as CurriculumStrategy
-        elif curriculum_strategy == "CrossFadeCurriculum":
-            from ..curriculum_strategies.cross_fade_curriculum import CrossFadeCurriculum as CurriculumStrategy
-        """
     # endregion
 
     # region Validation
@@ -142,9 +138,21 @@ class Trainer:
     def async_instantiate_agent(self, mode: str, preprocessing_algorithm: str, exploration_algorithm: str,
                                 environment_path: str = None, preprocessing_path: str = None,
                                 demonstration_path: str = None):
-        """ Instantiate the agent consisting of learner and actor(s) and their respective submodules in an asynchronous
-        fashion utilizing the ray library."""
-
+        """
+        Instantiate the agent consisting of learner, actor(s) and their respective submodules in an asynchronous
+        fashion utilizing the ray library.
+        :param mode: Defines if training, testing or tournament will be performed.
+        :param preprocessing_algorithm: Defines if and in which way observations will be preprocessed before passed
+        through the actor / learner.
+        :param exploration_algorithm: Defines which algorithms are used to explore the state-action-space in the
+        environment.
+        :param environment_path: Can be either None to connect directly to Unity, a path to an exported Unity
+        environment, or the name of an OpenAI Gym environment.
+        :param preprocessing_path: Respective path for a preprocessing algorithm.
+        :param demonstration_path: Respective path for demonstrations utilized in Offline Reinforcement Learning, i.e.,
+        the CQL Algorithm.
+        :return:
+        """
         # region - Multiprocessing Initialization and Actor Number Determination
         # Initialize ray for parallel multiprocessing.
         ray.init()
@@ -160,18 +168,11 @@ class Trainer:
             actor_num = self.trainer_configuration.get("ActorNum")
         # endregion
 
-        # region - Exploration Degree Determination -
-        # If there is only one actor in training mode the degree of exploration should start at maximum. Otherwise,
-        # each actor will be instantiated with a different degree of exploration. This only has an effect if the
-        # exploration algorithm is not None. When testing mode is selected, thus the number of actors is 1, linspace
-        # returns 0. If the Meta-Controller is used, a family of exploration policies is created, where the controller
-        # later on can dynamically choose from.
-        intrinsic_exploration_algorithms = ["ENM"]  # Will contain NGU, ECR, NGU-r, RND-alter with future updates...
-
-        # Calculate exploration policy values based on agent57's concept
-        # The exploration is now a list that contains a dictionary for each actor.
+        # region - Exploration Parameter Determination and Network Feedback -
+        # The exploration is a list that contains a dictionary for each actor (if multiple).
         # Each dictionary contains a value for beta and gamma (utilized for intrinsic motivation)
-        # as well as a scaling values (utilized for epsilon greedy).
+        # as well as a scaling value (utilized for epsilon greedy). If there is only one actor in training mode
+        # the scaling of exploration should start at maximum.
         exploration_degree = get_exploration_policies(num_policies=actor_num,
                                                       mode=mode,
                                                       beta_max=self.trainer_configuration[
@@ -181,16 +182,11 @@ class Trainer:
         # Pass the exploration degree to the trainer configuration
         self.trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
 
-        # Extension of agent inputs to accept values in addition to the environment observations (exploration policy
-        # index, ext. reward, int. reward) is only compatible with usage of intrinsic exploration algorithms.
-        if exploration_algorithm not in intrinsic_exploration_algorithms and mode == "training":
-            self.trainer_configuration["IntrinsicExploration"] = False
-            self.trainer_configuration["PolicyFeedback"] = False
-            self.trainer_configuration["RewardFeedback"] = False
-            print("\n\nExploration policy feedback and reward feedback automatically disabled as no intrinsic "
-                  "exploration algorithm is in use.\n\n")
-        else:
-            self.trainer_configuration["IntrinsicExploration"] = True
+        # Network feedbacks are extensions of the agents input in addition to the environment observations.
+        # Those are a possible intrinsic reward, the external reward, a policy index and the last taken action.
+        # Some of them are only compatible with the usage of intrinsic exploration algorithms and should otherwise
+        # be deactivated.
+        self.adapt_trainer_configuration(exploration_algorithm, mode)
         # endregion
 
         # region - Actor Instantiation and Environment Connection -
@@ -215,7 +211,7 @@ class Trainer:
 
         # For each actor instantiate the necessary modules
         for i, actor in enumerate(self.actors):
-            actor.instantiate_modules.remote(self.trainer_configuration, exploration_degree)
+            actor.instantiate_modules.remote(self.trainer_configuration)
             # In case of Unity Environments set the rendering and simulation parameters.
             if self.interface == "MLAgentsV18":
                 if mode == "training":
@@ -265,9 +261,6 @@ class Trainer:
                                                           priority_alpha=self.trainer_configuration["PriorityAlpha"])
         else:
             self.global_buffer = FIFOBuffer.remote(capacity=self.trainer_configuration["ReplayCapacity"])
-        if mode == "training":
-            # Initialize the global curriculum strategy, but only in training mode
-            self.global_curriculum_strategy = CurriculumStrategy.remote()
         # endregion
 
         # region - Global Logger and Log File -
@@ -320,7 +313,7 @@ class Trainer:
         checkpoint_condition = self.global_logger.check_checkpoint_condition.remote(training_step)
         self.learner.save_checkpoint.remote(os.path.join("training/summaries", self.logging_name),
                                             self.global_logger.get_best_running_average.remote(),
-                                            training_step, self.save_all_models, checkpoint_condition)
+                                            training_step, checkpoint_condition)
         if self.remove_old_checkpoints:
             self.global_logger.remove_old_checkpoints.remote()
 
@@ -333,13 +326,27 @@ class Trainer:
         else:
             return [key for key, val in trainer_configuration.items()]
         return self.trainer_configuration
+
+    def adapt_trainer_configuration(self, exploration_algorithm, mode):
+        """
+        Adapts the trainer configuration according to the selected exploration algorithm.
+        Deactivate some network feedbacks when no intrinsic exploration algorithm is active.
+        """
+        if exploration_algorithm not in intrinsic_exploration_algorithms and mode == "training":
+            self.trainer_configuration["IntrinsicExploration"] = False
+            self.trainer_configuration["PolicyFeedback"] = False
+            self.trainer_configuration["RewardFeedback"] = False
+            print("\n\nExploration policy feedback and reward feedback automatically disabled as no intrinsic "
+                  "exploration algorithm is in use.\n\n")
+        else:
+            self.trainer_configuration["IntrinsicExploration"] = True
+
     # endregion
 
     # region Environment Interaction
     def async_training_loop(self):
         """"""
         # region --- Initialization ---
-        total_episodes = 0
         training_step = 0
         # Before starting the acting and training loop all actors need a copy of the latest network weights.
         [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True))
@@ -368,7 +375,7 @@ class Trainer:
                 if self.trainer_configuration["PrioritizedReplay"]:
                     sample_errors = actor.get_sample_errors.remote(samples)
                     sample_error_list.append(sample_errors)
-                    # Append the received samples to the global buffer.
+                    # Append the received samples to the global buffer along with the sample errors.
                     self.global_buffer.append_list.remote(samples, sample_errors)
                 else:
                     # Append the received samples to the global buffer.
@@ -392,7 +399,6 @@ class Trainer:
 
             # Train the learner networks with the batch and observe the resulting metrics.
             training_metrics, sample_errors, training_step = self.learner.learn.remote(samples)
-
             # In case of a PER update the buffer priorities with the temporal difference errors
             self.global_buffer.update.remote(indices, sample_errors)
             # Train the actor's exploration algorithm with the same batch
@@ -408,16 +414,17 @@ class Trainer:
             # region --- Network Update and Checkpoint Saving ---
             # Check if the actor networks request to be updated with the latest network weights from the learner.
             [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
-                actor.is_network_update_requested.remote(training_step)))
+                actor.is_network_update_requested.remote()))
                 for actor in self.actors]
             # Check if the clone networks request to be updated with the latest network weights from the learner.
             [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(
                 actor.is_clone_network_update_requested.remote(self.global_logger.get_total_episodes.remote()), True))
                 for actor in self.actors]
 
-            # Check if a new best reward has been achieved, if so save the models
+            # Check if a new best reward has been achieved, if so save the models.
             self.async_save_agent_models(training_step)
             # endregion
+
             # region --- Tensorboard Logging ---
             # Every logging_frequency steps (usually set to 100 so the event file doesn't get to big for long trainings)
             # log the training metrics to the tensorboard.
@@ -426,9 +433,10 @@ class Trainer:
                                                training_step, 10)
             # Some exploration algorithms also return metrics that represent their training or decay state. These shall
             # be logged in the same interval.
-            for idx, actor in enumerate(self.actors):
-                self.global_logger.log_dict.remote(actor.get_exploration_logs.remote(), training_step,
-                                                   self.logging_frequency)
+            # for idx, actor in enumerate(self.actors):
+            [self.global_logger.log_dict.remote(
+                actor.get_exploration_logs.remote(), training_step, self.logging_frequency)
+                for actor in self.actors]
             # endregion
 
             # region --- Waiting ---
@@ -439,11 +447,89 @@ class Trainer:
             ray.wait(actors_ready)
             ray.wait([training_metrics])
             ray.wait(sample_error_list)
-            ray.wait([sample_errors])
             # endregion
 
-            # TODO: Add an option to affect the training process with keyboard events.
-            #       E.g. Skip Level, Boost Exploration, Render Test Episode
+    def async_minimal_loop(self):
+        """"""
+        # region --- Initialization ---
+        training_step = 0
+        # Before starting the acting and training loop all actors need a copy of the latest network weights.
+        [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True))
+         for actor in self.actors]
+        # endregion
+
+        while True:
+            # region --- Acting ---
+            # Receiving the latest state from its environment each actor chooses an action according to its policy
+            # and/or its exploration algorithm. Furthermore, the reward and the info about the environment state (done)
+            # is processed and stored in a local replay buffer for each actor.
+            actors_ready = [actor.play_one_step.remote(training_step) for actor in self.actors]
+            # endregion
+
+            # region --- Global Buffer and Logger ---
+            # If an actor has collected enough samples, copy the samples from its local buffer to the global buffer.
+            # In case of Prioritized Experience Replay let the actor calculate an initial priority first.
+            sample_error_list = []
+            for idx, actor in enumerate(self.actors):
+                # Gather samples from the local buffer of an actor.
+                samples, indices = actor.get_new_samples.remote()
+                # Calculate an initial priority based on the temporal difference error of the critic network.
+                if self.trainer_configuration["PrioritizedReplay"]:
+                    sample_errors = actor.get_sample_errors.remote(samples)
+                    sample_error_list.append(sample_errors)
+                    # Append the received samples to the global buffer along with the sample errors.
+                    self.global_buffer.append_list.remote(samples, sample_errors)
+                else:
+                    # Append the received samples to the global buffer.
+                    self.global_buffer.append_list.remote(samples)
+                # Request the latest episode stats from the actor containing episode rewards and lengths and append them
+                # to the global logger which will write them to the tensorboard.
+                self.global_logger.append.remote(*actor.get_new_stats.remote(), actor_idx=idx)
+            # endregion
+
+            # region --- Training Process ---
+            # This code section is responsible for the actual training process of the involved neural networks.
+            # Sample a new batch of transitions from the global replay buffer. Their indices matter in case of a
+            # Prioritized Replay Buffer (PER) because their priorities need to be updated afterwards.
+            samples, indices = self.global_buffer.sample.remote(self.trainer_configuration,
+                                                                self.trainer_configuration.get("BatchSize"))
+
+            # Train the learner networks with the batch and observe the resulting metrics.
+            training_metrics, sample_errors, training_step = self.learner.learn.remote(samples)
+            # In case of a PER update the buffer priorities with the temporal difference errors
+            self.global_buffer.update.remote(indices, sample_errors)
+            # endregion
+
+            # region --- Network Update and Checkpoint Saving ---
+            # Check if the actor networks request to be updated with the latest network weights from the learner.
+            [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(
+                actor.is_network_update_requested.remote()))
+                for actor in self.actors]
+            # endregion
+
+            # region --- Tensorboard Logging ---
+            # Every logging_frequency steps (usually set to 100 so the event file doesn't get to big for long trainings)
+            # log the training metrics to the tensorboard.
+            self.global_logger.log_dict.remote(training_metrics, training_step, self.logging_frequency)
+            self.global_logger.log_dict.remote({"Losses/BufferLength": ray.get(self.global_buffer.__len__.remote())},
+                                               training_step, 10)
+            # Some exploration algorithms also return metrics that represent their training or decay state. These shall
+            # be logged in the same interval.
+            for idx, actor in enumerate(self.actors):
+                [self.global_logger.log_dict.remote(
+                    actor.get_exploration_logs.remote(), training_step, self.logging_frequency)
+                    for actor in self.actors]
+            # endregion
+
+            # region --- Waiting ---
+            # When asynchronous ray processes don't finish in time they are added to a queue while the next loop starts.
+            # This leads to a memory leak filling up the RAM and after that even taking up hard drive storage. To
+            # prevent this behavior we explicitly wait for the most resource and time-consuming processes at the end of
+            # each iteration.
+            ray.wait(actors_ready)
+            ray.wait([training_metrics])
+            ray.wait(sample_error_list)
+            # endregion
 
     def async_adapt_sequence_length(self, training_step):
         """"""

@@ -3,27 +3,23 @@ import numpy as np
 import tensorflow as tf
 from modules.misc.logger import LocalLogger
 from modules.misc.replay_buffer import LocalFIFOBuffer, LocalRecurrentBuffer
-from modules.misc.utility import modify_observation_shapes
-from modules.misc.glicko2 import *
+from modules.misc.utility import modify_observation_shapes, set_gpu_growth
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig, EngineConfigurationChannel
-from modules.sidechannel.curriculum_sidechannel import CurriculumSideChannelTaskInfo
 from modules.sidechannel.game_results_sidechannel import GameResultsSideChannel
 from modules.sidechannel.environment_info_sidechannel import EnvironmentInfoSideChannel
 from modules.curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
 from modules.misc.model_path_handling import get_model_key_from_dictionary
-from collections import deque
-import time
 import ray
 import gym
 from gym.wrappers import RescaleAction
 
 import os
 import csv
-import pandas as pd
 
 
 class Actor:
+    # region Init
     def __init__(self, idx: int, port: int, mode: str,
                  interface: str,
                  preprocessing_algorithm: str,
@@ -32,7 +28,8 @@ class Actor:
                  environment_path: str = "",
                  demonstration_path: str = "",
                  device: str = '/cpu:0'):
-        # - Networks and Network Parameters -
+        # region --- Instance Parameters ---
+        # region - Networks and Network Parameters -
         # Depending on the chosen algorithm an actor utilizes the actor or critic network to determine its next action.
         self.actor_network = None
         self.critic_network = None
@@ -55,44 +52,57 @@ class Actor:
         self.network_update_frequency = 1000
         self.clone_network_update_frequency = 1000
         self.last_clone_update_step = -1
+        # endregion
 
-        # - Environment -
+        # region - Environment -
+        # Each actor interacts with a unique copy of the environment, receives states + rewards and sends new actions.
+        # The environment configuration contains information such as the state and action shapes. Instead of connecting
+        # directly to the environment in Unity, an executable can be exported and connected to via path.
         self.environment = None
         self.environment_configuration = None
         self.environment_path = environment_path
+        # endregion
 
-        # - Local Buffer -
+        # region - Local Buffer -
         # The local buffer stores experiences from previously played episodes until these are transferred to the global
         # buffer.
         self.local_buffer = None
         self.minimum_capacity_reached = False
+        # endregion
 
-        # - Recurrent Properties -
+        # region - Recurrent Properties -
         # Acting and learning utilizing a recurrent neural network introduces a new set of parameters and challenges.
         # Among these, is the need to store and reset the hidden states of the LSTM-layers.
         self.recurrent = None
         self.sequence_length = None
-        self.lstm = None
+        self.lstm_layer = None
         self.lstm_units = None
         self.lstm_state = None
-        self.clone_lstm = None
+        self.initial_lstm_state = None
+        self.clone_lstm_layer = None
         self.clone_lstm_state = None
+        self.clone_initial_lstm_state = None
+        # endregion
 
-        # - Local Logger -
+        # region - Local Logger -
         # Just as the local buffer, the local logger stores episode lengths and rewards from previously played episodes
         # until these are transferred to the global logger.
         self.local_logger = None
+        # endregion
 
-        # - Tensorflow Device -
+        # region - Tensorflow Device -
         # Working in an async fashion using ray makes it necessary to actively distribute processes among the CPU and
         # GPUs available. Each actor is usually placed on an individual CPU core/thread.
         self.device = device
+        # endregion
 
-        # - CQL -
+        # region - CQL -
+
         self.samples_buffered = False
         self.demonstration_path = demonstration_path
+        # endregion
 
-        # - Behavior Parameters -
+        # region - Behavior Parameters -
         # Information read from the environment.
         self.behavior_name = None
         self.behavior_clone_name = None
@@ -102,8 +112,9 @@ class Actor:
         self.agent_number = None
         self.agent_id_offset = None
         self.clone_agent_id_offset = None
+        # endregion
 
-        # - Exploration Algorithm -
+        # region - Exploration Algorithm -
         self.exploration_configuration = None
         self.exploration_algorithm = None
         self.adaptive_exploration = False
@@ -116,45 +127,53 @@ class Actor:
         self.exploration_policy_idx = idx
         self.reward_correction_factor = 1
         self.steps_since_update = 0
-
         self.episode_begin = True
+        # endregion
 
-        # - Curriculum Learning Strategy & Engine Side Channel -
+        # region - Side Channel -
         self.engine_configuration_channel = None
-        self.curriculum_communicator = None
-        self.curriculum_side_channel = None
         self.game_result_side_channel = None
-        self.target_task_level = 0
+        # endregion
 
-        # - Preprocessing Algorithm -
+        # region - Preprocessing Algorithm -
         self.preprocessing_algorithm = None
         self.preprocessing_path = preprocessing_path
+        # endregion
 
-        # - Algorithm Selection -
+        # region - Prediction Parameters -
+        self.gamma = None
+        self.n_steps = None
+        # endregion
+
+        # region - Misc -
+        self.mode = mode
+        self.port = port
+        self.index = idx
+        # endregion
+        # endregion
+
+        # region --- Algorithm Selection ---
         # This section imports the relevant modules corresponding to the chosen interface, exploration algorithm and
         # preprocessing algorithm.
         self.select_agent_interface(interface)
         self.select_exploration_algorithm(exploration_algorithm)
         self.select_preprocessing_algorithm(preprocessing_algorithm)
-
-        # Prediction Parameters
-        self.gamma = None
-        self.n_steps = None
-
-        # - Misc -
-        self.mode = mode
-        self.port = port
-        self.index = idx
+        # endregion
+    # endregion
 
     # region Environment Connection and Side Channel Communication
     def connect_to_unity_environment(self):
+        """
+        Connects an actor instance to a Unity instance while considering different types of side channels to
+        send/receive additional data. In case of connecting to the Unity Editor directly, this function will
+        wait until you press play in Unity or timeout.
+        :return: True when connected.
+        """
         self.engine_configuration_channel = EngineConfigurationChannel()
-        self.curriculum_side_channel = CurriculumSideChannelTaskInfo()
         self.game_result_side_channel = GameResultsSideChannel()
         self.environment_info_side_channel = EnvironmentInfoSideChannel()
         self.environment = UnityEnvironment(file_name=self.environment_path,
                                             side_channels=[self.engine_configuration_channel,
-                                                           self.curriculum_side_channel, 
                                                            self.game_result_side_channel, 
                                                            self.environment_info_side_channel],
                                             base_port=self.port)
@@ -162,18 +181,32 @@ class Actor:
         return True
 
     def connect_to_gym_environment(self):
+        """
+        Considering the environment path (which is the environment name for OpenAI Gym) connect this actor instance
+        to a Gym environment.
+        :return: True when connected.
+        """
         self.environment = AgentInterface.connect(self.environment_path)
         # Make sure continuous actions are always bound to the same action scaling
         if not (type(self.environment.action_space) == gym.spaces.Discrete):
             self.environment = RescaleAction(self.environment, -1.0, 1.0)
             print("\n\nEnvironment action space rescaled to -1.0...1.0.\n\n")
         AgentInterface.reset(self.environment)
+        return True
 
     def set_unity_parameters(self, **kwargs):
+        """
+        The Unity engine configuration channel allows for modifying different simulation settings such as the
+        simulation speed and the screen resolution given a dictionary with the respective keys.
+        """
         self.engine_configuration_channel.set_configuration_parameters(**kwargs)
 
     def get_side_channel_information(self, side_channel='game_results'):
-        # Given the side channel name, check if Unity has sent any new information.
+        """
+        Given the side channel name, check if Unity has sent any new information.
+        :param side_channel: Name of the side channel
+        :return: New side channel information or None
+        """
         if side_channel == 'game_results':
             # Get the latest game results from the respective side channel.
             # This returns None if there has no match concluded since the last query. Otherwise, results is a list that
@@ -198,40 +231,58 @@ class Actor:
         # Else, return False.
         game_result = self.get_side_channel_information('game_results')
         if game_result:
-            print(game_result)
             self.append_to_game_results_history(game_result, history_path, player_keys)
             return True
         return False
 
     @staticmethod
     def append_to_game_results_history(game_result, history_path, player_keys):
+        """
+        Appends a new game result to an either existing or new csv files along with the keys of the two players in the
+        respective fixture.
+        :param game_result: List of two integers describing a games outcome in self-play
+        :param history_path: Path to a csv file of game results (otherwise will be created)
+        :param player_keys: Keys of the players belonging to the game results
+        :return:
+        """
         # Check if there already exists a respective history file of played games.
         # Otherwise, create it.
         if not os.path.isfile(history_path):
             with open(history_path, 'w', newline='') as file:
                 writer = csv.writer(file)
                 writer.writerow(["game_id", "player_key_a", "player_key_b", "score_a", "score_b"])
-        else:
-            # If so just append the latest game results to that file along with the player keys
-            with open(history_path) as file:
-                # To get the game id, just count the number of rows.
-                reader = csv.DictReader(file)
-                game_id = sum(1 for _ in reader)
+        # If so just append the latest game results to that file along with the player keys
+        with open(history_path) as file:
+            # To get the game id, just count the number of rows.
+            reader = csv.DictReader(file)
+            game_id = sum(1 for _ in reader)
 
-            with open(history_path, 'a', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow([game_id, player_keys[0], player_keys[1], game_result[0], game_result[1]])
+        with open(history_path, 'a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([game_id, player_keys[0], player_keys[1], game_result[0], game_result[1]])
     # endregion
 
     # region Property Query
     def is_minimum_capacity_reached(self):
+        """
+        Returns true when 50 or more samples are stored in the local buffer, i.e. the buffer content is ready for
+        being transferred into the global buffer."""
         # ToDo: Determine influence on training speed when changing this parameter.
-        return len(self.local_buffer) >= 10
+        return len(self.local_buffer) >= 50
 
-    def is_network_update_requested(self, training_step):
+    def is_network_update_requested(self):
+        """
+        Checks if enough steps have been taken since the last network update so new weights are requested.
+        :return: True when network update is requested, false otherwise
+        """
         return self.steps_taken_since_network_update >= self.network_update_frequency
 
     def is_clone_network_update_requested(self, total_episodes):
+        """
+        Checks if enough episodes have been taken since the last clone network update so new weights are requested.
+        :param total_episodes:
+        :return:
+        """
         if total_episodes != self.last_clone_update_step:
             if total_episodes == 0:
                 self.last_clone_update_step = total_episodes
@@ -241,17 +292,6 @@ class Actor:
                     self.last_clone_update_step = total_episodes
                     return True
         return False
-
-    def get_target_task_level(self):
-        return self.target_task_level
-
-    @ray.method(num_returns=2)
-    def get_task_properties(self, unity_responded_global):
-        if not unity_responded_global:
-            unity_responded, task_properties = self.curriculum_communicator.get_task_properties()
-            return unity_responded, task_properties
-        else:
-            return None, None
 
     def get_exploration_logs(self):
         return self.exploration_algorithm.get_logs()
@@ -274,6 +314,22 @@ class Actor:
                                           "ObservationShapes": self.observation_shapes,
                                           "AgentNumber": self.agent_number}
 
+    def read_trainer_configuration(self, trainer_configuration):
+        # Read relevant information from the trainer configuration file.
+        # Recurrent Parameters
+        self.recurrent = trainer_configuration.get("Recurrent")
+        self.sequence_length = trainer_configuration.get("SequenceLength")
+        # General Learning Parameters
+        self.gamma = trainer_configuration.get("Gamma")
+        self.n_steps = trainer_configuration.get("NSteps")
+        # Exploration Parameters
+        self.adaptive_exploration = trainer_configuration.get("AdaptiveExploration")
+        self.exploration_degree = trainer_configuration["ExplorationParameters"].get("ExplorationDegree")
+        # Additional information that can be fed back to the network as inputs
+        self.action_feedback = trainer_configuration.get("ActionFeedback")
+        self.reward_feedback = trainer_configuration.get("RewardFeedback")
+        self.policy_feedback = trainer_configuration.get("PolicyFeedback")
+
     def get_exploration_configuration(self):
         """Gather the parameters requested by selected the exploration algorithm.
         :return: None
@@ -285,7 +341,6 @@ class Actor:
     # region Algorithm Selection
     def select_agent_interface(self, interface):
         global AgentInterface
-
         if interface == "MLAgentsV18":
             from modules.interfaces.mlagents_v18 import MlAgentsV18Interface as AgentInterface
 
@@ -299,15 +354,16 @@ class Actor:
 
     def select_exploration_algorithm(self, exploration_algorithm):
         global ExplorationAlgorithm
-
         if exploration_algorithm == "EpsilonGreedy":
             from ..exploration_algorithms.epsilon_greedy import EpsilonGreedy as ExplorationAlgorithm
         elif exploration_algorithm == "None":
             from ..exploration_algorithms.exploration_algorithm_blueprint import ExplorationAlgorithm
         elif exploration_algorithm == "ICM":
-            from ..exploration_algorithms.intrinsic_curiosity_module import IntrinsicCuriosityModule as ExplorationAlgorithm
+            from ..exploration_algorithms.intrinsic_curiosity_module import \
+                IntrinsicCuriosityModule as ExplorationAlgorithm
         elif exploration_algorithm == "RND":
-            from ..exploration_algorithms.random_network_distillation import RandomNetworkDistillation as ExplorationAlgorithm
+            from ..exploration_algorithms.random_network_distillation import \
+                RandomNetworkDistillation as ExplorationAlgorithm
         elif exploration_algorithm == "ENM":
             from ..exploration_algorithms.episodic_novelty_module import EpisodicNoveltyModule as ExplorationAlgorithm
             self.intrinsic_exploration = True
@@ -316,7 +372,6 @@ class Actor:
 
     def select_preprocessing_algorithm(self, preprocessing_algorithm):
         global PreprocessingAlgorithm
-
         if preprocessing_algorithm == "None":
             from ..preprocessing.preprocessing_blueprint import PreprocessingAlgorithm
         elif preprocessing_algorithm == "SemanticSegmentation":
@@ -348,28 +403,13 @@ class Actor:
         self.sequence_length = trainer_configuration.get("SequenceLength")
         self.local_buffer.reset(self.sequence_length)
 
-    def instantiate_modules(self, trainer_configuration, exploration_degree):
-        # region --- Trainer Configuration ---
-        # Read relevant information from the trainer configuration file.
-        # Recurrent Parameters
-        self.recurrent = trainer_configuration["Recurrent"]
-        self.sequence_length = trainer_configuration.get("SequenceLength")
-        # General Learning Parameters
-        self.gamma = trainer_configuration["Gamma"]
-        self.n_steps = trainer_configuration["NSteps"]
-        # Exploration Parameters
-        self.adaptive_exploration = trainer_configuration.get("AdaptiveExploration")
-        trainer_configuration["ExplorationParameters"]["ExplorationDegree"] = exploration_degree
-        self.exploration_degree = trainer_configuration["ExplorationParameters"].get("ExplorationDegree")
-        # Additional information that can be fed back to the network as inputs
-        self.action_feedback = trainer_configuration.get("ActionFeedback")
-        self.reward_feedback = trainer_configuration.get("RewardFeedback")
-        self.policy_feedback = trainer_configuration.get("PolicyFeedback")
+    def instantiate_modules(self, trainer_configuration):
+        # region --- Trainer & Environment Configuration ---
+        self.read_trainer_configuration(trainer_configuration)
+        self.read_environment_configuration()
         # endregion
 
-        # Request the Environment Parameters and store relevant information
-        self.read_environment_configuration()
-
+        # region --- Exploration Algorithm Instantiation ---
         # Instantiate the Exploration Algorithm according to the environment and training configuration.
         self.exploration_algorithm = ExplorationAlgorithm(self.environment_configuration["ActionShape"],
                                                           self.environment_configuration["ObservationShapes"],
@@ -377,11 +417,9 @@ class Actor:
                                                           trainer_configuration["ExplorationParameters"],
                                                           trainer_configuration,
                                                           self.index)
+        # endregion
 
-        # Action Parameters
-        self.action_type = self.environment_configuration["ActionType"]
-        self.action_shape = self.environment_configuration["ActionShape"]
-
+        # region --- Observation Extensions ---
         # Initialize prior actions randomly and prior rewards to 0, if action or reward feedback is enabled.
         self.reset_observation_extensions()
 
@@ -392,21 +430,23 @@ class Actor:
                                                                 self.policy_feedback)
         self.environment_configuration["ObservationShapes"] = modified_observation_shapes
         self.observation_shapes = modified_observation_shapes
+        # endregion
 
-        # Instantiate the Curriculum Side Channel.
-        self.curriculum_communicator = CurriculumCommunicator(self.curriculum_side_channel)
-
+        # region --- Preprocessing Algorithm Instantiation ---
         # Instantiate the Preprocessing algorithm and if necessary update the observation shapes for network
         # construction.
         self.preprocessing_algorithm = PreprocessingAlgorithm(self.preprocessing_path)
         modified_output_shapes = self.preprocessing_algorithm.get_output_shapes(self.environment_configuration)
         self.environment_configuration["ObservationShapes"] = modified_output_shapes
         self.observation_shapes = modified_output_shapes
+        # endregion
 
+        # region --- Local Buffer & Logger Instantiation ---
         # Instantiate a local logger and buffer.
         self.local_logger = LocalLogger(agent_num=self.agent_number)
         self.instantiate_local_buffer(trainer_configuration)
         self.modify_local_buffer_gamma()
+        # endregion
         return
     # endregion
 
@@ -423,7 +463,7 @@ class Actor:
 
     # region Recurrent Memory State Update and Reset
     def get_lstm_layers(self):
-        # Get the lstm layer in the provided network
+        """Get the lstm layer in either the actor network if existent, otherwise the critic."""
         # Sometimes the layer names vary, a LSTM layer might be called "lstm" or "lstm_2", etc.
         # Make sure this function does not fail by getting the actual layers name from the network.
         lstm_layer_name = ""
@@ -431,15 +471,15 @@ class Actor:
             for layer in self.actor_network.layers:
                 if "lstm" in layer.name:
                     lstm_layer_name = layer.name
-            self.lstm = self.actor_network.get_layer(lstm_layer_name)
+            self.lstm_layer = self.actor_network.get_layer(lstm_layer_name)
         elif self.critic_network:
             for layer in self.critic_network.layers:
                 if "lstm" in layer.name:
                     lstm_layer_name = layer.name
-            self.lstm = self.critic_network.get_layer(lstm_layer_name)
+            self.lstm_layer = self.critic_network.get_layer(lstm_layer_name)
 
         # Get the number of units as well as states in the respective layer.
-        self.lstm_units = self.lstm.units
+        self.lstm_units = self.lstm_layer.units
         self.lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                            np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
 
@@ -449,7 +489,7 @@ class Actor:
             for layer in self.clone_actor_network.layers:
                 if "lstm" in layer.name:
                     lstm_layer_name = layer.name
-            self.clone_lstm = self.clone_actor_network.get_layer(lstm_layer_name)
+            self.clone_lstm_layer = self.clone_actor_network.get_layer(lstm_layer_name)
             self.clone_lstm_state = [np.zeros((self.agent_number, self.lstm_units), dtype=np.float32),
                                      np.zeros((self.agent_number, self.lstm_units), dtype=np.float32)]
 
@@ -464,9 +504,11 @@ class Actor:
                     layer.reset_states()
 
     def register_terminal_agents(self, terminal_ids, clone=False):
+        """
+        Reset the hidden and cell state for the lstm layers of agents that are in a terminal episode state
+        """
         if not self.recurrent:
             return
-        # Reset the hidden and cell state for agents that are in a terminal episode state
         if clone:
             for agent_id in terminal_ids:
                 self.clone_lstm_state[0][agent_id] = np.zeros(self.lstm_units, dtype=np.float32)
@@ -484,23 +526,23 @@ class Actor:
             for idx, agent_id in enumerate(agent_ids):
                 clone_lstm_state[0][idx] = self.clone_lstm_state[0][agent_id]
                 clone_lstm_state[1][idx] = self.clone_lstm_state[1][agent_id]
-            self.clone_initial_state = [tf.convert_to_tensor(clone_lstm_state[0]),
-                                        tf.convert_to_tensor(clone_lstm_state[1])]
-            self.clone_lstm.get_initial_state = self.get_initial_clone_state
+            self.clone_initial_lstm_state = [tf.convert_to_tensor(clone_lstm_state[0]),
+                                             tf.convert_to_tensor(clone_lstm_state[1])]
+            self.clone_lstm_layer.get_initial_state = self.get_initial_clone_state
         else:
             lstm_state = [np.zeros((active_agent_number, self.lstm_units), dtype=np.float32),
                           np.zeros((active_agent_number, self.lstm_units), dtype=np.float32)]
             for idx, agent_id in enumerate(agent_ids):
                 lstm_state[0][idx] = self.lstm_state[0][agent_id]
                 lstm_state[1][idx] = self.lstm_state[1][agent_id]
-            self.initial_state = [tf.convert_to_tensor(lstm_state[0]), tf.convert_to_tensor(lstm_state[1])]
-            self.lstm.get_initial_state = self.get_initial_state
+            self.initial_lstm_state = [tf.convert_to_tensor(lstm_state[0]), tf.convert_to_tensor(lstm_state[1])]
+            self.lstm_layer.get_initial_state = self.get_initial_state
 
     def get_initial_state(self, inputs):
-        return self.initial_state
+        return self.initial_lstm_state
 
     def get_initial_clone_state(self, inputs):
-        return self.clone_initial_state
+        return self.clone_initial_lstm_state
 
     def update_lstm_states(self, agent_ids, lstm_state, clone=False):
         if not clone:
@@ -572,7 +614,8 @@ class Actor:
                                           clone=True)
             # Choose the next action either by exploring or exploiting
             clone_actions = self.act(clone_decision_steps.obs,
-                                     agent_ids=[a_id - self.clone_agent_id_offset for a_id in clone_decision_steps.agent_id],
+                                     agent_ids=[a_id - self.clone_agent_id_offset
+                                                for a_id in clone_decision_steps.agent_id],
                                      mode=self.mode, clone=True)
         else:
             clone_actions = None
@@ -646,20 +689,8 @@ class Actor:
     def get_new_stats(self):
         return self.local_logger.get_episode_stats()
 
-    def set_new_target_task_level(self, target_task_level):
-        if target_task_level:
-            self.target_task_level = target_task_level
-            self.curriculum_side_channel.unity_responded = False
-
-    def send_target_task_level(self, unity_responded_global):
-        if not unity_responded_global:
-            self.curriculum_communicator.set_task_number(self.target_task_level)
-
     def get_sample_errors(self, samples):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
-    def get_local_buffer(self):
-        return self.local_buffer.sample(1, reset_buffer=False, random_samples=True)
     # endregion
 
     # region Additional Exploration Functions
@@ -699,10 +730,9 @@ class Actor:
 
     def modify_local_buffer_gamma(self):
         # Set local_buffer's gamma and calculate the individual gamma list per actor
-        if self.mode == "training":
-            if self.intrinsic_exploration:
-                self.local_buffer.gamma = self.exploration_degree[self.exploration_policy_idx]["gamma"]
-                self.local_buffer.gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
+        if self.mode == "training" and self.intrinsic_exploration:
+            self.local_buffer.gamma = self.exploration_degree[self.exploration_policy_idx]["gamma"]
+            self.local_buffer.gamma_list = [self.local_buffer.gamma ** n for n in range(self.n_steps)]
 
     def act_according_to_exploration_algorithm(self, decision_steps, terminal_steps):
         if self.mode == "testing" or self.mode == "fastTesting":
@@ -797,12 +827,13 @@ class Actor:
 
 
 class Learner:
-    # region ParameterSpace
+    # region Init
     ActionType = []
     NetworkTypes = []
 
     def __init__(self, trainer_configuration, environment_configuration, model_dictionary=None,
                  clone_model_dictionary=None):
+        # region --- Instance Parameters ---
         # Environment Configuration
         self.action_shape = environment_configuration.get('ActionShape')
         self.observation_shapes = environment_configuration.get('ObservationShapes')
@@ -832,12 +863,13 @@ class Learner:
         # Misc
         self.training_step = 0
         self.steps_since_actor_update = 0
-        self.set_gpu_growth()  # Important step to avoid tensorflow OOM errors when running multiprocessing!
+        set_gpu_growth()  # Important step to avoid tensorflow OOM errors when running multiprocessing!
 
         # - Model Weights -
         # Structures to store information about the given pretrained models (and clone models in case of self-play)
         self.model_dictionary = model_dictionary
         self.clone_model_dictionary = clone_model_dictionary
+        # endregion
     # endregion
 
     # region Network Construction and Transfer
@@ -849,12 +881,6 @@ class Learner:
 
     def build_network(self, network_parameters, environment_parameters):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
-
-    def set_gpu_growth(self):
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        if gpus:
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
 
     def sync_models(self):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
@@ -879,7 +905,7 @@ class Learner:
             self.load_checkpoint_from_path_list(self.clone_model_dictionary[clone_model_key]['ModelPaths'],
                                                 clone=True)
 
-    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False):
+    def save_checkpoint(self, path, running_average_reward, training_step, checkpoint_condition=True):
         raise NotImplementedError("Please overwrite this method in your algorithm implementation.")
     # endregion
 
@@ -990,66 +1016,10 @@ class Learner:
 
     # region Parameter Validation
     @staticmethod
-    def check_mismatching_parameters(test_configs, blueprint_configs):
-        if type(test_configs) == list:
-            missing_parameters = []
-            obsolete_parameters = []
-            for idx, (test_config, blueprint_config) in enumerate(zip(test_configs, blueprint_configs)):
-                missing_parameters += [key + "({})".format(idx) for key, val
-                                       in blueprint_config.items() if key not in test_config]
-                obsolete_parameters += [key + "({})".format(idx) for key, val
-                                        in test_config.items() if key not in blueprint_config]
-        else:
-            missing_parameters = [key for key, val in blueprint_configs.items() if key not in test_configs]
-            obsolete_parameters = [key for key, val in test_configs.items() if key not in blueprint_configs]
-        return missing_parameters, obsolete_parameters
-
-    @staticmethod
-    def validate_config(trainer_configuration,
-                        agent_configuration,
-                        exploration_configuration):
-        missing_parameters, obsolete_parameters = \
-            Learner.check_mismatching_parameters(trainer_configuration,
-                                                 agent_configuration.get('TrainingParameterSpace'))
-
-        missing_net_parameters, obsolete_net_parameters = \
-            Learner.check_mismatching_parameters(trainer_configuration.get('NetworkParameters'),
-                                                 agent_configuration.get('NetworkParameterSpace'))
-        missing_expl_parameters, obsolete_expl_parameters = \
-            Learner.check_mismatching_parameters(trainer_configuration.get('ExplorationParameters'),
-                                                 exploration_configuration.get('ParameterSpace'))
-
-        wrong_type_parameters = \
-            Learner.check_wrong_parameter_types(trainer_configuration,
-                                                agent_configuration.get('TrainingParameterSpace'),
-                                                obsolete_parameters)
-
-        wrong_type_net_parameters = \
-            Learner.check_wrong_parameter_types(trainer_configuration.get('NetworkParameters')[0],
-                                                agent_configuration.get('NetworkParameterSpace')[0],
-                                                obsolete_net_parameters)
-        wrong_type_expl_parameters = \
-            Learner.check_wrong_parameter_types(trainer_configuration.get('ExplorationParameters'),
-                                                exploration_configuration.get('ParameterSpace'),
-                                                obsolete_expl_parameters)
-
-        return missing_parameters, obsolete_parameters, missing_net_parameters, obsolete_net_parameters, \
-            missing_expl_parameters, obsolete_expl_parameters, wrong_type_parameters, wrong_type_net_parameters, \
-            wrong_type_expl_parameters
-
-    @staticmethod
     def validate_action_space(agent_configuration, environment_configuration):
         # Check for compatibility of environment and agent action space
         if environment_configuration.get("ActionType") not in agent_configuration.get("ActionType"):
             print("The action spaces of the environment and the agent are not compatible.")
             return False
         return True
-
-    @staticmethod
-    def check_wrong_parameter_types(test_config, blueprint_config, obsolete=[]):
-        wrong_type_parameters = [" >> ".join([": ".join([key, str(val)]), str(blueprint_config.get(key))])
-                                 for key, val in test_config.items()
-                                 if type(val) != blueprint_config.get(key)
-                                 and key not in obsolete]
-        return wrong_type_parameters
     # endregion

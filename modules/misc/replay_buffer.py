@@ -2,11 +2,8 @@
 
 from collections import namedtuple, deque
 import numpy as np
-import matplotlib.pyplot as plt
 from copy import deepcopy
 import ray
-import time
-prioritized_experience = namedtuple("PrioritizedExperience", field_names=["priority", "probability"])
 
 
 # Modified from: https://pylessons.com/CartPole-PER/
