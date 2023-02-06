@@ -116,7 +116,8 @@ class SACActor(Actor):
         if not len(network_weights):
             return
         self.actor_network.set_weights(network_weights[0])
-        self.critic_network.set_weights(network_weights[1])
+        if len(network_weights) > 1:
+            self.critic_network.set_weights(network_weights[1])
         if self.recurrent:
             self.actor_prediction_network.set_weights(network_weights[0])
         self.steps_taken_since_network_update = 0
@@ -230,12 +231,12 @@ class SACLearner(Learner):
         # each. The actor takes in the current state and outputs an action vector which consists of a mean and standard
         # deviation for each action component. This is the only network needed for acting after training.
         # Each critic takes in the current state as well as an action and predicts its Q-Value.
-        self.actor_network: keras.Model
-        self.critic1: keras.Model
-        self.critic_target1: keras.Model
-        self.critic2: keras.Model
-        self.critic_target2: keras.Model
-        self.clone_actor_network: keras.Model
+        self.actor_network: keras.Model = None
+        self.critic1: keras.Model = None
+        self.critic_target1: keras.Model = None
+        self.critic2: keras.Model = None
+        self.critic_target2: keras.Model = None
+        self.clone_actor_network: keras.Model = None
 
         # - Optimizer -
         self.actor_optimizer: keras.optimizers.Optimizer
@@ -290,7 +291,10 @@ class SACLearner(Learner):
         """
         if not update_requested:
             return []
-        return [self.actor_network.get_weights(), self.critic1.get_weights()]
+        if self.critic1:
+            return [self.actor_network.get_weights(), self.critic1.get_weights()]
+        else:
+            return [self.actor_network.get_weights()]
 
     def get_clone_network_weights(self, update_requested, clone_from_actor=False):
         """
