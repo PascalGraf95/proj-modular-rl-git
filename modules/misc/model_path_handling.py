@@ -89,3 +89,21 @@ def get_model_key_from_dictionary(model_dictionary, mode="latest"):
     # for elo rating.
     else:
         return mode
+
+
+def remove_old_checkpoints(model_dictionary):
+    file_names = [f for f in os.listdir(model_dictionary) if f.endswith(".h5")]
+    if len(file_names) <= 1:
+        return False
+    file_names.sort(key=get_step_from_file)
+    highest_step = get_step_from_file(file_names[-1])
+    for file_name in file_names:
+        if str(highest_step) not in file_name:
+            os.remove(os.path.join(model_dictionary, file_name))
+    return True
+
+
+def get_step_from_file(file):
+    step = [f for f in file.split("_") if "Step" in f][0]
+    step = int(step.replace("Step", ""))
+    return step
