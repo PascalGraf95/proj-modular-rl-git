@@ -60,7 +60,7 @@ class Trainer:
         self.agent_configuration = None
 
         # - Exploration Algorithm -
-        # The exloration algorithm has its own set of parameters defining the extent of exploration as well as a
+        # The exploration algorithm has its own set of parameters defining the extent of exploration as well as a
         # possible decay over time.
         self.exploration_configuration = None
         self.exploration_algorithm = None
