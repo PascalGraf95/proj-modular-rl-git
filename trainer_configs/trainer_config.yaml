@@ -84,7 +84,7 @@ sac:
     PolicyFeedback: false
     SequenceLength: 12
     Overlap: 6
-    ActorNum: 1
+    ActorNum: 8
     BatchSize: 32
     ClipGrad: 10.0
     ExplorationParameters:
@@ -105,11 +105,11 @@ sac:
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -1.0
+    LogAlpha: -2.0
     NSteps: 4
     AdaptiveExploration: false
-    NetworkUpdateFrequency: 200
-    SelfPlayNetworkUpdateFrequency: 100000
+    NetworkUpdateFrequency: 300
+    SelfPlayNetworkUpdateFrequency: 10000000
     NetworkParameters:
         Filters: 32
         Units: 64
@@ -118,14 +118,14 @@ sac:
         CriticVectorNetworkArchitecture: Dense
         CriticVisualNetworkArchitecture: CNN
     PrioritizedReplay: true
-    PriorityAlpha: 0.75
+    PriorityAlpha: 0.8
     RewardNormalization: false
-    ReplayCapacity: 100000
-    ReplayMinSize: 100
+    ReplayCapacity: 250000
+    ReplayMinSize: 1000
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_Airhockey_Selfplay_TournamentTest
+    TrainingID: SAC_Airhockey_Selfplay_ContinuedV2_New_Kinematics
     TrainingInterval: 10
 cql:
     Recurrent: false

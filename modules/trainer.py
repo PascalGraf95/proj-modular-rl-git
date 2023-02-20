@@ -304,6 +304,7 @@ class Trainer:
                     if model_key + "." + clone_model_key not in tournament_tag_set:
                         tournament_tag_set.add(model_key + "." + clone_model_key)
                         self.tournament_schedule.append([model_key, clone_model_key])
+        print("Created Tournament Schedule with {} entries".format(len(self.tournament_schedule)))
 
     def async_save_agent_models(self, training_step):
         """"""
@@ -587,6 +588,8 @@ class Trainer:
                 self.games_played_in_fixture += 1
                 if self.games_played_in_fixture >= self.games_per_fixture:
                     self.current_tournament_fixture_idx += 1
+                    print("Playing Game {} of {} from tournament schedule".format(self.current_tournament_fixture_idx+1,
+                                                                                  len(self.tournament_schedule)))
                     self.games_played_in_fixture = 0
 
                     if self.current_tournament_fixture_idx >= len(self.tournament_schedule):
