@@ -14,7 +14,7 @@ import time
 import yaml
 import ray
 
-intrinsic_exploration_algorithms = ["ENM"]  # Will contain NGU, ECR, NGU-r, RND-alter with future updates...
+intrinsic_exploration_algorithms = ["ENM", "RND", "NGU"]  # Will contain NGU, ECR, NGU-r, RND-alter with future updates...
 
 
 class Trainer:

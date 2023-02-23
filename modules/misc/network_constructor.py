@@ -25,7 +25,6 @@ tf.config.experimental.set_memory_growth(gpus[0], True)
 
 os.environ["PATH"] += os.pathsep + 'C:/Graphviz/bin/'
 
-NormalDense = Dense
 ImageShapeLength = 4
 VectorShapeLength = 2
 
@@ -53,13 +52,6 @@ or filters as well as the desired input and output shapes.
 def construct_network(network_parameters, plot_network_model=False):
     """Constructs a neural network for any Reinforcement Learning algorithm with arbitrary input and output shapes
     and a defined type of network body (see NetworkArchitecture enum above)."""
-
-    # Distinguish Dense from NoisyDense Layer (Only for DQN)
-    global Dense
-    if network_parameters.get("NoisyNetworks"):
-        Dense = NoisyDense
-    else:
-        Dense = NormalDense
 
     # region --- Input ---
     # Construct one input layer per input component.

@@ -1,26 +1,25 @@
 import numpy as np
 from ..misc.replay_buffer import FIFOBuffer
 from .exploration_algorithm_blueprint import ExplorationAlgorithm
-from tensorflow import keras
-from keras.losses import MeanSquaredError
-from keras.optimizers import Adam, SGD
-from modules.misc.network_constructor import construct_network
+from tensorflow.keras.losses import MeanSquaredError
+from tensorflow.keras.optimizers import Adam, SGD
+from ..misc.network_constructor import construct_network
 import tensorflow as tf
-from modules.training_algorithms.agent_blueprint import Learner
+from ..training_algorithms.agent_blueprint import Learner
+from ..misc.utility import modify_observation_shapes
 import itertools
-from keras import Input, Model
-from keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
-from modules.misc.utility import modify_observation_shapes
+from tensorflow.keras import Input, Model
+from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
 import time
 from collections import deque
-from keras.utils import plot_model
+from tensorflow.keras.utils import plot_model
 
 
-class RandomNetworkDistillation(ExplorationAlgorithm):
+class RandomNetworkDistillationAlter(ExplorationAlgorithm):
     """
-      Implementation of Random Network Distillation (RND) that works based on the step-based reward
-      calculation principle of Agent57.
-      """
+    Alternative implementation of Random Network Distillation (RND) that works based on the step-based reward
+    calculation principle of Agent57.
+    """
     Name = "RandomNetworkDistillationAlter"
     ActionAltering = False
     IntrinsicReward = True
@@ -89,38 +88,61 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
 
     def build_network(self):
         with tf.device(self.device):
-            # List with two dictionaries in it, one for each network.
-            network_parameters = [{}, {}]
-            # region --- Prediction Model ---
-            # This model tries to mimic the target model for every state in the environment
-            # - Network Name -
-            network_parameters[0]['NetworkName'] = "RND_PredictionModel"
-            # - Network Architecture-
-            network_parameters[0]['VectorNetworkArchitecture'] = "SmallDense"
-            network_parameters[0]['VisualNetworkArchitecture'] = "CNN"
-            network_parameters[0]['Filters'] = 32
-            network_parameters[0]['Units'] = 32
-            network_parameters[0]['TargetNetwork'] = False
-            # - Input / Output / Initialization -
-            network_parameters[0]['Input'] = self.observation_shapes
-            network_parameters[0]['Output'] = [self.feature_space_size]
-            network_parameters[0]['OutputActivation'] = [None]
-            # - Recurrent Parameters -
-            network_parameters[0]['Recurrent'] = False
+            # region - Prediction Model -
+            if len(self.observation_shapes) == 1:
+                if self.recurrent:
+                    feature_input = Input((None, *self.observation_shapes[0]))
+                else:
+                    feature_input = Input(self.observation_shapes[0])
+                x = feature_input
+            else:
+                feature_input = []
+                for obs_shape in self.observation_shapes:
+                    if self.recurrent:
+                        # Add additional time dimensions if networks work with recurrent replay batches
+                        feature_input.append(Input((None, *obs_shape)))
+                    else:
+                        feature_input.append(Input(obs_shape))
+                x = Concatenate()(feature_input)
+            x = Dense(32, activation="relu")(x)
+            x = Dense(32, activation="relu")(x)
+            x = Dense(self.feature_space_size, activation=None)(x)
+            prediction_model = Model(feature_input, x, name="RND Prediction Model")
             # endregion
 
-            # region --- TargetModel ---
-            network_parameters[1] = network_parameters[0].copy()
-            network_parameters[1]['NetworkName'] = "RND_TargetModel"
+            # region - Target Model -
+            if len(self.observation_shapes) == 1:
+                if self.recurrent:
+                    feature_input = Input((None, *self.observation_shapes[0]))
+                else:
+                    feature_input = Input(self.observation_shapes[0])
+                x = feature_input
+            else:
+                feature_input = []
+                for obs_shape in self.observation_shapes:
+                    if self.recurrent:
+                        # Add additional time dimensions if networks work with recurrent replay batches
+                        feature_input.append(Input((None, *obs_shape)))
+                    else:
+                        feature_input.append(Input(obs_shape))
+                x = Concatenate()(feature_input)
+            x = Dense(32, activation="relu")(x)
+            x = Dense(32, activation="relu")(x)
+            x = Dense(self.feature_space_size, activation=None)(x)
+            target_model = Model(feature_input, x, name="RND Target Model")
+            # endregion
 
-            prediction_model = construct_network(network_parameters[0], plot_network_model=True)
-            target_model = construct_network(network_parameters[1], plot_network_model=True)
-
+            # region - Model Plots and Summaries -
             try:
                 plot_model(prediction_model, "plots/RND_Prediction_Model.png", show_shapes=True)
                 plot_model(target_model, "plots/RND_Target_Model.png", show_shapes=True)
             except ImportError:
                 print("Could not create model plots for RND.")
+
+            # Summaries
+            prediction_model.summary()
+            target_model.summary()
+            # endregion
 
             return prediction_model, target_model
 
@@ -138,6 +160,7 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
 
         if np.any(np.isnan(action_batch)):
             return replay_batch
+
 
         # Clear augmented state parts such as rewards, actions and policy indices as they must not be used by
         # the exploration algorithms, i.e. closeness of states should not depend on the intrinsic reward or the
@@ -170,7 +193,7 @@ class RandomNetworkDistillation(ExplorationAlgorithm):
 
     @staticmethod
     def get_config():
-        config_dict = RandomNetworkDistillation.__dict__
+        config_dict = RandomNetworkDistillationAlter.__dict__
         return ExplorationAlgorithm.get_config(config_dict)
 
     def epsilon_greedy(self, decision_steps):
