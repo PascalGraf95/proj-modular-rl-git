@@ -55,6 +55,8 @@ dqn:
         KernelEpsilon: 0.01
         MaximumSimilarity: 4
         EpisodicMemoryCapacity: 600
+        kECR: 5
+        BetaECR: 1.0
     Gamma: 0.99
     LearningRate: 0.0001
     NSteps: 5
@@ -102,6 +104,8 @@ sac:
         KernelEpsilon: 0.01
         MaximumSimilarity: 4
         EpisodicMemoryCapacity: 600
+        kECR: 5
+        BetaECR: 1.0
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
@@ -125,8 +129,13 @@ sac:
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
+<<<<<<< HEAD
+    TrainingID: _debug_SAC_3DBall_NGUr_fullFeed
+    TrainingInterval: 1
+=======
     TrainingID: SAC_Airhockey_Selfplay_ContinuedV2_New_Kinematics
     TrainingInterval: 10
+>>>>>>> main
 cql:
     Recurrent: false
     BurnIn: 0
