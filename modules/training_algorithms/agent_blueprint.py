@@ -250,11 +250,9 @@ class Actor:
             from ..exploration_algorithms.intrinsic_curiosity_module import IntrinsicCuriosityModule as ExplorationAlgorithm
         elif exploration_algorithm == "RND":
             from ..exploration_algorithms.random_network_distillation import RandomNetworkDistillation as ExplorationAlgorithm
+            self.intrinsic_exploration = True
         elif exploration_algorithm == "ENM":
             from ..exploration_algorithms.episodic_novelty_module import EpisodicNoveltyModule as ExplorationAlgorithm
-            self.intrinsic_exploration = True
-        elif exploration_algorithm == "RNDAlter":
-            from ..exploration_algorithms.random_network_distillation_alter import RandomNetworkDistillationAlter as ExplorationAlgorithm
             self.intrinsic_exploration = True
         elif exploration_algorithm == "NGU":
             from ..exploration_algorithms.never_give_up import NeverGiveUp as ExplorationAlgorithm

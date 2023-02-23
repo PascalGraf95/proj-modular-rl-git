@@ -1,19 +1,17 @@
 import numpy as np
 from tensorflow import keras
-from ..misc.replay_buffer import FIFOBuffer
-from .exploration_algorithm_blueprint import ExplorationAlgorithm
-from tensorflow.keras.losses import MeanSquaredError, CategoricalCrossentropy
-from tensorflow.keras.optimizers import Adam, SGD
-from ..misc.network_constructor import construct_network
+from modules.exploration_algorithms.exploration_algorithm_blueprint import ExplorationAlgorithm
+from keras.losses import MeanSquaredError, CategoricalCrossentropy
+from keras.optimizers import Adam, SGD
 import tensorflow as tf
-from ..misc.utility import modify_observation_shapes
-from ..training_algorithms.agent_blueprint import Learner
+from modules.misc.utility import modify_observation_shapes
+from modules.training_algorithms.agent_blueprint import Learner
 import itertools
-from tensorflow.keras import Input, Model
-from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
+from keras import Input, Model
+from keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
 import time
 from collections import deque
-from tensorflow.keras.utils import plot_model
+from keras.utils import plot_model
 
 
 class NeverGiveUp(ExplorationAlgorithm):
@@ -47,8 +45,8 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.observation_shapes = observation_shape
         self.observation_shapes_modified = self.observation_shapes
 
-        # Categorical Cross-Entropy for discrete action spaces, Mean Squared Error for continuous action spaces. However
-        # MSE is also used within the life-long module.
+        # Categorical Cross-Entropy for discrete action spaces, Mean Squared Error for continuous action spaces.
+        # However, MSE is also used within the life-long module.
         if self.action_space == "DISCRETE":
             self.cce = CategoricalCrossentropy()
         self.mse = MeanSquaredError()
@@ -113,7 +111,7 @@ class NeverGiveUp(ExplorationAlgorithm):
         self.lifelong_reward_std = 1
         # endregion
 
-        # region - Modify observation shapes and construct neural networks-
+        # region - Modify observation shapes and construct neural networks -
         # Takes into account that prior actions, rewards and policies might be used for state augmentation.
         # However, their values should not be considered for ENM. The modified observation shape is only used for
         # sample batch preprocessing.
@@ -261,10 +259,6 @@ class NeverGiveUp(ExplorationAlgorithm):
             state_batch, action_batch, reward_batch, next_state_batch, done_batch \
                 = Learner.get_training_batch_from_recurrent_replay_batch(replay_batch, self.observation_shapes_modified,
                                                                          self.action_shape, self.sequence_length)
-            # Only use last 5 time steps of sequences for training
-            '''state_batch = [state_input[:, -5:] for state_input in state_batch]
-            next_state_batch = [next_state_input[:, -5:] for next_state_input in next_state_batch]
-            action_batch = action_batch[:, -5:]'''
         else:
             raise RuntimeError("Exploration algorithm 'NGU' does currently not work with non-recurrent agents.")
 

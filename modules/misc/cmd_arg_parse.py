@@ -29,7 +29,7 @@ class CmdArgParse:
                                                        "CQL please provide the path for demonstrations.",
                             type=str, required=False, default=None)
         parser.add_argument('-ea', '--exploration_algorithm', help="Choose from 'None', 'EpsilonGreedy', 'ICM', 'RND', "
-                                                                   ", 'RNDAlter', 'ENM', 'NGU'",
+                                                                   "'ENM', 'NGU'",
                             type=str, required=False, default='None')
         parser.add_argument('-cs', '--curriculum_strategy', help="Choose from None, 'LinearCurriculum', "
                                                                  "('RememberingCurriculum', 'CrossFadeCurriculum' "
