@@ -77,16 +77,15 @@ dqn:
     PriorityAlpha: 0.8
     TrainingID: _debug_DQN_CartPole_TESTING
     TrainingInterval: 1
-
 sac:
     Recurrent: true
-    BurnIn: 3
+    BurnIn: 0
     AdaptiveSequenceLength: false
-    ActionFeedback: true
-    RewardFeedback: true
-    PolicyFeedback: true
-    SequenceLength: 10
-    Overlap: 4
+    ActionFeedback: false
+    RewardFeedback: false
+    PolicyFeedback: false
+    SequenceLength: 12
+    Overlap: 6
     ActorNum: 8
     BatchSize: 32
     ClipGrad: 10.0
@@ -110,28 +109,33 @@ sac:
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -1.0
-    NSteps: 5
-    AdaptiveExploration: true
-    NetworkUpdateFrequency: 50
-    SelfPlayNetworkUpdateFrequency: 5000
+    LogAlpha: -2.0
+    NSteps: 4
+    AdaptiveExploration: false
+    NetworkUpdateFrequency: 300
+    SelfPlayNetworkUpdateFrequency: 10000000
     NetworkParameters:
-        Filters: 16
+        Filters: 32
         Units: 64
         ActorVectorNetworkArchitecture: Dense
         ActorVisualNetworkArchitecture: CNN
         CriticVectorNetworkArchitecture: Dense
         CriticVisualNetworkArchitecture: CNN
-    PrioritizedReplay: false
+    PrioritizedReplay: true
     PriorityAlpha: 0.8
     RewardNormalization: false
-    ReplayCapacity: 100000
-    ReplayMinSize: 50
+    ReplayCapacity: 250000
+    ReplayMinSize: 1000
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
+<<<<<<< HEAD
     TrainingID: _debug_SAC_3DBall_NGUr_fullFeed
     TrainingInterval: 1
+=======
+    TrainingID: SAC_Airhockey_Selfplay_ContinuedV2_New_Kinematics
+    TrainingInterval: 10
+>>>>>>> main
 cql:
     Recurrent: false
     BurnIn: 0

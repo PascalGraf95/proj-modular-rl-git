@@ -1,14 +1,15 @@
 import numpy as np
 from ..misc.replay_buffer import FIFOBuffer
 from .exploration_algorithm_blueprint import ExplorationAlgorithm
-from tensorflow.keras.losses import MeanSquaredError
-from tensorflow.keras.optimizers import Adam, SGD
+from tensorflow import keras
+from keras.losses import MeanSquaredError
+from keras.optimizers import Adam, SGD
 from ..misc.network_constructor import construct_network
 import tensorflow as tf
 from ..training_algorithms.agent_blueprint import Learner
 import itertools
-from tensorflow.keras import Input, Model
-from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
+from keras import Input, Model
+from keras.layers import Dense, Conv2D, BatchNormalization, Concatenate
 
 
 class IntrinsicCuriosityModule(ExplorationAlgorithm):
@@ -19,13 +20,6 @@ class IntrinsicCuriosityModule(ExplorationAlgorithm):
     Name = "IntrinsicCuriosityModule"
     ActionAltering = False
     IntrinsicReward = True
-
-    ParameterSpace = {
-        "FeatureSpaceSize": int,
-        "CuriosityScalingFactor": float,
-        "ForwardLossWeight": float,
-        "LearningRate": float,
-    }
 
     def __init__(self, action_shape, observation_shapes, action_space, parameters, idx):
         self.action_space = action_space

@@ -13,8 +13,10 @@
             "justMyCode": true,
             "python.autoComplete.extraPaths": ["./modules"],
             "args": [
-                "--model_path", "C:\\Users\\AI-Runner\\Desktop\\220824_205341_SAC_Airhockey_Selfplay_Multiagent",
-                "--mode", "testing"                
+                "--model_path", "C:\\repos\\Airhockey_Agent_Weights\\in_use",
+                "--mode", "training",
+                "--env_path", "C:\\repos\\proj-air-hockey\\Builds\\AirHockey.exe",
+                "--train_algorithm", "SAC"
               ]
         }
     ]

@@ -220,7 +220,7 @@ class CQLActor(Actor):
             return sample_errors
         return None
 
-    def update_actor_network(self, network_weights, total_episodes=0):
+    def update_actor_network(self, network_weights):
         if self.environment_path != "NoEnv":
             if not len(network_weights):
                 return
@@ -628,7 +628,7 @@ class CQLLearner(Learner):
         concat_value_stack1 = tf.concat([random_action_values1, state_stack_value1, next_state_stack_value1], axis=1)
         concat_value_stack2 = tf.concat([random_action_values2, state_stack_value2, next_state_stack_value2], axis=1)
 
-        #endregion
+        # endregion
 
         # Calculate Critic 1 and 2 Loss, utilizes custom mse loss function defined in Trainer-class
         with tf.GradientTape() as tape:
@@ -671,7 +671,7 @@ class CQLLearner(Learner):
         self.critic2_optimizer.apply_gradients(zip(critic_grads[1], self.critic2.trainable_variables))
         self.cql_alpha_optimizer.apply_gradients(zip(critic_grads[2], [self.cql_log_alpha]))
         total_value_loss = total_value_loss1 + total_value_loss2 / 2
-        cql_loss = cql_loss1 + cql_loss2 / 2
+        cql_loss = (cql_loss1 + cql_loss2) / 2
         # endregion
 
         # region --- ACTOR TRAINING ---
@@ -703,14 +703,6 @@ class CQLLearner(Learner):
         return {'Losses/Loss': policy_loss + total_value_loss, 'Losses/PolicyLoss': policy_loss,
                 'Losses/ValueLoss': value_loss, 'Losses/CQLLoss': cql_loss, 'Losses/CQLAlpha': cql_alpha.numpy(),
                 'Losses/Alpha': tf.reduce_mean(self.alpha).numpy()}, sample_errors, self.training_step
-
-    @staticmethod
-    def value_function_rescaling(x, eps=1e-3):
-        return np.sign(x) * (np.sqrt(np.abs(x) + 1) - 1) + eps * x
-
-    @staticmethod
-    def inverse_value_function_rescaling(h, eps=1e-3):
-        return np.sign(h) * (((np.sqrt(1 + 4 * eps * (np.abs(h) + 1 + eps)) - 1) / (2 * eps)) - 1)
 
     def sync_models(self):
         if self.sync_mode == "hard_sync":
@@ -751,12 +743,14 @@ class CQLLearner(Learner):
         if not checkpoint_condition:
             return
         self.actor_network.save(
-            os.path.join(path, "SAC_CQL_Actor_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
-        if save_all_models:
-            self.critic1.save(
-                os.path.join(path, "SAC_CQL_Critic1_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
-            self.critic2.save(
-                os.path.join(path, "SAC_CQL_Critic2_Step{:06d}_Reward{:.2f}".format(training_step, running_average_reward)))
+            os.path.join(path, "SAC_CQL_Actor_Step{:06d}_Reward{:.2f}.h5".format(training_step,
+                                                                                 running_average_reward)))
+        self.critic1.save(
+            os.path.join(path, "SAC_CQL_Critic1_Step{:06d}_Reward{:.2f}.h5".format(training_step,
+                                                                                   running_average_reward)))
+        self.critic2.save(
+            os.path.join(path, "SAC_CQL_Critic2_Step{:06d}_Reward{:.2f}.h5".format(training_step,
+                                                                                   running_average_reward)))
 
     def boost_exploration(self):
         self.log_alpha = tf.Variable(tf.ones(1) * -0.7,

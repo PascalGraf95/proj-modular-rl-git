@@ -1,13 +1,11 @@
 import numpy as np
-from ..misc.replay_buffer import FIFOBuffer
+from modules.misc.replay_buffer import FIFOBuffer
 
 
 class ExplorationAlgorithm:
     Name = "None"
     ActionAltering = False
     IntrinsicReward = False
-
-    ParameterSpace = {}
 
     def __init__(self, action_shape, observation_shape, action_space, parameters, trainer_configuration, idx):
         self.action_space = action_space

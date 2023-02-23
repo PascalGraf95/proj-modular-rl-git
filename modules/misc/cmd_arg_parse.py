@@ -3,8 +3,8 @@ import argparse
 class CmdArgParse:
     def return_args(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument('-m', '--mode', help="Choose between 'training', 'testing' or 'fastTesting'", type=str,
-                            required=False, default="training")
+        parser.add_argument('-m', '--mode', help="Choose between 'training', 'testing', 'fastTesting' or 'tournament'",
+                            type=str, required=False, default="training")
         parser.add_argument('-mp', '--model_path', help="If you want to test a trained model "
                                                         "or continue learning from a "
                                                         "checkpoint enter the model path here.",
@@ -20,7 +20,7 @@ class CmdArgParse:
                                                       "e.g.'LunarLanderContinuous-v2'. If you want a CQL agent to "
                                                       "learn from demonstrations, an environment can be used to "
                                                       "evaluate the model on a regular basis. Please provide a path "
-                                                      "or typeNone to connect directly to the Unity Editor. "
+                                                      "or type None to connect directly to the Unity Editor. "
                                                       "Otherwise, type 'NoEnv' to proceed without evaluation.",
                             type=str, required=False, default=None)
         parser.add_argument('-ta', '--train_algorithm', help="Choose from 'DQN', 'DDPG', 'TD3', 'SAC', 'CQL'", type=str,
@@ -29,18 +29,12 @@ class CmdArgParse:
                                                        "CQL please provide the path for demonstrations.",
                             type=str, required=False, default=None)
         parser.add_argument('-ea', '--exploration_algorithm', help="Choose from 'None', 'EpsilonGreedy', 'ICM', 'RND', "
-                                                                   ", 'RNDAlter', 'ENM', 'NGU', 'ECR', 'NGUr'",
+                                                                   "'ENM', 'NGU'",
                             type=str, required=False, default='None')
-        parser.add_argument('-cs', '--curriculum_strategy', help="Choose from None, 'LinearCurriculum', "
-                                                                 "('RememberingCurriculum', 'CrossFadeCurriculum' "
-                                                                 "are currently disabled)",
-                            type=str, required=False, default=None)
         parser.add_argument('-pa', '--preprocessing_algorithm', help="Choose from 'None' and 'SemanticSegmentation'",
                             type=str, required=False, default='None')
         parser.add_argument('-pp', '--preprocessing_path', help="Enter the path for the preprocessing model if needed",
                             type=str,required=False, default='None')
-        parser.add_argument('-sm', '--save_all_models', help="Determines if all models or only the actor will be saved "
-                                                             "during training", type=bool, required=False, default=True)
         parser.add_argument('-rmoc', '--remove_old_checkpoints', help="Determines if old model checkpoints will "
                                                                       "be overwritten",
                             type=bool, required=False, default=False)
@@ -48,6 +42,12 @@ class CmdArgParse:
                                                                 "the right key (training algorithm) "
                                                                 "e.g. <path to yaml> <key>)", type=str, nargs=2,
                             required=False, default=['trainer_configs/trainer_config.yaml', 'sac'])
+        parser.add_argument('-gpf', '--games_per_fixture', help="Number of matches between each fixture in the "
+                                                                "tournament schedule.",
+                            type=int, default=10, required=False)
+        parser.add_argument('-hp', '--history_path', help="Path to the history csv file containing all "
+                                                          "played matches used to update player ratings.",
+                            type=str, default="./training/rating_history.csv", required=False)
 
         args = parser.parse_args()
         return args

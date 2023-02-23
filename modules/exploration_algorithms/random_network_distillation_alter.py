@@ -160,7 +160,7 @@ class RandomNetworkDistillationAlter(ExplorationAlgorithm):
 
         if np.any(np.isnan(action_batch)):
             return replay_batch
-        # endregion
+
 
         # Clear augmented state parts such as rewards, actions and policy indices as they must not be used by
         # the exploration algorithms, i.e. closeness of states should not depend on the intrinsic reward or the
@@ -168,6 +168,7 @@ class RandomNetworkDistillationAlter(ExplorationAlgorithm):
         # trivial.
         if self.num_additional_obs_values:
             next_state_batch = next_state_batch[:-self.num_additional_obs_values]
+        # endregion
 
         # region - Prediction Model training -
         # The Prediction Model is trained on the mse between the predicted values of the Target and Prediction Model.
@@ -184,6 +185,7 @@ class RandomNetworkDistillationAlter(ExplorationAlgorithm):
             grad = tape.gradient(self.loss, self.prediction_model.trainable_weights)
             # Apply Gradients to the Prediction Model
             self.optimizer.apply_gradients(zip(grad, self.prediction_model.trainable_weights))
+        # endregion
         return
 
     def get_intrinsic_reward(self, replay_batch):
