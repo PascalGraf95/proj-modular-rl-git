@@ -2,6 +2,7 @@ import sys
 from types import ModuleType, FunctionType
 from gc import get_referents
 import numpy as np
+import tensorflow as tf
 
 # Custom objects know their class.
 # Function objects seem to know way too much, including modules.
@@ -219,3 +220,10 @@ def modify_observation_shapes(observation_shapes, action_shapes, action_type, fe
         modified_observation_shapes.append((1,))
 
     return modified_observation_shapes
+
+
+def set_gpu_growth():
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)

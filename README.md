@@ -1,19 +1,31 @@
 # >>> Modular Reinforcement Learning©
-*created and maintained by Pascal Graf 2022*
+*created and maintained by Pascal Graf 2023*
 
 **Documentation and instructions are incorporated into the code. To get started take a look at 
 the `main.py` file.**
 
 ## Package Versions:
 *The following packages have successfully been used with this framework. Other versions might cause errors.*
+
 - ### CUDA
-  - Cuda Version: 10.1.X (Later versions, especially 11.X lead to memory leaks on Windows machines)
-  - CuDnn Version: 7.6.X (corresponds to the Cuda version, see: https://www.tensorflow.org/install/source)
+  - **Option 1**:
+    - Cuda Version: 10.1.X (in combination with tensorflow 2.3.X)
+    - CuDnn Version: 7.6.X (corresponds to the Cuda version, see: https://www.tensorflow.org/install/source)
+  - **Option 2 (Updated 17.10.2022):** 
+    - Cuda Version: 11.8.X (in combination with tensorflow 2.10.X)
+    - CuDnn Version: 8.6.X (corresponds to the Cuda version, see: https://www.tensorflow.org/install/source)
+
+*Warning: Utilizing Option 2 with Windows 10 might lead to occasional 'Optimization loop failed' warning messages 
+which do not seem to affect performance.*
 - ### PIP
-  - tensorflow: 2.3.X
-  - tensorflow-probability: 0.11.X (corresponds to tensorflow version)
   - ray: 1.11.X -> NOTE: 2.0.X also works and enables debugging (set `ray.init(local_mode=True)`). 
-  However, on Windows this throws 'access violation' fatal errors that DO NOT affect performance or executability.
+However, on Windows 10 this might throw 'Windows fatal exception' errors that DO NOT affect performance or executability.
+  - **Option 1**:
+    - tensorflow: 2.3.X
+    - tensorflow-probability: 0.11.X (corresponds to tensorflow version)
+  - **Option 2**:
+    - tensorflow: 2.10.X
+    - tensorflow-probability: 0.18.X (corresponds to tensorflow version)
 ## Features
 - ###Interfaces:
   - Unity MlAgentsV18

@@ -12,6 +12,7 @@ from datetime import datetime
 import os
 import ray
 import tensorflow as tf
+from modules.misc.model_path_handling import get_model_key_from_dictionary
 
 
 @ray.remote
@@ -35,7 +36,7 @@ class DQNActor(Actor):
         with tf.device(self.device):
             if self.recurrent:
                 # Set the initial LSTM states correctly according to the number of active agents
-                self.set_lstm_states(agent_ids)
+                self.set_lstm_states(agent_ids, clone=clone)
                 # In case of a recurrent network, the state input needs an additional time dimension
                 states = [tf.expand_dims(state, axis=1) for state in states]
                 action_values, hidden_state, cell_state = self.critic_network(states)
@@ -106,7 +107,7 @@ class DQNActor(Actor):
                 sample_errors = eta * np.max(sample_errors, axis=1) + (1 - eta) * np.mean(sample_errors, axis=1)
         return sample_errors
 
-    def update_actor_network(self, network_weights, total_episodes=0):
+    def update_actor_network(self, network_weights):
         if not len(network_weights):
             return
         self.critic_network.set_weights(network_weights[0])
@@ -173,8 +174,9 @@ class DQNLearner(Learner):
 
     # endregion
 
-    def __init__(self, mode, trainer_configuration, environment_configuration, model_path=None, clone_model_path=None):
-        super().__init__(trainer_configuration, environment_configuration, model_path, clone_model_path)
+    def __init__(self, mode, trainer_configuration, environment_configuration, model_dictionary=None,
+                 clone_model_dictionary=None):
+        super().__init__(trainer_configuration, environment_configuration, model_dictionary, clone_model_dictionary)
         # Networks
         self.critic: keras.Model
         self.critic_target: keras.Model
@@ -190,7 +192,7 @@ class DQNLearner(Learner):
             # Network Construction
             self.build_network(trainer_configuration["NetworkParameters"], environment_configuration)
             # Try to load pretrained models if provided. Otherwise, this method does nothing.
-            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
+            model_key = get_model_key_from_dictionary(self.model_dictionary, mode="latest")
             if model_key:
                 self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
             # TODO: Implement Clone model and self-play
@@ -201,14 +203,37 @@ class DQNLearner(Learner):
 
         # Load trained Models
         elif mode == 'testing':
-            assert model_path, "No model path entered."
+            assert len(self.model_dictionary), "No model path provided or no appropriate model present in given path."
             # Try to load pretrained models if provided. Otherwise, this method does nothing.
-            model_key = self.get_model_key_from_dictionary(self.model_dictionary, mode="latest")
+            model_key = get_model_key_from_dictionary(self.model_dictionary, mode="latest")
             if model_key:
                 self.load_checkpoint_from_path_list(self.model_dictionary[model_key]['ModelPaths'], clone=False)
 
     def get_actor_network_weights(self, update_requested):
+        """
+        Return the weights from the learner in order to copy them to the actor networks, but only if the
+        update requested flag is true.
+        :param update_requested: Flag that determines if actual weights are returned for the actor.
+        :return: An empty list or a list containing  keras network weights for each model.
+        """
+        if not update_requested:
+            return []
         return [self.critic.get_weights()]
+
+    def get_clone_network_weights(self, update_requested, clone_from_actor=False):
+        """
+        Return the weights from the learner in order to copy them to the clone actor networks, but only if the
+        update requested flag is true.
+        :param update_requested: Flag that determines if actual weights are returned for the actor.
+        :param clone_from_actor: Flag that determines if the clone network keeps its designated own set of weights
+        or if the weights are copied from the actor network.
+        :return: An empty list or a list containing  keras network weights for each model.
+        """
+        if not update_requested:
+            return []
+        if clone_from_actor or not self.clone_model_dictionary:
+            return[self.critic.get_weights()]
+        return [self.clone_actor_network.get_weights()]
 
     def build_network(self, network_settings, environment_parameters):
         # Create a list of dictionaries with 1 entry, one for each network
@@ -330,7 +355,7 @@ class DQNLearner(Learner):
         # Update target network weights
         self.training_step += 1
         self.sync_models()
-        return {'Losses/Loss': value_loss}, sample_errors, self.training_step
+        return {'Losses/Loss': value_loss.numpy()}, sample_errors, self.training_step
 
     def boost_exploration(self):
         pass
@@ -354,8 +379,7 @@ class DQNLearner(Learner):
                 if not self.critic:
                     raise FileNotFoundError("Could not find all necessary model files.")
 
-    def save_checkpoint(self, path, running_average_reward, training_step, save_all_models=False,
-                        checkpoint_condition=True):
+    def save_checkpoint(self, path, running_average_reward, training_step, checkpoint_condition=True):
         if not checkpoint_condition:
             return
         self.critic.save(
