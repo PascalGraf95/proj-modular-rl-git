@@ -301,7 +301,8 @@ class Trainer:
         for model_key in self.model_dictionary.keys():
             for clone_model_key in self.clone_model_dictionary.keys():
                 if model_key != clone_model_key:
-                    if model_key + "." + clone_model_key not in tournament_tag_set:
+                    if model_key + "." + clone_model_key not in tournament_tag_set and \
+                            clone_model_key + "." + model_key not in tournament_tag_set:
                         tournament_tag_set.add(model_key + "." + clone_model_key)
                         self.tournament_schedule.append([model_key, clone_model_key])
         print("Created Tournament Schedule with {} entries".format(len(self.tournament_schedule)))
@@ -415,9 +416,11 @@ class Trainer:
                 actor.is_network_update_requested.remote()))
                 for actor in self.actors]
             # Check if the clone networks request to be updated with the latest network weights from the learner.
-            [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(
+            clone_updated = [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(
                 actor.is_clone_network_update_requested.remote(self.global_logger.get_total_episodes.remote()), True))
                 for actor in self.actors]
+            # If the clone network has been updated, reset the reward threshold for saving new models.
+            self.global_logger.reset_threshold_reward.remote(clone_updated[0])
 
             # Check if a new best reward has been achieved, if so save the models.
             self.async_save_agent_models(training_step)

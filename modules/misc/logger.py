@@ -110,6 +110,18 @@ class GlobalLogger:
                 self.tensorboard_writer = tf.summary.create_file_writer(log_dir)
                 self.logger_dict = {}
 
+    def reset_threshold_reward(self, new_clone_model):
+        if not new_clone_model:
+            return
+        # Running average rewards of all actors
+        self.average_rewards = [-10000 for i in range(self.actor_num)]
+        # The best running average over "running_average_episodes" episodes
+        self.best_running_average_reward = -10000
+        # Memory of the past 1000 rewards and episode lengths
+        self.episode_reward_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
+        self.episode_length_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
+
+
     def get_elapsed_time(self):
         # Returns the elapsed time since creation of this logger at the beginning of the training process.
         elapsed_time = datetime.now() - self.creation_time

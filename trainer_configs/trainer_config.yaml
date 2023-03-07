@@ -91,7 +91,7 @@ sac:
         FeatureSpaceSize: 18
         CuriosityScalingFactor: 0.03
         LearningRate: 0.00005
-        Epsilon: 0.25
+        Epsilon: 0.15
         EpsilonDecay: 0.9995
         EpsilonMin: 0.01
         StepDown: false
@@ -105,11 +105,11 @@ sac:
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: -2.0
+    LogAlpha: 0.0
     NSteps: 4
     AdaptiveExploration: false
     NetworkUpdateFrequency: 300
-    SelfPlayNetworkUpdateFrequency: 10000000
+    SelfPlayNetworkUpdateFrequency: 1000000
     NetworkParameters:
         Filters: 32
         Units: 64
@@ -118,14 +118,14 @@ sac:
         CriticVectorNetworkArchitecture: Dense
         CriticVisualNetworkArchitecture: CNN
     PrioritizedReplay: true
-    PriorityAlpha: 0.8
+    PriorityAlpha: 0.85
     RewardNormalization: false
-    ReplayCapacity: 250000
+    ReplayCapacity: 300000
     ReplayMinSize: 1000
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_Airhockey_Selfplay_ContinuedV2_New_Kinematics
+    TrainingID: SAC_Airhockey_Selfplay_SparseContinuedFrom01
     TrainingInterval: 10
 cql:
     Recurrent: false

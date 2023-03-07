@@ -15,6 +15,8 @@ def calculate_updated_elo(rating_a, rating_b, score, k=32):
     :param k: ToDo: Specify
     :return: Updated rating of player a and player b
     """
+    rating_a = float(rating_a)
+    rating_b = float(rating_b)
     # Calculate the expected score given the ratings of player a and b
     # their probability of winning + half their probability of drawing
     expected_score_a = 1 / (1 + 10 ** ((rating_b - rating_a) / 400))

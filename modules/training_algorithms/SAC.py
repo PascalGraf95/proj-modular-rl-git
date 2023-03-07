@@ -123,8 +123,9 @@ class SACActor(Actor):
 
     def update_clone_network(self, network_weights):
         if not len(network_weights) or not self.behavior_clone_name:
-            return
+            return False
         self.clone_actor_network.set_weights(network_weights[0])
+        return True
 
     def build_network(self, network_settings, environment_parameters):
         # Create a list of dictionaries with 4 entries, one for each network
