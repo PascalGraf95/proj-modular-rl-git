@@ -137,7 +137,7 @@ class Trainer:
     # region ---Instantiation ---
     def async_instantiate_agent(self, mode: str, preprocessing_algorithm: str, exploration_algorithm: str,
                                 environment_path: str = None, preprocessing_path: str = None,
-                                demonstration_path: str = None):
+                                demonstration_path: str = None, args=None):
         """
         Instantiate the agent consisting of learner, actor(s) and their respective submodules in an asynchronous
         fashion utilizing the ray library.
@@ -151,6 +151,7 @@ class Trainer:
         :param preprocessing_path: Respective path for a preprocessing algorithm.
         :param demonstration_path: Respective path for demonstrations utilized in Offline Reinforcement Learning, i.e.,
         the CQL Algorithm.
+        :param args: Arguments from command line only used for logging to yaml
         :return:
         """
         # region - Multiprocessing Initialization and Actor Number Determination
@@ -283,6 +284,7 @@ class Trainer:
             if not os.path.isdir(os.path.join("./training/summaries", self.logging_name)):
                 os.makedirs(os.path.join("./training/summaries", self.logging_name))
             with open(os.path.join("./training/summaries", self.logging_name, "training_parameters.yaml"), 'w') as file:
+                _ = yaml.dump(args, file)
                 _ = yaml.dump(self.trainer_configuration, file)
                 _ = yaml.dump(ray.get(environment_info), file)
                 _ = yaml.dump(self.environment_configuration, file)
@@ -295,14 +297,14 @@ class Trainer:
         self.model_dictionary = create_model_dictionary_from_path(model_path)
         self.clone_model_dictionary = create_model_dictionary_from_path(clone_path)
 
-    def create_tournament_schedule(self):
+    def create_tournament_schedule(self, return_match=True):
         self.tournament_schedule = list()
         tournament_tag_set = set()
         for model_key in self.model_dictionary.keys():
             for clone_model_key in self.clone_model_dictionary.keys():
                 if model_key != clone_model_key:
                     if model_key + "." + clone_model_key not in tournament_tag_set and \
-                            clone_model_key + "." + model_key not in tournament_tag_set:
+                            (clone_model_key + "." + model_key not in tournament_tag_set or return_match):
                         tournament_tag_set.add(model_key + "." + clone_model_key)
                         self.tournament_schedule.append([model_key, clone_model_key])
         print("Created Tournament Schedule with {} entries".format(len(self.tournament_schedule)))

@@ -93,8 +93,9 @@ def main():
     # Parse the trainer configuration (make sure to select the right key)
     trainer.parse_training_parameters(args.training_parameters[0], args.training_parameters[1])
     # Instantiate the agent which consists of a learner and one or multiple actors
+    print()
     trainer.async_instantiate_agent(mode, preprocessing_algorithm, exploration_algorithm,
-                                    environment_path, preprocessing_path, demonstration_path)
+                                    environment_path, preprocessing_path, demonstration_path, vars(args))
     # If you are trying to understand this project, the next place to continue exploring it would be the trainer file
     # in the respective directory (./modules/trainer.py)
 

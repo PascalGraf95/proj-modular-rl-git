@@ -73,7 +73,7 @@ def get_exploration_policies(num_policies: int = 1, mode: str = "training", beta
             dict_exploration_policies.append({'beta': 0, 'gamma': gamma_max, 'scaling': 0})
         return dict_exploration_policies
     else:
-        scaling_distribution = np.linspace(0, 1, num_policies)
+        scaling_distribution = np.linspace(0, 1, num_policies).tolist()
         # Otherwise, iterate through policy indices and calculate respective betas and gammas
         for idx in range(num_policies):
             dict_exploration_policies.append({'beta': get_beta(num_policies, beta_max, idx),
@@ -107,7 +107,7 @@ def get_beta(num_policies, beta_max, policy_idx):
         beta = beta_max
     else:
         beta = beta_max * sigmoid(10 * (2 * policy_idx - (num_policies - 2)) / (num_policies - 2))
-    return beta
+    return float(beta)
 
 
 def get_gamma(num_policies, gamma_max, gamma_middle, gamma_min, policy_idx):
@@ -161,7 +161,7 @@ def get_gamma(num_policies, gamma_max, gamma_middle, gamma_min, policy_idx):
         gamma = 1 - np.exp(gamma)
     '''
     # endregion
-    return gamma
+    return float(gamma)
 
 
 def sigmoid(x):
