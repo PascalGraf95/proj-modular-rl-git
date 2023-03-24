@@ -10,10 +10,12 @@ from modules.sidechannel.environment_info_sidechannel import EnvironmentInfoSide
 from modules.curriculum_strategies.curriculum_strategy_blueprint import CurriculumCommunicator
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
 from modules.misc.model_path_handling import get_model_key_from_dictionary
+from modules.misc.glicko2 import *
 import ray
 import gym
 from gym.wrappers import RescaleAction
-
+import modules.misc.glicko2 as glicko2
+import pandas as pd
 import os
 import csv
 
@@ -159,6 +161,13 @@ class Actor:
         self.select_exploration_algorithm(exploration_algorithm)
         self.select_preprocessing_algorithm(preprocessing_algorithm)
         # endregion
+
+        # region --- Rating ---
+        # The rating of an actor is used to determine which actor is the best performing one. This section defines the names of the csv-files to save game results and ratings.
+        self.game_results = 'game_results.csv'
+        self.rating_history = 'rating_history.csv'
+        # endregion
+
     # endregion
 
     # region Environment Connection and Side Channel Communication
@@ -236,7 +245,7 @@ class Actor:
         return False
 
     @staticmethod
-    def append_to_game_results_history(game_result, history_path, player_keys):
+    def append_to_game_results_history(self, game_result, history_path, player_keys):
         """
         Appends a new game result to an either existing or new csv files along with the keys of the two players in the
         respective fixture.
@@ -250,7 +259,7 @@ class Actor:
         if not os.path.isfile(history_path):
             with open(history_path, 'w', newline='') as file:
                 writer = csv.writer(file)
-                writer.writerow(["game_id", "player_key_a", "player_key_b", "score_a", "score_b"])
+                writer.writerow(["game_id", "player_key_a", "player_key_b", "score_a", "score_b", "rating_period"])
         # If so just append the latest game results to that file along with the player keys
         with open(history_path) as file:
             # To get the game id, just count the number of rows.
@@ -259,7 +268,144 @@ class Actor:
 
         with open(history_path, 'a', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow([game_id, player_keys[0], player_keys[1], game_result[0], game_result[1]])
+            writer.writerow([game_id, player_keys[0], player_keys[1], game_result[0], game_result[1], self.get_current_rating_period(model_path=history_path)])
+    
+    def get_current_rating_period(self, model_path):
+        """
+        Get the current rating period from the game results file using pandas.
+        :param model_path: Path to the model folder
+        :return: The current rating period
+        """
+        # get the current rating period from the game results file using pandas
+        rating_period = pd.read_csv(os.path.join(model_path, self.game_results))['rating_period'].iloc[-1]
+        return rating_period
+          
+    def update_rating_period(self, model_path):
+        """
+        Update the rating period if each agent in the model path has an average of 10 games played in the last rating period.
+        :param model_path: Path to the model folder
+        :return: The updated rating period
+        """     
+        # get the current rating period from the game results file using pandas
+        rating_period = self.get_current_rating_period(model_path)
+        # get all the games in the current rating period
+        current_rating_period_games = pd.read_csv(os.path.join(model_path, self.game_results))[pd.read_csv(os.path.join(model_path, self.game_results))['rating_period'] == rating_period]
+        # calculate the average number of games played by each agent in the current rating period
+        average_games_played = current_rating_period_games.groupby(['agent_id_a', 'agent_id_b']).count()['game_id'].mean()
+        # check if the average number of games played is greater than 10
+        if average_games_played > 10:
+            # update the rating period
+            return rating_period + 1
+        else:
+            # return the current rating period
+            return rating_period
+        
+    def get_rating_history(self, model_path):
+        """
+        Get the rating history of each agent in the model path.
+        :param model_path: Path to the model folder
+        :return: The rating history of each agent in the model path as a dictionary
+        """
+        # rating histories dictionary
+        rating_histories = {}
+        # get rating history path
+        rating_history_path = model_path + self.rating_history
+        # get each directory in the tourney_results directory
+        for agent in os.scandir(model_path):
+            # check if it is a directory
+            if agent.is_dir():            
+                # check if rating histories csv-file exists
+                if os.path.exists(rating_history_path):
+                    # get rating history to pd.DataFrame
+                    rating_history = pd.read_csv(rating_history_path)
+                    # add rating history to dictionary
+                    rating_histories[agent.name] = rating_history
+                else:
+                    print("No rating history found.")
+                    print("Creating new rating history for tournament.")
+                    # create new rating history
+                    with open(rating_history_path, 'w', newline='') as file:
+                        writer = csv.writer(file)
+                        writer.writerow(['player_key', 'rating', 'rating_deviation', 'volatility'])
+                        # write initial rating values
+                        writer.writerow([agent.name, 1500, 350, 0.06])
+        return rating_histories
+    
+    def update_ratings(self, model_path):
+        """
+        Update the ratings of each agent in the model path.
+        :param model_path: Path to the model folder
+        """
+        # rating histories dictionary
+        rating_histories = self.get_rating_history(model_path)        
+        # get game results to pd.DataFrame
+        game_results = pd.read_csv(model_path + '/' + self.game_results)
+        # create empty dataframe for current rating period
+        rating_period = pd.DataFrame(columns=["game_id", "player_key_a", "player_key_b", "score_a", "score_b", "rating_period"])
+        # start from last row and work backwards until a former rating period is reached
+        for _, row in game_results.iloc[::-1].iterrows():
+            if row['rating_period'] != game_results.iloc[-1]['rating_period']:
+                # former rating period reached
+                break
+            else:
+                # add to current rating period
+                rating_period = rating_period.append(row, ignore_index=True)
+
+        # create for each agent a game history dataframe for the current rating period
+        agent_game_histories = {}
+        agent_game_history_df = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
+        agent_game_history_df_a = agent_game_history_df.copy()
+        agent_game_history_df_b = agent_game_history_df.copy()
+        # calculate new ratings based on tourney results
+        for _, game in rating_period.iterrows():
+            # get agent names
+            agent_a = game['agent_id_a']
+            agent_b = game['agent_id_b']
+            # get agent ratings
+            rating_a = rating_histories[agent_a].iloc[-1]['rating']
+            rating_b = rating_histories[agent_b].iloc[-1]['rating']
+            # get agent rating deviations
+            rating_deviation_a = rating_histories[agent_a].iloc[-1]['rating_deviation']
+            rating_deviation_b = rating_histories[agent_b].iloc[-1]['rating_deviation']
+            # get agent volatility
+            volatility_a = rating_histories[agent_a].iloc[-1]['volatility']
+            volatility_b = rating_histories[agent_b].iloc[-1]['volatility']
+            # get agent scores
+            score_a = game['score_a']
+            score_b = game['score_b']
+            # determine game id for agent - if agent has no game history, game id is 0, otherwise it is the last game id + 1
+            if agent_a in agent_game_histories:
+                game_id_a = agent_game_histories[agent_a].iloc[-1]['game_id'] + 1
+            else:
+                game_id_a = 0
+            if agent_b in agent_game_histories:
+                game_id_b = agent_game_histories[agent_b].iloc[-1]['game_id'] + 1
+            else:
+                game_id_b = 0
+            # add game to agent game history
+            agent_game_history_df_a = agent_game_history_df_a.append({'game_id': game_id_a, 'opponent': agent_b, 'score': score_a, 'opponent_score': score_b, 'rating_self': rating_a, 'rating_deviation_self': rating_deviation_a, 'volatility_self': volatility_a, 'rating_opponent': rating_b, 'rating_deviation_opponent': rating_deviation_b, 'volatility_opponent': volatility_b}, ignore_index=True)
+            agent_game_history_df_b = agent_game_history_df_b.append({'game_id': game_id_b, 'opponent': agent_a, 'score': score_b, 'opponent_score': score_a, 'rating_self': rating_b, 'rating_deviation_self': rating_deviation_b, 'volatility_self': volatility_b, 'rating_opponent': rating_a, 'rating_deviation_opponent': rating_deviation_a, 'volatility_opponent': volatility_a}, ignore_index=True)
+            # update agent game history
+            agent_game_histories[agent_a] = agent_game_history_df_a
+            agent_game_histories[agent_b] = agent_game_history_df_b
+
+        # calculate new ratings based on game results for each agent
+        for agent_name, game_history_df in agent_game_histories.items():
+            # get current agent rating
+            rating = rating_histories[agent_name].iloc[-1]['rating']
+            # get current agent rating deviation
+            rating_deviation = rating_histories[agent_name].iloc[-1]['rating_deviation']
+            # get current agent volatility
+            volatility = rating_histories[agent_name].iloc[-1]['volatility']
+            # calculate new rating
+            rating_updated, rating_deviation_updated, volatility_updated = calculate_updated_glicko2(rating=rating, rating_deviation=rating_deviation, volatility=volatility, opponents_in_period=game_history_df)          
+            # open csv file to append new ratings for current agent
+            with open(model_path + '/' + self.player_results_file, 'a', newline='') as file:
+                # csv writer
+                writer = csv.writer(file)
+                # write new ratings at the end of the csv file without overwriting existing ratings
+                writer.writerow([agent_name, rating_updated, rating_deviation_updated, volatility_updated])         
+
     # endregion
 
     # region Property Query
