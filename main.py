@@ -76,8 +76,9 @@ def main():
 
     # - Self-Play Tournament -
     trainer.games_per_fixture = args.games_per_fixture
-    trainer.history_path = args.history_path
-
+    trainer.game_results_path = args.game_results_path
+    trainer.rating_history_path = args.rating_history_path
+    
     # endregion
 
     # region --- Trainer Initialization ---

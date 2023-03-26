@@ -5,6 +5,7 @@ from modules.misc.replay_buffer import FIFOBuffer, PrioritizedBuffer
 from modules.misc.logger import GlobalLogger
 from modules.misc.utility import getsize, get_exploration_policies
 from modules.misc.model_path_handling import create_model_dictionary_from_path
+from modules.misc.glicko2 import calculate_updated_glicko2
 
 import os
 import numpy as np
@@ -13,6 +14,8 @@ import time
 
 import yaml
 import ray
+import pandas as pd
+import csv
 
 intrinsic_exploration_algorithms = ["ENM", "RND", "NGU"]  # Will contain NGU, ECR, NGU-r, RND-alter with future updates...
 
@@ -60,7 +63,7 @@ class Trainer:
         self.agent_configuration = None
 
         # - Exploration Algorithm -
-        # The exloration algorithm has its own set of parameters defining the extent of exploration as well as a
+        # The exploration algorithm has its own set of parameters defining the extent of exploration as well as a
         # possible decay over time.
         self.exploration_configuration = None
         self.exploration_algorithm = None
@@ -101,8 +104,12 @@ class Trainer:
         # To make up for stochastic policy behaviors each pairing should play multiple games.
         self.games_played_in_fixture = 0
         self.games_per_fixture = None
-        # After playing a csv file is created storing each game played along with the scores of the players.
-        self.history_path = None
+        # csv file to store the results of the tournament games
+        self.game_results_path = None
+        # csv file to store the rating history of the agents
+        self.rating_history_path = None
+        # keep track of the rating period to update the rating of the agents after the period is over
+        self.rating_period = 0
 
         # endregion
 
@@ -156,9 +163,9 @@ class Trainer:
         """
         # region - Multiprocessing Initialization and Actor Number Determination
         # Initialize ray for parallel multiprocessing.
-        ray.init()
+        #ray.init()
         # Alternatively, use the following code line to enable debugging (with ray >= 2.0.X)
-        # ray.init(logging_level=logging.INFO, local_mode=True)
+        ray.init(logging_level=logging.INFO, local_mode=True)
 
         # If the connection is established directly with the Unity Editor or if we are in testing mode, override
         # the number of actors with 1.
@@ -296,18 +303,147 @@ class Trainer:
     def create_model_dictionaries(self, model_path, clone_path):
         self.model_dictionary = create_model_dictionary_from_path(model_path)
         self.clone_model_dictionary = create_model_dictionary_from_path(clone_path)
+    
 
-    def create_tournament_schedule(self, return_match=True):
-        self.tournament_schedule = list()
-        tournament_tag_set = set()
-        for model_key in self.model_dictionary.keys():
-            for clone_model_key in self.clone_model_dictionary.keys():
-                if model_key != clone_model_key:
-                    if model_key + "." + clone_model_key not in tournament_tag_set and \
-                            (clone_model_key + "." + model_key not in tournament_tag_set or return_match):
-                        tournament_tag_set.add(model_key + "." + clone_model_key)
-                        self.tournament_schedule.append([model_key, clone_model_key])
-        print("Created Tournament Schedule with {} entries".format(len(self.tournament_schedule)))
+    def create_tournament_schedule(self, tournament_type="round_robin"):
+        """
+        Creates a schedule for a tournament of different agents playing against each other.
+        :param tournament_type: The type of tournament to be created. Currently only "round_robin" is supported.
+        :return: A list of tuples containing the names of the agents to be played against each other.
+        """
+        if tournament_type == "round_robin":
+            n = len(self.model_dictionary.keys())
+            self.tournament_schedule = list()
+            for i in range(n-1):
+                for j in range(i+1, n):
+                    self.tournament_schedule.append([list(self.model_dictionary.keys())[i], list(self.model_dictionary.keys())[j]])
+        print("Created Tournament Schedule with {} games".format(len(self.tournament_schedule)))
+        
+    def rating_period_changed(self, path):
+        """
+        Checks if the rating period has changed since the last game result was written to the history file.
+        :param path: The path to the history file.
+        :return: True if the rating period has changed, False otherwise.
+        """
+        with open(path, 'r') as file:
+            df = pd.read_csv(file)
+            if len(df) < 2:
+                return False
+            current_value = df.loc[len(df)-1, 'rating_period']
+            previous_value = df.loc[len(df)-2, 'rating_period']
+            return current_value != previous_value
+        
+    def update_ratings(self, game_results_path, rating_path):
+        """
+        Update the ratings of each agent.
+        """
+        # rating histories dictionary
+        rating_histories = self.get_rating_history(rating_path)        
+        # get game results to pd.DataFrame
+        game_results = pd.read_csv(game_results_path)
+        # create empty dataframe for current rating period
+        rating_period = pd.DataFrame(columns=["game_id", "player_key_a", "player_key_b", "score_a", "score_b", "rating_period"])
+        # start from last row and work backwards until a former rating period is reached
+        for _, row in game_results.iloc[::-1].iterrows():
+            if row['rating_period'] != game_results.iloc[-1]['rating_period']:
+                # former rating period reached
+                break
+            else:
+                # add to current rating period
+                rating_period = rating_period.append(row, ignore_index=True)
+
+        # create for each agent a game history dataframe for the current rating period
+        agent_game_histories = {}
+        agent_game_history_df = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
+        agent_game_history_df_a = agent_game_history_df.copy()
+        agent_game_history_df_b = agent_game_history_df.copy()
+        # calculate new ratings based on tourney results
+        for _, game in rating_period.iterrows():
+            # get agent names
+            agent_a = game['player_key_a']
+            agent_b = game['player_key_b']
+            # get agent ratings
+            rating_a = rating_histories[agent_a].iloc[-1]['rating']
+            rating_b = rating_histories[agent_b].iloc[-1]['rating']
+            # get agent rating deviations
+            rating_deviation_a = rating_histories[agent_a].iloc[-1]['rating_deviation']
+            rating_deviation_b = rating_histories[agent_b].iloc[-1]['rating_deviation']
+            # get agent volatility
+            volatility_a = rating_histories[agent_a].iloc[-1]['volatility']
+            volatility_b = rating_histories[agent_b].iloc[-1]['volatility']
+            # get agent scores
+            score_a = game['score_a']
+            score_b = game['score_b']
+            # determine game id for agent - if agent has no game history, game id is 0, otherwise it is the last game id + 1
+            if agent_a in agent_game_histories:
+                game_id_a = agent_game_histories[agent_a].iloc[-1]['game_id'] + 1
+            else:
+                game_id_a = 0
+            if agent_b in agent_game_histories:
+                game_id_b = agent_game_histories[agent_b].iloc[-1]['game_id'] + 1
+            else:
+                game_id_b = 0
+            # add game to agent game history
+            agent_game_history_df_a = agent_game_history_df_a.append({'game_id': game_id_a, 'opponent': agent_b, 'score': score_a, 'opponent_score': score_b, 'rating_self': rating_a, 'rating_deviation_self': rating_deviation_a, 'volatility_self': volatility_a, 'rating_opponent': rating_b, 'rating_deviation_opponent': rating_deviation_b, 'volatility_opponent': volatility_b}, ignore_index=True)
+            agent_game_history_df_b = agent_game_history_df_b.append({'game_id': game_id_b, 'opponent': agent_a, 'score': score_b, 'opponent_score': score_a, 'rating_self': rating_b, 'rating_deviation_self': rating_deviation_b, 'volatility_self': volatility_b, 'rating_opponent': rating_a, 'rating_deviation_opponent': rating_deviation_a, 'volatility_opponent': volatility_a}, ignore_index=True)
+            # update agent game history
+            agent_game_histories[agent_a] = agent_game_history_df_a
+            agent_game_histories[agent_b] = agent_game_history_df_b
+
+        # calculate new ratings based on game results for each agent
+        for agent_name, game_history_df in agent_game_histories.items():
+            # get current agent rating
+            rating = rating_histories[agent_name].iloc[-1]['rating']
+            # get current agent rating deviation
+            rating_deviation = rating_histories[agent_name].iloc[-1]['rating_deviation']
+            # get current agent volatility
+            volatility = rating_histories[agent_name].iloc[-1]['volatility']
+            # calculate new rating
+            rating_updated, rating_deviation_updated, volatility_updated = calculate_updated_glicko2(rating=rating, rating_deviation=rating_deviation, volatility=volatility, opponents_in_period=game_history_df)          
+            # open csv file to append new ratings for current agent
+            with open(rating_path, 'a', newline='') as file:
+                # csv writer
+                writer = csv.writer(file)
+                # write new ratings at the end of the csv file without overwriting existing ratings
+                writer.writerow([agent_name, rating_updated, rating_deviation_updated, volatility_updated])         
+
+
+    def get_rating_history(self, path):
+        """
+        
+        
+        
+        """
+        # rating histories dictionary
+        rating_histories = {}       
+        for agent in self.model_dictionary.keys():
+            # check if agent exists in rating history csv-file
+            # if not, create new rating history for agent
+            # if yes, get rating history for agent
+            
+            # check if file exists
+            if (not os.path.isfile(path)):
+                print("No rating history found.")
+                print("Creating new rating history for tournament.")
+                # create new rating history
+                with open(path, 'w', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow(['player_key', 'rating', 'rating_deviation', 'volatility'])
+                    # write initial rating values
+                    writer.writerow([agent, 1500, 350, 0.06])
+            elif (not agent in pd.read_csv(path)['player_key'].values):
+                print("No rating history found for agent: " + agent)
+                print("Adding new rating history for agent: " + agent)
+                # create new rating history
+                with open(path, 'a', newline='') as file:
+                    writer = csv.writer(file)
+                    # write initial rating values
+                    writer.writerow([agent, 1500, 350, 0.06])
+            # get rating history to pd.DataFrame
+            rating_history = pd.read_csv(path)
+            # add rating history to dictionary
+            rating_histories[agent] = rating_history
+        return rating_histories
 
     def async_save_agent_models(self, training_step):
         """"""
@@ -583,7 +719,7 @@ class Trainer:
             # Receiving the latest state from its environment each actor chooses an action according to its policy.
             actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]
             new_match_played = [actor.update_history_with_latest_game_results.remote(
-                history_path=self.history_path,
+                history_path=self.game_results_path,
                 player_keys=player_keys) for actor
                 in self.actors]
             # Wait for the actors to finish their environment steps
@@ -596,7 +732,7 @@ class Trainer:
                     print("Playing Game {} of {} from tournament schedule".format(self.current_tournament_fixture_idx+1,
                                                                                   len(self.tournament_schedule)))
                     self.games_played_in_fixture = 0
-
+                    # 
                     if self.current_tournament_fixture_idx >= len(self.tournament_schedule):
                         break
 
@@ -607,5 +743,11 @@ class Trainer:
                         self.learner.get_actor_network_weights.remote(True)) for actor in self.actors]
                     [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(True))
                      for actor in self.actors]
+                # check if the rating period changed
+                if self.rating_period_changed(path=self.game_results_path):
+                    # update ratings
+                    self.update_ratings(rating_path=self.rating_history_path, game_results_path=self.game_results_path)
+
+
 
     # endregion

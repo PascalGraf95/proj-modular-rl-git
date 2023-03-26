@@ -14,9 +14,12 @@
             "python.autoComplete.extraPaths": ["./modules"],
             "args": [
                 "--model_path", "C:\\repos\\Airhockey_Agent_Weights\\in_use",
-                "--mode", "training",
-                "--env_path", "C:\\repos\\proj-air-hockey\\Builds\\AirHockey.exe",
-                "--train_algorithm", "SAC"
+                "--mode", "tournament",
+                "--env_path", "C:\\repos\\DomainRandomized_NoActionRandomizations_PR5_ND\\Builds\\AirHockey.exe ",
+                "--train_algorithm", "SAC",
+                "--game_results_path", "C:\\repos\\Airhockey_Agent_Weights\\game_results.csv",
+                "--rating_history_path", "C:\\repos\\Airhockey_Agent_Weights\\rating_history.csv",
+                "-gpf", "100"
               ]
         }
     ]

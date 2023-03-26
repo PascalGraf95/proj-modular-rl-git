@@ -45,9 +45,11 @@ class CmdArgParse:
         parser.add_argument('-gpf', '--games_per_fixture', help="Number of matches between each fixture in the "
                                                                 "tournament schedule.",
                             type=int, default=10, required=False)
-        parser.add_argument('-hp', '--history_path', help="Path to the history csv file containing all "
+        parser.add_argument('-gr', '--game_results_path', help="Path to the history csv file containing all "
                                                           "played matches used to update player ratings.",
+                            type=str, default="./training/game_results.csv", required=False)
+        parser.add_argument('-rp', '--rating_history_path', help="Path to the history csv file containing all "
+                                                          "player ratings.",
                             type=str, default="./training/rating_history.csv", required=False)
-
         args = parser.parse_args()
         return args
