@@ -336,6 +336,8 @@ class Trainer:
     def update_ratings(self, game_results_path, rating_path):
         """
         Update the ratings of each agent.
+        :param game_results_path: The path to the game results file.
+        :param rating_path: The path to the rating history file.
         """
         # rating histories dictionary
         rating_histories = self.get_rating_history(rating_path)        
@@ -410,9 +412,9 @@ class Trainer:
 
     def get_rating_history(self, path):
         """
-        
-        
-        
+        Get rating history for all agents in tournament.       
+        :param path: path to rating history csv-file
+        :return: rating history dictionary
         """
         # rating histories dictionary
         rating_histories = {}       
