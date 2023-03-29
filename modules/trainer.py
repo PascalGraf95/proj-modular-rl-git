@@ -305,7 +305,7 @@ class Trainer:
         self.clone_model_dictionary = create_model_dictionary_from_path(clone_path)
     
 
-    def create_tournament_schedule(self, tournament_type="round_robin"):
+    def create_tournament_schedule(self, num_repeat = 1, tournament_type="round_robin"):
         """
         Creates a schedule for a tournament of different agents playing against each other.
         :param tournament_type: The type of tournament to be created. Currently only "round_robin" is supported.
@@ -314,9 +314,10 @@ class Trainer:
         if tournament_type == "round_robin":
             n = len(self.model_dictionary.keys())
             self.tournament_schedule = list()
-            for i in range(n-1):
-                for j in range(i+1, n):
-                    self.tournament_schedule.append([list(self.model_dictionary.keys())[i], list(self.model_dictionary.keys())[j]])
+            for _ in range(num_repeat):
+                for i in range(n-1):
+                    for j in range(i+1, n):
+                        self.tournament_schedule.append([list(self.model_dictionary.keys())[i], list(self.model_dictionary.keys())[j]])
         print("Created Tournament Schedule with {} games".format(len(self.tournament_schedule)))
         
     def rating_period_changed(self, path):
@@ -385,9 +386,37 @@ class Trainer:
                 game_id_b = agent_game_histories[agent_b].iloc[-1]['game_id'] + 1
             else:
                 game_id_b = 0
-            # add game to agent game history
-            agent_game_history_df_a = agent_game_history_df_a.append({'game_id': game_id_a, 'opponent': agent_b, 'score': score_a, 'opponent_score': score_b, 'rating_self': rating_a, 'rating_deviation_self': rating_deviation_a, 'volatility_self': volatility_a, 'rating_opponent': rating_b, 'rating_deviation_opponent': rating_deviation_b, 'volatility_opponent': volatility_b}, ignore_index=True)
-            agent_game_history_df_b = agent_game_history_df_b.append({'game_id': game_id_b, 'opponent': agent_a, 'score': score_b, 'opponent_score': score_a, 'rating_self': rating_b, 'rating_deviation_self': rating_deviation_b, 'volatility_self': volatility_b, 'rating_opponent': rating_a, 'rating_deviation_opponent': rating_deviation_a, 'volatility_opponent': volatility_a}, ignore_index=True)
+            
+            new_row = {
+                'game_id': game_id_a,
+                'opponent': agent_b,
+                'score': score_a,
+                'opponent_score': score_b,
+                'rating_self': rating_a,
+                'rating_deviation_self': rating_deviation_a,
+                'volatility_self': volatility_a,
+                'rating_opponent': rating_b,
+                'rating_deviation_opponent': rating_deviation_b,
+                'volatility_opponent': volatility_b
+            }
+
+            agent_game_history_df_a = pd.concat([agent_game_history_df_a, pd.DataFrame([new_row])], ignore_index=True)
+
+            new_row = {
+                'game_id': game_id_b,
+                'opponent': agent_a,
+                'score': score_b,
+                'opponent_score': score_a,
+                'rating_self': rating_b,
+                'rating_deviation_self': rating_deviation_b,
+                'volatility_self': volatility_b,
+                'rating_opponent': rating_a,
+                'rating_deviation_opponent': rating_deviation_a,
+                'volatility_opponent': volatility_a
+            }
+
+            agent_game_history_df_b = pd.concat([agent_game_history_df_b, pd.DataFrame([new_row])], ignore_index=True)
+
             # update agent game history
             agent_game_histories[agent_a] = agent_game_history_df_a
             agent_game_histories[agent_b] = agent_game_history_df_b
@@ -734,15 +763,14 @@ class Trainer:
                     print("Playing Game {} of {} from tournament schedule".format(self.current_tournament_fixture_idx+1,
                                                                                   len(self.tournament_schedule)))
                     self.games_played_in_fixture = 0
-                    # 
+                    # Check if the tournament is over
                     if self.current_tournament_fixture_idx >= len(self.tournament_schedule):
                         break
 
                     player_keys = self.tournament_schedule[self.current_tournament_fixture_idx]
                     self.learner.load_checkpoint_by_mode.remote(player_keys[0], player_keys[1])
 
-                    [actor.update_actor_network.remote(
-                        self.learner.get_actor_network_weights.remote(True)) for actor in self.actors]
+                    [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True)) for actor in self.actors]
                     [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(True))
                      for actor in self.actors]
                 # check if the rating period changed

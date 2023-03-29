@@ -19,7 +19,8 @@
                 "--train_algorithm", "SAC",
                 "--game_results_path", "C:\\repos\\Airhockey_Agent_Weights\\game_results.csv",
                 "--rating_history_path", "C:\\repos\\Airhockey_Agent_Weights\\rating_history.csv",
-                "-gpf", "100"
+                "-gpf", "1",
+                "--repeat_tournament_schedule", "1000"
               ]
         }
     ]
