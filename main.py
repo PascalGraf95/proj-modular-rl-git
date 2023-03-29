@@ -89,7 +89,7 @@ def main():
     trainer.create_model_dictionaries(model_path, clone_path)
     # With the model dictionaries create a tournament schedule can be created where each model plays against every
     # other model. This is only necessary for self-play environments in tournament mode.
-    trainer.create_tournament_schedule(tournament_type=args.repeat_tournament_schedule, center_player=args.center_player)
+    trainer.create_tournament_schedule(num_repeat=args.repeat_tournament_schedule, tournament_type=args.tournament_type, center_player=args.center_player)
 
     # Parse the trainer configuration (make sure to select the right key)
     trainer.parse_training_parameters(args.training_parameters[0], args.training_parameters[1])
