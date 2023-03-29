@@ -302,23 +302,50 @@ class Trainer:
     # region Misc
     def create_model_dictionaries(self, model_path, clone_path):
         self.model_dictionary = create_model_dictionary_from_path(model_path)
-        self.clone_model_dictionary = create_model_dictionary_from_path(clone_path)
-    
+        self.clone_model_dictionary = create_model_dictionary_from_path(clone_path)    
 
-    def create_tournament_schedule(self, num_repeat = 1, tournament_type="round_robin"):
+    def create_tournament_schedule(self, num_repeat = 1, tournament_type="round_robin", center_player='Agent_0'):
         """
         Creates a schedule for a tournament of different agents playing against each other.
         :param tournament_type: The type of tournament to be created. Currently only "round_robin" is supported.
         :return: A list of tuples containing the names of the agents to be played against each other.
         """
+        # Create a round robin tournament schedule
+        # A round robin tournament plays each agent against every other agent once.
         if tournament_type == "round_robin":
             n = len(self.model_dictionary.keys())
             self.tournament_schedule = list()
+            # Repeat the tournament schedule if desired
             for _ in range(num_repeat):
+                # Create a round robin tournament schedule
                 for i in range(n-1):
                     for j in range(i+1, n):
                         self.tournament_schedule.append([list(self.model_dictionary.keys())[i], list(self.model_dictionary.keys())[j]])
-        print("Created Tournament Schedule with {} games".format(len(self.tournament_schedule)))
+        # Create a 'center player' tournament schedule
+        # A 'center player' tournament plays a given agent against every other agent once.
+        elif tournament_type == "center_player":
+            # Check if the given center player is in the model dictionary
+            if center_player not in self.model_dictionary.keys():
+                raise ValueError(f"Center player '{center_player}' not in model dictionary.")
+            
+            self.tournament_schedule = list()
+            # Remove the center player from the model dictionary
+            players = self.model_dictionary.keys()
+            players.remove(center_player)
+            # Repeat the tournament schedule if desired
+            for _ in range(num_repeat):
+                # Divide the remaining players into pairs
+                pairs = list()
+                for i in range(0, len(players), 2):
+                    pairs.append([players[i], players[i+1]] if i+1 < len(players) else None)
+                # Create the tournament schedule for the center player            
+                for pair in pairs:
+                    if pair[1]:
+                        self.tournament_schedule.append([center_player, pair[0]])
+                        self.tournament_schedule.append([center_player, pair[1]])
+                    else:
+                        self.tournament_schedule.append([center_player, pair[0]])
+        print(f"Created Tournament Schedule with {len(self.tournament_schedule)} games in {tournament_type} format.")
         
     def rating_period_changed(self, path):
         """

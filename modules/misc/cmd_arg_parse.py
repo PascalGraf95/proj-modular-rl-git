@@ -46,6 +46,7 @@ class CmdArgParse:
                                                                 "tournament schedule.",
                             type=int, default=10, required=False)
         parser.add_argument('-rts', '--repeat_tournament_schedule', help="Number of times the tournament schedule will be repeated.", type=int, default=1, required=False)
+        parser.add_argument('-cpl', '--center_player', help="Define a center player for the 'center_player' tournament mode.", type=str, default=None, required=False)
         parser.add_argument('-gr', '--game_results_path', help="Path to the history csv file containing all "
                                                           "played matches used to update player ratings.",
                             type=str, default="./training/game_results.csv", required=False)
