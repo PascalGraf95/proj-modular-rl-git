@@ -1,0 +1,5 @@
+player_key,rating,rating_deviation,volatility
+Agent3,1700,300,0.06
+Agent2,1550,100,0.06
+Agent1,1400,30,0.06
+Agent0,1500,200,0.06

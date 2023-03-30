@@ -5,7 +5,8 @@ from modules.misc.replay_buffer import FIFOBuffer, PrioritizedBuffer
 from modules.misc.logger import GlobalLogger
 from modules.misc.utility import getsize, get_exploration_policies
 from modules.misc.model_path_handling import create_model_dictionary_from_path
-from modules.misc.glicko2 import calculate_updated_glicko2
+from modules.misc.glicko2 import calculate_updated_glicko2, calculate_normalized_score
+from modules.misc.elo import calculate_updated_elo
 
 import os
 import numpy as np
@@ -94,6 +95,9 @@ class Trainer:
         self.model_dictionary = None
         self.clone_model_dictionary = None
 
+        # - Rating during Self-Play Training -
+        self.elo_starting_rating = 1500
+
         # - Self-Play Tournament -
         # In case of self-play where an agent competes with another agent a tournament can be arranged, where each
         # agent in the model dictionary plays against each agent in the clone model dictionary. The tournament
@@ -110,6 +114,8 @@ class Trainer:
         self.rating_history_path = None
         # keep track of the rating period to update the rating of the agents after the period is over
         self.rating_period = 0
+        # store current ratings of the agents during training
+        self.ratings = {}
 
         # endregion
 
@@ -393,14 +399,15 @@ class Trainer:
             agent_a = game['player_key_a']
             agent_b = game['player_key_b']
             # get agent ratings
-            rating_a = rating_histories[agent_a].iloc[-1]['rating']
-            rating_b = rating_histories[agent_b].iloc[-1]['rating']
+            # make sure rating histories is dataframe            
+            rating_a = rating_histories.loc[rating_histories['player_key'] == agent_a].iloc[-1]['rating']
+            rating_b = rating_histories.loc[rating_histories['player_key'] == agent_b].iloc[-1]['rating']
             # get agent rating deviations
-            rating_deviation_a = rating_histories[agent_a].iloc[-1]['rating_deviation']
-            rating_deviation_b = rating_histories[agent_b].iloc[-1]['rating_deviation']
+            rating_deviation_a = rating_histories.loc[rating_histories['player_key'] == agent_a].iloc[-1]['rating_deviation']
+            rating_deviation_b = rating_histories.loc[rating_histories['player_key'] == agent_b].iloc[-1]['rating_deviation']
             # get agent volatility
-            volatility_a = rating_histories[agent_a].iloc[-1]['volatility']
-            volatility_b = rating_histories[agent_b].iloc[-1]['volatility']
+            volatility_a = rating_histories.loc[rating_histories['player_key'] == agent_a].iloc[-1]['volatility']
+            volatility_b = rating_histories.loc[rating_histories['player_key'] == agent_b].iloc[-1]['volatility']
             # get agent scores
             score_a = game['score_a']
             score_b = game['score_b']
@@ -451,11 +458,11 @@ class Trainer:
         # calculate new ratings based on game results for each agent
         for agent_name, game_history_df in agent_game_histories.items():
             # get current agent rating
-            rating = rating_histories[agent_name].iloc[-1]['rating']
+            rating = rating_histories.loc[rating_histories['player_key'] == agent_name].iloc[-1]['rating']
             # get current agent rating deviation
-            rating_deviation = rating_histories[agent_name].iloc[-1]['rating_deviation']
+            rating_deviation = rating_histories.loc[rating_histories['player_key'] == agent_name].iloc[-1]['rating_deviation']
             # get current agent volatility
-            volatility = rating_histories[agent_name].iloc[-1]['volatility']
+            volatility = rating_histories.loc[rating_histories['player_key'] == agent_name].iloc[-1]['volatility']
             # calculate new rating
             rating_updated, rating_deviation_updated, volatility_updated = calculate_updated_glicko2(rating=rating, rating_deviation=rating_deviation, volatility=volatility, opponents_in_period=game_history_df)          
             # open csv file to append new ratings for current agent
@@ -470,7 +477,7 @@ class Trainer:
         """
         Get rating history for all agents in tournament.       
         :param path: path to rating history csv-file
-        :return: rating history dictionary
+        :return: rating history dataframe
         """
         # rating histories dictionary
         rating_histories = {}       
@@ -497,11 +504,11 @@ class Trainer:
                     writer = csv.writer(file)
                     # write initial rating values
                     writer.writerow([agent, 1500, 350, 0.06])
-            # get rating history to pd.DataFrame
-            rating_history = pd.read_csv(path)
-            # add rating history to dictionary
-            rating_histories[agent] = rating_history
-        return rating_histories
+        # get rating history to pd.DataFrame
+        rating_history = pd.read_csv(path)
+            # # add rating history to dictionary
+            # rating_histories[agent] = rating_history
+        return rating_history
 
     def async_save_agent_models(self, training_step):
         """"""
@@ -556,7 +563,8 @@ class Trainer:
             # Receiving the latest state from its environment each actor chooses an action according to its policy
             # and/or its exploration algorithm. Furthermore, the reward and the info about the environment state (done)
             # is processed and stored in a local replay buffer for each actor.
-            actors_ready = [actor.play_one_step.remote(training_step) for actor in self.actors]
+            actors_ready = [actor.play_one_step.remote(training_step) for actor in self.actors]           
+            
             # endregion
 
             # region --- Global Buffer and Logger ---
@@ -634,6 +642,57 @@ class Trainer:
             [self.global_logger.log_dict.remote(
                 actor.get_exploration_logs.remote(), training_step, self.logging_frequency)
                 for actor in self.actors]
+            # if the agent is trained in self-play mode, calculate the elo and glicko2 ratings of the agents and log them
+            # to the tensorboard.            
+            for idx, actor in enumerate(self.actors):
+                # initialize ratings if the actor is not in the dictionary yet
+                if idx not in self.ratings.keys():
+                    self.ratings[idx] = {'elo_model': 1500, 'elo_clone': 1500, 'glicko_model': {'rating': 1500, 'rd': 350, 'vol': 0.06}, 'glicko_clone': {'rating': 1500, 'rd': 350, 'vol': 0.06}}
+
+                # get the result of the last match played
+                new_match_played_result = actor.get_game_result.remote()
+                ray.wait(actors_ready)
+                new_match_played_result = ray.get(new_match_played_result)
+                # if new match played, update ratings
+                if not new_match_played_result is None and len(new_match_played_result) > 0:
+                    # update elo ratings
+                    elo_model, elo_clone = calculate_updated_elo(self.ratings[idx]['elo_model'], self.ratings[idx]['elo_clone'], calculate_normalized_score(new_match_played_result[0], new_match_played_result[1]))
+                    # update glicko2 ratings
+                    glicko_params_model = {
+                        'game_id': 0,
+                        'opponent': self.clone_model_dictionary.keys(),
+                        'score': new_match_played_result[0],
+                        'opponent_score': new_match_played_result[1],
+                        'rating_self': self.ratings[idx]['glicko_model']['rating'],
+                        'rating_deviation_self': self.ratings[idx]['glicko_model']['rd'],
+                        'volatility_self': self.ratings[idx]['glicko_model']['vol'],
+                        'rating_opponent': self.ratings[idx]['glicko_clone']['rating'],
+                        'rating_deviation_opponent': self.ratings[idx]['glicko_clone']['rd'],
+                        'volatility_opponent': self.ratings[idx]['glicko_clone']['vol']
+                    }
+                    glicko_params_clone = {
+                        'game_id': 0,
+                        'opponent': self.model_dictionary.keys(),
+                        'score': new_match_played_result[1],
+                        'opponent_score': new_match_played_result[0],
+                        'rating_self': self.ratings[idx]['glicko_clone']['rating'],
+                        'rating_deviation_self': self.ratings[idx]['glicko_clone']['rd'],
+                        'volatility_self': self.ratings[idx]['glicko_clone']['vol'],
+                        'rating_opponent': self.ratings[idx]['glicko_model']['rating'],
+                        'rating_deviation_opponent': self.ratings[idx]['glicko_model']['rd'],
+                        'volatility_opponent': self.ratings[idx]['glicko_model']['vol']
+                    }
+                    # convert dictionary to pandas dataframe
+                    glicko_params_model = pd.DataFrame(glicko_params_model)
+                    glicko_params_clone = pd.DataFrame(glicko_params_clone)
+                    # calculate new ratings
+                    glicko_rating_model, glicko_rating_deviation_model, glicko_volatility_model = calculate_updated_glicko2(rating=self.ratings[idx]['glicko_model']['rating'], rating_deviation=self.ratings[idx]['glicko_model']['rd'], volatility=self.ratings[idx]['glicko_model']['vol'], opponents_in_period=glicko_params_model)
+                    glicko_rating_clone, glicko_rating_deviation_clone, glicko_volatility_clone = calculate_updated_glicko2(rating=self.ratings[idx]['glicko_model']['rating'], rating_deviation=self.ratings[idx]['glicko_model']['rd'], volatility=self.ratings[idx]['glicko_model']['vol'], opponents_in_period=glicko_params_clone)
+                    # update rating dictionary with current ratings  
+                    self.ratings[idx] = {'elo_model': elo_model, 'elo_clone': elo_clone, 'glicko_model': {'rating': glicko_rating_model, 'rd': glicko_rating_deviation_model, 'vol': glicko_volatility_model}, 'glicko_clone': {'rating': glicko_rating_clone, 'rd': glicko_rating_deviation_clone, 'vol': glicko_volatility_clone}}
+
+                self.global_logger.log_dict.remote({f"Rating/Agent{idx}Elo": self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
+                self.global_logger.log_dict.remote({f"Rating/Agent{idx}Glicko": self.ratings[idx]['glicko_model']['rating']}, training_step, self.logging_frequency)                
             # endregion
 
             # region --- Waiting ---

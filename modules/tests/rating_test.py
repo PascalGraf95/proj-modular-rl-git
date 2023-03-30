@@ -5,6 +5,7 @@ import csv
 import math
 from modules.misc.elo import *
 from modules.training_algorithms.agent_blueprint import Actor as ab
+from modules import trainer as tr
 import unittest
 
 class TestElo(unittest.TestCase):
@@ -80,21 +81,27 @@ class TestGlicko2(unittest.TestCase):
             shutil.rmtree(self.test_tourney_results_path)
         # create new test tourney results directory. Copy everything from rating test directory to rating test results directory
         shutil.copytree(self.test_tourney_path, self.test_tourney_results_path)        
-        # create instance of Actor class
-        actor = ab(0, 0, 'testing', 'MLAgentsV18', 'None', 'None', 'None', 'test', 'test')
+        # create instance of Trainer class
+        trainer = tr.Trainer()
+        # Add test agents to model dictionary
+        trainer.model_dictionary = {}
+        trainer.model_dictionary['Agent0'] = 0
+        trainer.model_dictionary['Agent1'] = 0
+        trainer.model_dictionary['Agent2'] = 0
+        trainer.model_dictionary['Agent3'] = 0
         # run glicko2 calculation
-        ab.update_ratings(actor, self.test_tourney_results_path)         
+        trainer.update_ratings(self.test_tourney_results_path + '/' + self.game_results, self.test_tourney_results_path + '/' + self.player_results_file)        
         # check if new ratings are correct
         # get agent0 rating history to pd.DataFrame
-        agent0_rating_history = pd.read_csv(self.test_tourney_results_path + '/agent0/' + self.player_results_file)
+        rating_history = pd.read_csv(self.test_tourney_results_path + '/' + self.player_results_file)
         # get last row of agent0 rating history
-        last_row = agent0_rating_history.iloc[-1]
+        last_row_agent0 = rating_history.loc[rating_history['player_key'] == 'Agent0'].iloc[-1]
         # check if new rating is correct
-        self.assertEqual(round(last_row['rating'], 2), 1464.05)
+        self.assertEqual(round(last_row_agent0['rating'], 2), 1464.05)
         # check if new rating deviation is correct
-        self.assertEqual(round(last_row['rating_deviation'], 2), 151.52)
+        self.assertEqual(round(last_row_agent0['rating_deviation'], 2), 151.52)
         # check if new volatility is correct
-        self.assertEqual(HelperFunctions.truncate(last_row['volatility'], 5), 0.05999)
+        self.assertEqual(HelperFunctions.truncate(last_row_agent0['volatility'], 5), 0.05999)
 
 if __name__ == '__main__':
     unittest.main()

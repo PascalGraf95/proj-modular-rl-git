@@ -224,6 +224,18 @@ class Actor:
     # endregion
 
     # region Self Play Rating
+    def get_game_result(self):
+        """
+        This function gets the latest game results from the respective Unity side channel.
+        :return: The latest game results.
+        """
+        # Read the latest game results from the side channel.
+        game_result = self.get_side_channel_information('game_results')
+        if game_result:
+            return game_result
+        return None
+        
+
     def update_history_with_latest_game_results(self, history_path, player_keys):
         """
         This function gets the latest game results from the respective Unity side channel, then prompts the update
