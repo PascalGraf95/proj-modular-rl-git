@@ -381,12 +381,16 @@ class Trainer:
         rating_period = pd.DataFrame(columns=["game_id", "player_key_a", "player_key_b", "score_a", "score_b", "rating_period"])
         # start from last row and work backwards until a former rating period is reached
         for _, row in game_results.iloc[::-1].iterrows():
-            if row['rating_period'] != game_results.iloc[-1]['rating_period']:
+            if row['rating_period'] == 0:
+                # add to current rating period
+                rating_period = pd.concat([rating_period, row.to_frame().T], ignore_index=True)
+            elif row['rating_period'] == game_results.iloc[-1]['rating_period'] - 1:
+                # add to current rating period
+                rating_period = pd.concat([rating_period, row.to_frame().T], ignore_index=True)                
+            elif row['rating_period'] == game_results.iloc[-1]['rating_period'] - 2:
                 # former rating period reached
                 break
-            else:
-                # add to current rating period
-                rating_period = rating_period.append(row, ignore_index=True)
+                
 
         # create for each agent a game history dataframe for the current rating period
         agent_game_histories = {}
@@ -831,8 +835,17 @@ class Trainer:
         # In case of self-play the clone network needs the latest weights as well.
         [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(True))
          for actor in self.actors]
+        # Create game results and rating history files if they don't exist yet
+        if not os.path.exists(self.game_results_path):
+            with open(self.game_results_path, 'w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(["game_id", "player_key_a", "player_key_b", "score_a", "score_b", "rating_period"])
+        if not os.path.exists(self.rating_history_path):
+            with open(self.rating_history_path, 'w', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow(['player_key', 'rating', 'rating_deviation', 'volatility'])
 
-        while True:
+        while True:            
             # Receiving the latest state from its environment each actor chooses an action according to its policy.
             actors_ready = [actor.play_one_step.remote(0) for actor in self.actors]
             new_match_played = [actor.update_history_with_latest_game_results.remote(
@@ -843,6 +856,10 @@ class Trainer:
             ray.wait(actors_ready)
             new_match_played = ray.get(new_match_played)
             if new_match_played[0]:
+                # check if the rating period changed
+                if self.rating_period_changed(path=self.game_results_path):
+                    # update ratings
+                    self.update_ratings(rating_path=self.rating_history_path, game_results_path=self.game_results_path)
                 self.games_played_in_fixture += 1
                 if self.games_played_in_fixture >= self.games_per_fixture:
                     self.current_tournament_fixture_idx += 1
@@ -859,10 +876,7 @@ class Trainer:
                     [actor.update_actor_network.remote(self.learner.get_actor_network_weights.remote(True)) for actor in self.actors]
                     [actor.update_clone_network.remote(self.learner.get_clone_network_weights.remote(True))
                      for actor in self.actors]
-                # check if the rating period changed
-                if self.rating_period_changed(path=self.game_results_path):
-                    # update ratings
-                    self.update_ratings(rating_path=self.rating_history_path, game_results_path=self.game_results_path)
+                
 
 
 

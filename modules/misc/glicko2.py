@@ -2,15 +2,15 @@ import math
 import pandas as pd
 
 # calculate standard Glicko2
-def calculate_updated_glicko2(rating, rating_deviation, volatility, opponents_in_period, tau=0.5):
+def calculate_updated_glicko2(rating, rating_deviation, volatility, opponents_in_period, tau=0.2):
     """
     Function to calculate an updated glicko rating for a player a given the score of a played match between player a and
     player b as well as their previous rating estimates.
-    :param rating:
-    :param rating_deviation:
-    :param volatility:
-    :param opponents_in_period:
-    :param tau:
+    :param rating: Rating of player
+    :param rating_deviation: Rating deviation of player
+    :param volatility: Volatility of player
+    :param opponents_in_period: Dataframe containing the opponents of player a in the rating period
+    :param tau: System constant which constrains the change in volatility over time
     :return:
     """
     # Step 1: Determine a rating and RD for each player at the onset of the rating period. The
