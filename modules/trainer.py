@@ -468,7 +468,7 @@ class Trainer:
             # get current agent volatility
             volatility = rating_histories.loc[rating_histories['player_key'] == agent_name].iloc[-1]['volatility']
             # calculate new rating
-            rating_updated, rating_deviation_updated, volatility_updated = calculate_updated_glicko2(rating=rating, rating_deviation=rating_deviation, volatility=volatility, opponents_in_period=game_history_df)          
+            rating_updated, rating_deviation_updated, volatility_updated = calculate_updated_glicko2(rating=rating, rating_deviation=rating_deviation, volatility=volatility, opponents_in_period=game_history_df, tau=0.3)          
             # open csv file to append new ratings for current agent
             with open(rating_path, 'a', newline='') as file:
                 # csv writer
@@ -482,9 +482,7 @@ class Trainer:
         Get rating history for all agents in tournament.       
         :param path: path to rating history csv-file
         :return: rating history dataframe
-        """
-        # rating histories dictionary
-        rating_histories = {}       
+        """  
         for agent in self.model_dictionary.keys():
             # check if agent exists in rating history csv-file
             # if not, create new rating history for agent

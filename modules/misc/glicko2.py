@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import pandas as pd
 
 # calculate standard Glicko2
@@ -107,21 +108,20 @@ def _calculate_f(x, delta, v, tau, rating_deviation, a):
 
 # calculate volatility
 def _calculate_volatility(volatility, delta, v, tau, rating_deviation, epsilon=0.000001):
-    a = math.log(volatility ** 2)
+    a = np.log(volatility ** 2)
     if delta ** 2 > (rating_deviation ** 2) + v:
-        b = math.log(delta ** 2 - (rating_deviation ** 2) - v)
+        b = np.log(delta ** 2 - (rating_deviation ** 2) - v)
     else:
         k = 1
-        while True:
-            if _calculate_f(a - k * tau, delta, v, tau, rating_deviation, a) < 0:
-                k += 1
-            else:
-                break
+        while _calculate_f(a - k * tau, delta, v, tau, rating_deviation, a) < 0:
+            k += 1            
         b = a - k * tau
     f_a = _calculate_f(a, delta, v, tau, rating_deviation, a)
     f_b = _calculate_f(b, delta, v, tau, rating_deviation, a)
-    while True:
-        if abs(b - a) > epsilon:
+    while abs(b - a) > epsilon:
+        if abs(b - a) <= epsilon:
+            break
+        else:
             c = a + ((a - b) * f_a) / (f_b - f_a)
             f_c = _calculate_f(c, delta, v, tau, rating_deviation, a)
             if f_c * f_b <= 0:
@@ -130,9 +130,7 @@ def _calculate_volatility(volatility, delta, v, tau, rating_deviation, epsilon=0
             else:
                 f_a = f_a / 2
             b = c
-            f_b = f_c
-        else:
-            break
+            f_b = f_c        
     volatility_updated = math.exp(a / 2)
     return volatility_updated
 
