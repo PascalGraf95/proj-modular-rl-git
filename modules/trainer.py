@@ -169,9 +169,9 @@ class Trainer:
         """
         # region - Multiprocessing Initialization and Actor Number Determination
         # Initialize ray for parallel multiprocessing.
-        #ray.init()
+        ray.init()
         # Alternatively, use the following code line to enable debugging (with ray >= 2.0.X)
-        ray.init(logging_level=logging.INFO, local_mode=True)
+        # ray.init(logging_level=logging.INFO, local_mode=True)
 
         # If the connection is established directly with the Unity Editor or if we are in testing mode, override
         # the number of actors with 1.
@@ -647,6 +647,10 @@ class Trainer:
             # if the agent is trained in self-play mode, calculate the elo and glicko2 ratings of the agents and log them
             # to the tensorboard.            
             for idx, actor in enumerate(self.actors):
+                # if clone network is updated the clone should get the current model rating
+                if clone_updated[idx]:
+                    self.ratings[idx]['elo_clone'] = self.ratings[idx]['elo_model']
+                    self.ratings[idx]['glicko_clone'] = self.ratings[idx]['glicko_model']
                 # initialize ratings if the actor is not in the dictionary yet
                 if idx not in self.ratings.keys():
                     self.ratings[idx] = {'elo_model': 1500, 'elo_clone': 1500, 'glicko_model': {'rating': 1500, 'rd': 350, 'vol': 0.06}, 'glicko_clone': {'rating': 1500, 'rd': 350, 'vol': 0.06}}
