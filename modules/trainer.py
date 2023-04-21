@@ -697,8 +697,15 @@ class Trainer:
                     # update rating dictionary with current ratings  
                     self.ratings[idx] = {'elo_model': elo_model, 'elo_clone': elo_clone, 'glicko_model': {'rating': glicko_rating_model, 'rd': glicko_rating_deviation_model, 'vol': glicko_volatility_model}, 'glicko_clone': {'rating': glicko_rating_clone, 'rd': glicko_rating_deviation_clone, 'vol': glicko_volatility_clone}}
 
-                self.global_logger.log_dict.remote({f"Rating/Agent{idx}Elo": self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
-                self.global_logger.log_dict.remote({f"Rating/Agent{idx}Glicko": self.ratings[idx]['glicko_model']['rating']}, training_step, self.logging_frequency)                
+                self.global_logger.log_dict.remote({"Rating/Agent{:03d}Elo".format(idx): self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
+                self.global_logger.log_dict.remote({"Rating/Agent{:03d}Glicko".format(idx): self.ratings[idx]['glicko_model']['rating']}, training_step, self.logging_frequency)
+                self.global_logger.log_dict.remote({"RatingClones/Agent{:03d}CloneElo".format(idx): self.ratings[idx]['elo_clone']}, training_step, self.logging_frequency)
+                self.global_logger.log_dict.remote({"RatingClones/Agent{:03d}CloneGlicko".format(idx): self.ratings[idx]['glicko_clone']['rating']}, training_step, self.logging_frequency)
+                self.global_logger.log_dict.remote({"Rating/Agent{:03d}Elo".format(idx): self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
+                self.global_logger.log_dict.remote({"AdditionalGlickoParams/Agent{:03d}RD".format(idx): self.ratings[idx]['glicko_model']['rd']}, training_step, self.logging_frequency) 
+                self.global_logger.log_dict.remote({"AdditionalGlickoParams/Agent{:03d}CloneRD".format(idx): self.ratings[idx]['glicko_clone']['rd']}, training_step, self.logging_frequency)
+                self.global_logger.log_dict.remote({"AdditionalGlickoParams/Agent{:03d}Volatility".format(idx): self.ratings[idx]['glicko_model']['vol']}, training_step, self.logging_frequency) 
+                self.global_logger.log_dict.remote({"AdditionalGlickoParams/Agent{:03d}CloneVolatility".format(idx): self.ratings[idx]['glicko_clone']['vol']}, training_step, self.logging_frequency)            
             # endregion
 
             # region --- Waiting ---
