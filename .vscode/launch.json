@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Aktuelle Datei",
+            "name": "Main",
             "type": "python",
             "request": "launch",
             "program": "main.py",
@@ -17,6 +17,20 @@
                 "--mode", "training",
                 "--env_path", "C:\\repos\\proj-air-hockey\\Builds\\AirHockey.exe",
                 "--train_algorithm", "SAC"
+              ]
+        },
+        {
+            "name": "Plot",
+            "type": "python",
+            "request": "launch",
+            "program": "plot.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "python.autoComplete.extraPaths": ["./modules"],
+            "args": [
+                "--mode", "rating",
+                "--path", "C:\\repos\\Airhockey_Agent_Weights\\in_use\\rating_history.csv",
+                "--show", "true"
               ]
         }
     ]
