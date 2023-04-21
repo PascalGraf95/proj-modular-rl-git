@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 # calculate standard Glicko2
-def calculate_updated_glicko2(rating, rating_deviation, volatility, opponents_in_period, tau=0.2):
+def calculate_updated_glicko2(rating, rating_deviation, volatility, opponents_in_period, tau=0.2, rd_threshold=30):
     """
     Function to calculate an updated glicko rating for a player a given the score of a played match between player a and
     player b as well as their previous rating estimates.
@@ -23,6 +23,8 @@ def calculate_updated_glicko2(rating, rating_deviation, volatility, opponents_in
 
     # create to store the opponents glicko2 calculations
     opponents = pd.DataFrame(columns=['my', 'phi', 'g', 'E', 's'])
+    # apply rating deviation threshold. If rating deviation is below threshold, set it to threshold
+    rating_deviation = max(rating_deviation, rd_threshold)
     # Step 2: Convert ratings to Glicko-2 scale
     converted_rating, converted_rating_deviation = _convert_to_glicko2_scale(rating, rating_deviation)
     for index, opponent in opponents_in_period.iterrows():
