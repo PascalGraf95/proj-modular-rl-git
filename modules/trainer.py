@@ -524,11 +524,11 @@ class Trainer:
         :param training_step: training step
         """
         # update elo ratings
-        if calculate_elo:
+        if calculate_elo is True:
             elo_model, elo_clone = calculate_updated_elo(self.ratings[idx]['elo_model'], self.ratings[idx]['elo_clone'], calculate_normalized_score(game_result[0], game_result[1]))
         # update glicko2 ratings
         # check if dataframe has been created
-        if calculate_glicko2:
+        if calculate_glicko2 is True:
             if self.model_game_history is None or self.model_game_history.empty:
                 agent_game_history_df = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
                 self.model_game_history = agent_game_history_df.copy()
@@ -577,10 +577,10 @@ class Trainer:
             self.clone_game_history = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
 
         # log ratings
-        if calculate_elo:
+        if calculate_elo is True:
             self.global_logger.log_dict.remote({"Rating/Agent{:03d}Elo".format(idx): self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
             self.global_logger.log_dict.remote({"RatingClones/Agent{:03d}CloneElo".format(idx): self.ratings[idx]['elo_clone']}, training_step, self.logging_frequency)
-        if calculate_glicko2:
+        if calculate_glicko2 is True:
             self.global_logger.log_dict.remote({"Rating/Agent{:03d}Glicko".format(idx): self.ratings[idx]['glicko_model']['rating']}, training_step, self.logging_frequency)        
             self.global_logger.log_dict.remote({"RatingClones/Agent{:03d}CloneGlicko".format(idx): self.ratings[idx]['glicko_clone']['rating']}, training_step, self.logging_frequency)
             self.global_logger.log_dict.remote({"Rating/Agent{:03d}Elo".format(idx): self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
