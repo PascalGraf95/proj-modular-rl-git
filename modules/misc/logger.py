@@ -121,6 +121,12 @@ class GlobalLogger:
         self.episode_reward_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
         self.episode_length_deque = [deque(maxlen=1000) for i in range(self.actor_num)]
 
+    def reset_rating(self, clone_updated):
+        if not clone_updated:
+            return False
+        else:
+            return True
+
 
     def get_elapsed_time(self):
         # Returns the elapsed time since creation of this logger at the beginning of the training process.
