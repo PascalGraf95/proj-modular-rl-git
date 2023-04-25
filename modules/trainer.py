@@ -576,6 +576,9 @@ class Trainer:
             self.model_game_history = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
             self.clone_game_history = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
 
+        # update rating dictionary with current ratings  
+        self.ratings[idx] = {'elo_model': elo_model, 'elo_clone': elo_clone, 'glicko_model': {'rating': glicko_rating_model, 'rd': glicko_rating_deviation_model, 'vol': glicko_volatility_model}, 'glicko_clone': {'rating': glicko_rating_clone, 'rd': glicko_rating_deviation_clone, 'vol': glicko_volatility_clone}}
+        
         # log ratings
         if calculate_elo is True:
             self.global_logger.log_dict.remote({"Rating/Agent{:03d}Elo".format(idx): self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
