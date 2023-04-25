@@ -121,6 +121,8 @@ class Trainer:
         # store the rating history of the agents
         self.model_game_history = None
         self.clone_game_history = None
+        # select rating mode during self-play training ("elo" or "glicko2" or "both")
+        self.rating_mode = "elo"
 
         # endregion
 
@@ -516,7 +518,7 @@ class Trainer:
             # rating_histories[agent] = rating_history
         return rating_history    
     
-    def rating_logging(self, idx, game_result, training_step, calculate_elo=True, calculate_glicko2=False):
+    def rating_logging(self, idx, game_result, mode):
         """
         Log rating history for each agent.
         :param idx: index of agent
@@ -524,12 +526,12 @@ class Trainer:
         :param training_step: training step
         """
         # update elo ratings
-        if calculate_elo is True:
+        if mode == 'elo':
             elo_model, elo_clone = calculate_updated_elo(self.ratings[idx]['elo_model'], self.ratings[idx]['elo_clone'], calculate_normalized_score(game_result[0], game_result[1]))
             
         # update glicko2 ratings
         # check if dataframe has been created
-        if calculate_glicko2 is True:
+        if mode == 'glicko2':
             if self.model_game_history is None or self.model_game_history.empty:
                 agent_game_history_df = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
                 self.model_game_history = agent_game_history_df.copy()
@@ -578,26 +580,13 @@ class Trainer:
             self.clone_game_history = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
 
         # update rating dictionary with current ratings 
-        if calculate_elo is True and calculate_glicko2 is False:
+        if mode == 'elo':
             self.ratings[idx] = {'elo_model': elo_model, 'elo_clone': elo_clone}
-        elif calculate_glicko2 is True and calculate_elo is False:        
+        elif mode == 'glicko2':       
             self.ratings[idx] = {'glicko_model': {'rating': glicko_rating_model, 'rd': glicko_rating_deviation_model, 'vol': glicko_volatility_model}, 'glicko_clone': {'rating': glicko_rating_clone, 'rd': glicko_rating_deviation_clone, 'vol': glicko_volatility_clone}}
-        elif calculate_glicko2 is True and calculate_elo is True:
+        elif mode == 'both':
             self.ratings[idx] = {'elo_model': elo_model, 'elo_clone': elo_clone, 'glicko_model': {'rating': glicko_rating_model, 'rd': glicko_rating_deviation_model, 'vol': glicko_volatility_model}, 'glicko_clone': {'rating': glicko_rating_clone, 'rd': glicko_rating_deviation_clone, 'vol': glicko_volatility_clone}}
-        
-        
-        # log ratings
-        if calculate_elo is True:
-            self.global_logger.log_dict.remote({"Rating/Agent{:03d}Elo".format(idx): self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
-            self.global_logger.log_dict.remote({"RatingClones/Agent{:03d}CloneElo".format(idx): self.ratings[idx]['elo_clone']}, training_step, self.logging_frequency)
-        if calculate_glicko2 is True:
-            self.global_logger.log_dict.remote({"Rating/Agent{:03d}Glicko".format(idx): self.ratings[idx]['glicko_model']['rating']}, training_step, self.logging_frequency)        
-            self.global_logger.log_dict.remote({"RatingClones/Agent{:03d}CloneGlicko".format(idx): self.ratings[idx]['glicko_clone']['rating']}, training_step, self.logging_frequency)
-            self.global_logger.log_dict.remote({"Rating/Agent{:03d}Elo".format(idx): self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
-            self.global_logger.log_dict.remote({"RatingAdditionalGlickoParams/Agent{:03d}RD".format(idx): self.ratings[idx]['glicko_model']['rd']}, training_step, self.logging_frequency) 
-            self.global_logger.log_dict.remote({"RatingAdditionalGlickoParams/Agent{:03d}CloneRD".format(idx): self.ratings[idx]['glicko_clone']['rd']}, training_step, self.logging_frequency)
-            self.global_logger.log_dict.remote({"RatingAdditionalGlickoParams/Agent{:03d}Volatility".format(idx): self.ratings[idx]['glicko_model']['vol']}, training_step, self.logging_frequency) 
-            self.global_logger.log_dict.remote({"RatingAdditionalGlickoParams/Agent{:03d}CloneVolatility".format(idx): self.ratings[idx]['glicko_clone']['vol']}, training_step, self.logging_frequency)
+              
 
     def async_save_agent_models(self, training_step):
         """"""
@@ -743,8 +732,13 @@ class Trainer:
                 reset_rating = ray.get(reset_rating)
                 if reset_rating is True:
                     print("Ratings updated with clone network update.")
-                    self.ratings[idx]['elo_clone'] = self.ratings[idx]['elo_model']
-                    self.ratings[idx]['glicko_clone'] = self.ratings[idx]['glicko_model']
+                    if self.rating_mode == 'elo':
+                        self.ratings[idx]['elo_clone'] = self.ratings[idx]['elo_model']
+                    elif self.rating_mode == 'glicko2':
+                        self.ratings[idx]['glicko_clone'] = self.ratings[idx]['glicko_model']
+                    elif self.rating_mode == 'both':
+                        self.ratings[idx]['elo_clone'] = self.ratings[idx]['elo_model']
+                        self.ratings[idx]['glicko_clone'] = self.ratings[idx]['glicko_model']
 
                 # get the result of the last match played
                 new_match_played_result = actor.get_game_result.remote()
@@ -755,7 +749,20 @@ class Trainer:
                     self.rating_period.append(0)
                 # if new match played, update ratings
                 if not new_match_played_result is None and len(new_match_played_result) > 0:
-                    self.rating_logging(idx=idx, game_result=new_match_played_result, training_step=training_step)
+                    self.rating_logging(idx=idx, game_result=new_match_played_result, mode=self.rating_mode)
+                
+                # log ratings
+                if self.rating_mode == 'elo':
+                    self.global_logger.log_dict.remote({"Rating/Agent{:03d}Elo".format(idx): self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
+                    self.global_logger.log_dict.remote({"RatingClones/Agent{:03d}CloneElo".format(idx): self.ratings[idx]['elo_clone']}, training_step, self.logging_frequency)
+                if self.rating_mode == 'glicko2':
+                    self.global_logger.log_dict.remote({"Rating/Agent{:03d}Glicko".format(idx): self.ratings[idx]['glicko_model']['rating']}, training_step, self.logging_frequency)        
+                    self.global_logger.log_dict.remote({"RatingClones/Agent{:03d}CloneGlicko".format(idx): self.ratings[idx]['glicko_clone']['rating']}, training_step, self.logging_frequency)
+                    self.global_logger.log_dict.remote({"Rating/Agent{:03d}Elo".format(idx): self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
+                    self.global_logger.log_dict.remote({"RatingAdditionalGlickoParams/Agent{:03d}RD".format(idx): self.ratings[idx]['glicko_model']['rd']}, training_step, self.logging_frequency) 
+                    self.global_logger.log_dict.remote({"RatingAdditionalGlickoParams/Agent{:03d}CloneRD".format(idx): self.ratings[idx]['glicko_clone']['rd']}, training_step, self.logging_frequency)
+                    self.global_logger.log_dict.remote({"RatingAdditionalGlickoParams/Agent{:03d}Volatility".format(idx): self.ratings[idx]['glicko_model']['vol']}, training_step, self.logging_frequency) 
+                    self.global_logger.log_dict.remote({"RatingAdditionalGlickoParams/Agent{:03d}CloneVolatility".format(idx): self.ratings[idx]['glicko_clone']['vol']}, training_step, self.logging_frequency)
                                 
             # endregion
 
