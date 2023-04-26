@@ -732,14 +732,11 @@ class Trainer:
                 reset_rating = ray.get(reset_rating)
                 if reset_rating is True:
                     print("Ratings updated with clone network update.")
-                    if self.rating_mode == 'elo':
+                    if self.rating_mode == 'elo' or self.rating_mode == 'both':
                         self.ratings[idx]['elo_clone'] = self.ratings[idx]['elo_model']
-                    elif self.rating_mode == 'glicko2':
+                    elif self.rating_mode == 'glicko2' or self.rating_mode == 'both':
                         self.ratings[idx]['glicko_clone'] = self.ratings[idx]['glicko_model']
-                    elif self.rating_mode == 'both':
-                        self.ratings[idx]['elo_clone'] = self.ratings[idx]['elo_model']
-                        self.ratings[idx]['glicko_clone'] = self.ratings[idx]['glicko_model']
-
+                    
                 # get the result of the last match played
                 new_match_played_result = actor.get_game_result.remote()
                 ray.wait(actors_ready)
@@ -752,10 +749,10 @@ class Trainer:
                     self.rating_logging(idx=idx, game_result=new_match_played_result, mode=self.rating_mode)
                 
                 # log ratings
-                if self.rating_mode == 'elo':
+                if self.rating_mode == 'elo' or self.rating_mode == 'both':
                     self.global_logger.log_dict.remote({"Rating/Agent{:03d}Elo".format(idx): self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
                     self.global_logger.log_dict.remote({"RatingClones/Agent{:03d}CloneElo".format(idx): self.ratings[idx]['elo_clone']}, training_step, self.logging_frequency)
-                if self.rating_mode == 'glicko2':
+                if self.rating_mode == 'glicko2' or self.rating_mode == 'both':
                     self.global_logger.log_dict.remote({"Rating/Agent{:03d}Glicko".format(idx): self.ratings[idx]['glicko_model']['rating']}, training_step, self.logging_frequency)        
                     self.global_logger.log_dict.remote({"RatingClones/Agent{:03d}CloneGlicko".format(idx): self.ratings[idx]['glicko_clone']['rating']}, training_step, self.logging_frequency)
                     self.global_logger.log_dict.remote({"Rating/Agent{:03d}Elo".format(idx): self.ratings[idx]['elo_model']}, training_step, self.logging_frequency)
