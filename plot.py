@@ -119,7 +119,7 @@ def plot_training(path, title):
     data['Time [h]'] = data['Time [h]'].apply(lambda x: (x - data['Time [h]'].iloc[0]).total_seconds() / 3600)
 
     data_wide = data.pivot(index='Time [h]', columns='Agent', values='Reward')
-    for i in range(8):
+    for i in range(len(tensorboard_files)):
         data_wide[f'Agent {i}'] = data_wide[f'Agent {i}'].ewm(alpha=(1-0.999)).mean()
 
     print(f"Total training time in hours: {hours}")
