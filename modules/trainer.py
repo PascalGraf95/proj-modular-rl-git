@@ -122,7 +122,7 @@ class Trainer:
         self.model_game_history = None
         self.clone_game_history = None
         # select rating mode during self-play training ("elo" or "glicko2" or "both")
-        self.rating_mode = "elo"
+        self.rating_mode = "both"
 
         # endregion
 
@@ -526,12 +526,12 @@ class Trainer:
         :param training_step: training step
         """
         # update elo ratings
-        if mode == 'elo':
+        if mode == 'elo' or mode == 'both':
             elo_model, elo_clone = calculate_updated_elo(self.ratings[idx]['elo_model'], self.ratings[idx]['elo_clone'], calculate_normalized_score(game_result[0], game_result[1]))
             
         # update glicko2 ratings
         # check if dataframe has been created
-        if mode == 'glicko2':
+        if mode == 'glicko2' or mode == 'both':
             if self.model_game_history is None or self.model_game_history.empty:
                 agent_game_history_df = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
                 self.model_game_history = agent_game_history_df.copy()
@@ -572,6 +572,9 @@ class Trainer:
                 glicko_rating_clone, glicko_rating_deviation_clone, glicko_volatility_clone = calculate_updated_glicko2(rating=self.ratings[idx]['glicko_clone']['rating'], rating_deviation=self.ratings[idx]['glicko_clone']['rd'], volatility=self.ratings[idx]['glicko_clone']['vol'], opponents_in_period=self.clone_game_history, tau=0.2)
                 # update rating dictionary with current ratings  
                 self.ratings[idx] = {'elo_model': elo_model, 'elo_clone': elo_clone, 'glicko_model': {'rating': glicko_rating_model, 'rd': glicko_rating_deviation_model, 'vol': glicko_volatility_model}, 'glicko_clone': {'rating': glicko_rating_clone, 'rd': glicko_rating_deviation_clone, 'vol': glicko_volatility_clone}}
+            else:
+                glicko_rating_model, glicko_rating_deviation_model, glicko_volatility_model = self.ratings[idx]['glicko_model']['rating'], self.ratings[idx]['glicko_model']['rd'], self.ratings[idx]['glicko_model']['vol']
+                glicko_rating_clone, glicko_rating_deviation_clone, glicko_volatility_clone = self.ratings[idx]['glicko_clone']['rating'], self.ratings[idx]['glicko_clone']['rd'], self.ratings[idx]['glicko_clone']['vol']
             
             # reset rating period counter
             self.rating_period[idx] = 0
