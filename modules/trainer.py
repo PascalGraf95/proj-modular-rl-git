@@ -315,7 +315,10 @@ class Trainer:
     # region Misc
     def create_model_dictionaries(self, model_path, clone_path):
         self.model_dictionary = create_model_dictionary_from_path(model_path)
-        self.clone_model_dictionary = create_model_dictionary_from_path(clone_path)    
+        if clone_path:
+            self.clone_model_dictionary = create_model_dictionary_from_path(clone_path)
+        else:
+            self.clone_model_dictionary = self.model_dictionary    
 
     def create_tournament_schedule(self, num_repeat = 1, tournament_type="round_robin", center_player='Agent_0'):
         """
@@ -734,7 +737,7 @@ class Trainer:
                 ray.wait(actors_ready)
                 reset_rating = ray.get(reset_rating)
                 if reset_rating is True:
-                    print("Ratings updated with clone network update.")
+                    print(f"{datetime.now()}: Ratings updated with clone network update.")
                     if self.rating_mode == 'elo' or self.rating_mode == 'both':
                         self.ratings[idx]['elo_clone'] = self.ratings[idx]['elo_model']
                     elif self.rating_mode == 'glicko2' or self.rating_mode == 'both':
@@ -930,7 +933,7 @@ class Trainer:
                 self.games_played_in_fixture += 1
                 if self.games_played_in_fixture >= self.games_per_fixture:
                     self.current_tournament_fixture_idx += 1
-                    print("Playing Game {} of {} from tournament schedule".format(self.current_tournament_fixture_idx+1,
+                    print("{}: Playing fixture {} of {} from tournament schedule".format(datetime.now(), self.current_tournament_fixture_idx+1,
                                                                                   len(self.tournament_schedule)))
                     self.games_played_in_fixture = 0
                     # Check if the tournament is over

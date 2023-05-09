@@ -129,8 +129,8 @@ def plot_training(path, title):
     if title is not None:
         sns.lineplot(data=data_wide).set_title(title)
     else:
-        sns.lineplot(data=data_wide).set_title('Durchschnittliche Reward-Entwicklung')    
-    plt.ylabel('Reward')
+        sns.lineplot(data=data_wide).set_title('Reward-Entwicklung')    
+    plt.ylabel('Reward (Exponentiell geglätteter Durchschnitt)')
     return plt
 
 def check_columns(file_path, columns):
