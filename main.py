@@ -87,9 +87,7 @@ def main():
     # key for each model along with the corresponding model paths, the number of steps it's been trained for, the reward
     # it reached and possibly a (elo) rating. The same is done for a clone of the original model in case of self-play.
     trainer.create_model_dictionaries(model_path, clone_path)
-    # With the model dictionaries create a tournament schedule can be created where each model plays against every
-    # other model. This is only necessary for self-play environments in tournament mode.
-    trainer.create_tournament_schedule(num_repeat=args.repeat_tournament_schedule, tournament_type=args.tournament_type, center_player=args.center_player)
+    
 
     # Parse the trainer configuration (make sure to select the right key)
     trainer.parse_training_parameters(args.training_parameters[0], args.training_parameters[1])
@@ -113,6 +111,9 @@ def main():
         trainer.async_testing_loop()
     # The tournament loop plays all matches in the respective schedule and writes their results into a csv file.
     else:
+        # With the model dictionaries create a tournament schedule can be created where each model plays against every
+        # other model. This is only necessary for self-play environments in tournament mode.
+        trainer.create_tournament_schedule(num_repeat=args.repeat_tournament_schedule, tournament_type=args.tournament_type, center_player=args.center_player)
         trainer.async_tournament_loop()
     # endregion
 
