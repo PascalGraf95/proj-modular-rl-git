@@ -76,8 +76,9 @@ def plot_rating(path, title):
     # Create a new plot with all data
     plt.figure(figsize=(10,6))
     color_list = plt.cm.tab20(np.linspace(0, 1, len(player_keys))) # Create a list of colors for each player key
+    linestyles = ['-', '--', '-.', ':'] # Create a list of linestyles for each player key
     for i, player_key in enumerate(player_keys):
-        plt.plot(x_vals, y_rating_vals[player_key], label=f'Rating ({player_key})', color=color_list[i])
+        plt.plot(x_vals, y_rating_vals[player_key], label=f'Rating ({player_key})', color=color_list[i], linestyle=linestyles[i % len(linestyles)])
         plt.errorbar(x_vals, y_rating_vals[player_key], yerr=confidence_intervals[player_key], fmt='o', capsize=4, color=color_list[i])
 
 
