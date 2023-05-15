@@ -32,68 +32,62 @@ def main():
         plot.show(block=True)
 
 def plot_rating(path, title):
-    # Load the CSV file using pandas
     df = pd.read_csv(path)
-
-    # Get a list of all player keys in the DataFrame
     player_keys = df['player_key'].unique()
 
-    # Initialize variables to track x and y values
     x_vals = []
     y_rating_vals = {}
     y_deviation_vals = {}
     confidence_intervals = {}
+    y_volatility_vals = {}
 
-    # Loop through each player key
     for player_key in player_keys:
-        # Filter the DataFrame to only rows with this player key
         player_df = df[df['player_key'] == player_key]
         
-        # Loop through each row for this player key
         for i, row in player_df.iterrows():       
-            
-            # Add the rating value for this player key
             if player_key not in y_rating_vals:
                 y_rating_vals[player_key] = []
             y_rating_vals[player_key].append(row['rating'])
             
-            # Add the rating deviation value for this player key
             if player_key not in y_deviation_vals:
                 y_deviation_vals[player_key] = []
             y_deviation_vals[player_key].append(row['rating_deviation'])
 
-            # Add the confidence interval for this player key
             if player_key not in confidence_intervals:
                 confidence_intervals[player_key] = []
             confidence_intervals[player_key].append(row['rating_deviation'] * 2 )
+            
+            if player_key not in y_volatility_vals:
+                y_volatility_vals[player_key] = []
+            y_volatility_vals[player_key].append(row['volatility'])
 
-    # Get amount of rows in the DataFrame
     num_rows = df.shape[0]
-    # Create a list from 0 to the number of rows divided by the number of players
     for i in range(0, (int)(num_rows/len(player_keys))):
         x_vals.append(i)
 
-    # Create a new plot with all data
-    plt.figure(figsize=(10,6))
-    color_list = plt.cm.tab20(np.linspace(0, 1, len(player_keys))) # Create a list of colors for each player key
-    linestyles = ['-', '--', '-.', ':'] # Create a list of linestyles for each player key
+    fig, axs = plt.subplots(2, figsize=(10,12))
+    color_list = plt.cm.tab20(np.linspace(0, 1, len(player_keys)))
+    linestyles = ['-', '--', '-.', ':']
     for i, player_key in enumerate(player_keys):
-        plt.plot(x_vals, y_rating_vals[player_key], label=f'Rating ({player_key})', color=color_list[i], linestyle=linestyles[i % len(linestyles)])
-        plt.errorbar(x_vals, y_rating_vals[player_key], yerr=confidence_intervals[player_key], fmt='o', capsize=4, color=color_list[i])
+        axs[0].plot(x_vals, y_rating_vals[player_key], label=f'Rating ({player_key})', color=color_list[i], linestyle=linestyles[i % len(linestyles)])
+        axs[0].errorbar(x_vals, y_rating_vals[player_key], yerr=confidence_intervals[player_key], fmt='o', capsize=4, color=color_list[i])
+        axs[1].plot(x_vals, y_volatility_vals[player_key], label=f'Volatility ({player_key})', color=color_list[i], linestyle=linestyles[i % len(linestyles)])
 
+    axs[0].set_xlabel('Rating Period')
+    axs[0].set_ylabel('Rating and Rating Deviation (Errorbars)')
+    axs[1].set_xlabel('Rating Period')
+    axs[1].set_ylabel('Volatility')
 
-    # Add labels and legend to the plot
-    plt.xlabel('Rating Period')
-    plt.ylabel('Rating and Rating Deviation (Errorbars)')
     if title is not None:
-        plt.title(title)
+        fig.suptitle(title)
     else:
-        plt.title('Player Ratings Over Time')
-    # plot the legend below the plot   
-    plt.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=1)
-    plt.subplots_adjust(bottom=0.25)    
-    return plt
+        fig.suptitle('Player Ratings and Volatility Over Time')
 
+    # axs[0].legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=1)
+    axs[1].legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=1)
+    plt.subplots_adjust(bottom=0.25, hspace=0.2)
+    return plt
+   
 def plot_training(path, title):
     # Add wildcard support for path
     path = path + '/*.csv'
