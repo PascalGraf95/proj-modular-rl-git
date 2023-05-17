@@ -304,10 +304,14 @@ class Actor:
         rating_period = self.get_current_rating_period(path)
         # get all the games in the current rating period
         current_rating_period_games = pd.read_csv(path)[pd.read_csv(path)['rating_period'] == rating_period]
-        # calculate the average number of games played by each agent in the current rating period
-        average_games_played = current_rating_period_games.groupby(['player_key_a', 'player_key_b']).count()['game_id'].mean()
-        # check if the average number of games played is greater than 10
-        if average_games_played > 10:
+        # Concatenate the 'player_a' and 'player_b' columns into a single series
+        player_keys = pd.concat([current_rating_period_games['player_key_a'], current_rating_period_games['player_key_b']])
+        # Count the number of occurrences of each player key
+        player_counts = player_keys.value_counts()
+        # Get the average number of games played by each agent in the current rating period
+        average_games_played = player_counts.mean()
+        # check if the average number of games played is greater than 12
+        if average_games_played > 12:
             # update the rating period
             return rating_period + 1
         else:

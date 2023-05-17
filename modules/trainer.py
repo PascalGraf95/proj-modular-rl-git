@@ -176,9 +176,9 @@ class Trainer:
         """
         # region - Multiprocessing Initialization and Actor Number Determination
         # Initialize ray for parallel multiprocessing.
-        ray.init()
+        # ray.init()
         # Alternatively, use the following code line to enable debugging (with ray >= 2.0.X)
-        # ray.init(logging_level=logging.INFO, local_mode=True)
+        ray.init(logging_level=logging.INFO, local_mode=True)
 
         # If the connection is established directly with the Unity Editor or if we are in testing mode, override
         # the number of actors with 1.
@@ -401,73 +401,75 @@ class Trainer:
                 # former rating period reached
                 break
                 
-
+        # get unique agent names of the current rating period for player key a and b to list
+        unique_agents = np.unique(rating_period[['player_key_a', 'player_key_b']].values)
         # create for each agent a game history dataframe for the current rating period
         agent_game_histories = {}
-        agent_game_history_df = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
-        agent_game_history_df_a = agent_game_history_df.copy()
-        agent_game_history_df_b = agent_game_history_df.copy()
+        agent_game_history_df = pd.DataFrame(columns=['game_id', 'opponent','score', 'opponent_score', 'rating_self', 'rating_deviation_self','volatility_self', 'rating_opponent', 'rating_deviation_opponent','volatility_opponent'])
+        
         # calculate new ratings based on tourney results
-        for _, game in rating_period.iterrows():
-            # get agent names
-            agent_a = game['player_key_a']
-            agent_b = game['player_key_b']
-            # get agent ratings
-            # make sure rating histories is dataframe            
-            rating_a = rating_histories.loc[rating_histories['player_key'] == agent_a].iloc[-1]['rating']
-            rating_b = rating_histories.loc[rating_histories['player_key'] == agent_b].iloc[-1]['rating']
-            # get agent rating deviations
-            rating_deviation_a = rating_histories.loc[rating_histories['player_key'] == agent_a].iloc[-1]['rating_deviation']
-            rating_deviation_b = rating_histories.loc[rating_histories['player_key'] == agent_b].iloc[-1]['rating_deviation']
-            # get agent volatility
-            volatility_a = rating_histories.loc[rating_histories['player_key'] == agent_a].iloc[-1]['volatility']
-            volatility_b = rating_histories.loc[rating_histories['player_key'] == agent_b].iloc[-1]['volatility']
-            # get agent scores
-            score_a = game['score_a']
-            score_b = game['score_b']
-            # determine game id for agent - if agent has no game history, game id is 0, otherwise it is the last game id + 1
-            if agent_a in agent_game_histories:
-                game_id_a = agent_game_histories[agent_a].iloc[-1]['game_id'] + 1
-            else:
-                game_id_a = 0
-            if agent_b in agent_game_histories:
-                game_id_b = agent_game_histories[agent_b].iloc[-1]['game_id'] + 1
-            else:
-                game_id_b = 0
-            
-            new_row = {
-                'game_id': game_id_a,
-                'opponent': agent_b,
-                'score': score_a,
-                'opponent_score': score_b,
-                'rating_self': rating_a,
-                'rating_deviation_self': rating_deviation_a,
-                'volatility_self': volatility_a,
-                'rating_opponent': rating_b,
-                'rating_deviation_opponent': rating_deviation_b,
-                'volatility_opponent': volatility_b
-            }
+        for agent in unique_agents: 
+            for _, game in rating_period.iterrows():
+                # get agent names
+                agent_a = game['player_key_a']
+                agent_b = game['player_key_b']
+                
+                # get agent ratings
+                # make sure rating histories is dataframe            
+                rating_a = rating_histories.loc[rating_histories['player_key'] == agent_a].iloc[-1]['rating']
+                rating_b = rating_histories.loc[rating_histories['player_key'] == agent_b].iloc[-1]['rating']
+                # get agent rating deviations
+                rating_deviation_a = rating_histories.loc[rating_histories['player_key'] == agent_a].iloc[-1]['rating_deviation']
+                rating_deviation_b = rating_histories.loc[rating_histories['player_key'] == agent_b].iloc[-1]['rating_deviation']
+                # get agent volatility
+                volatility_a = rating_histories.loc[rating_histories['player_key'] == agent_a].iloc[-1]['volatility']
+                volatility_b = rating_histories.loc[rating_histories['player_key'] == agent_b].iloc[-1]['volatility']
+                # get agent scores
+                score_a = game['score_a']
+                score_b = game['score_b']
+                # determine game id for agent - if agent has no game history, game id is 0, otherwise it is the last game id + 1
+                if agent_a in agent_game_histories:
+                    game_id_a = agent_game_histories[agent_a].iloc[-1]['game_id'] + 1
+                else:
+                    game_id_a = 0
+                if agent_b in agent_game_histories:
+                    game_id_b = agent_game_histories[agent_b].iloc[-1]['game_id'] + 1
+                else:
+                    game_id_b = 0
+                    
+                if agent == agent_a:    
+                    new_row = {
+                        'game_id': game_id_a,
+                        'opponent': agent_b,
+                        'score': score_a,
+                        'opponent_score': score_b,
+                        'rating_self': rating_a,
+                        'rating_deviation_self': rating_deviation_a,
+                        'volatility_self': volatility_a,
+                        'rating_opponent': rating_b,
+                        'rating_deviation_opponent': rating_deviation_b,
+                        'volatility_opponent': volatility_b
+                    }
+                    if not agent_a in agent_game_histories:
+                        agent_game_histories[agent_a] = agent_game_history_df
+                    agent_game_histories[agent_a] = agent_game_histories[agent_a].append(new_row, ignore_index=True)
 
-            agent_game_history_df_a = pd.concat([agent_game_history_df_a, pd.DataFrame([new_row])], ignore_index=True)
-
-            new_row = {
-                'game_id': game_id_b,
-                'opponent': agent_a,
-                'score': score_b,
-                'opponent_score': score_a,
-                'rating_self': rating_b,
-                'rating_deviation_self': rating_deviation_b,
-                'volatility_self': volatility_b,
-                'rating_opponent': rating_a,
-                'rating_deviation_opponent': rating_deviation_a,
-                'volatility_opponent': volatility_a
-            }
-
-            agent_game_history_df_b = pd.concat([agent_game_history_df_b, pd.DataFrame([new_row])], ignore_index=True)
-
-            # update agent game history
-            agent_game_histories[agent_a] = agent_game_history_df_a
-            agent_game_histories[agent_b] = agent_game_history_df_b
+                if agent == agent_b:
+                    new_row = {
+                        'game_id': game_id_b,
+                        'opponent': agent_a,
+                        'score': score_b,
+                        'opponent_score': score_a,
+                        'rating_self': rating_b,
+                        'rating_deviation_self': rating_deviation_b,
+                        'volatility_self': volatility_b,
+                        'rating_opponent': rating_a,
+                        'rating_deviation_opponent': rating_deviation_a,
+                        'volatility_opponent': volatility_a
+                    }
+                    if not agent_b in agent_game_histories:
+                        agent_game_histories[agent_b] = agent_game_history_df
+                    agent_game_histories[agent_b] = agent_game_histories[agent_b].append(new_row, ignore_index=True)
 
         # calculate new ratings based on game results for each agent
         for agent_name, game_history_df in agent_game_histories.items():
@@ -478,7 +480,7 @@ class Trainer:
             # get current agent volatility
             volatility = rating_histories.loc[rating_histories['player_key'] == agent_name].iloc[-1]['volatility']
             # calculate new rating
-            rating_updated, rating_deviation_updated, volatility_updated = calculate_updated_glicko2(rating=rating, rating_deviation=rating_deviation, volatility=volatility, opponents_in_period=game_history_df, tau=0.3)          
+            rating_updated, rating_deviation_updated, volatility_updated = calculate_updated_glicko2(rating=rating, rating_deviation=rating_deviation, volatility=volatility, opponents_in_period=game_history_df, tau=0.5)          
             # open csv file to append new ratings for current agent
             with open(rating_path, 'a', newline='') as file:
                 # csv writer
