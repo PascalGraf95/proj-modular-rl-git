@@ -105,45 +105,35 @@ def plot_training(path, title, value_type='Reward', show_legend=True, smoothing=
         else:
             print(f"Skipping {file} because it does not contain the columns to qualify as a tensorboard export.")
 
-    # read each csv file in directory and add a column for the agent number
-    data = pd.concat([pd.read_csv(f).assign(Agent=f"Agent {i}") for i, f in enumerate(tensorboard_files)], ignore_index = True)
+    # create a list to store dataframes
+    dfs = []
 
-    data[value_type] = data['Value']
-    data['Time [h]'] = data['Wall time']
-    data['Time [h]'] = data['Time [h]'].apply(datetime.datetime.fromtimestamp)
-    # Calculate the difference between the first and last datetime values
-    difference = data['Time [h]'].iloc[-1] - data['Time [h]'].iloc[0]
-    # Calculate the difference in hours
-    hours = difference.total_seconds() / 3600
-    # calculate time past since training started
-    data['Time [h]'] = data['Time [h]'].apply(lambda x: (x - data['Time [h]'].iloc[0]).total_seconds() / 3600)
+    for i, f in enumerate(tensorboard_files):        
+        # read csv file
+        df = pd.read_csv(f)
+        if remove_outliers is True:
+            df = remove_outliers1(df, 'Value')
+        # add agent column
+        df = df.assign(Agent=f"Agent {i}")
+        
+        df[value_type] = df['Value']
+        df['Time [h]'] = df['Wall time'].apply(datetime.datetime.fromtimestamp)
+        
+        # calculate time difference in hours since training started
+        start_time = df['Time [h]'].iloc[0]
+        df['Time [h]'] = df['Time [h]'].apply(lambda x: (x - start_time).total_seconds() / 3600)
 
+        # calculate exponential moving average
+        df[value_type] = df[value_type].ewm(alpha=(1-smoothing)).mean()
+        
+        # append dataframe to the list
+        dfs.append(df)
+
+    # concatenate all dataframes
+    data = pd.concat(dfs, ignore_index = True)   
+
+    # pivot the data
     data_wide = data.pivot(index='Time [h]', columns='Agent', values=value_type)
-    for i in range(len(tensorboard_files)):
-        data_wide[f'Agent {i}'] = data_wide[f'Agent {i}'].ewm(alpha=(1-smoothing)).mean()
-
-    print(f"Total training time in hours: {hours}")
-
-    # Remove outliers if specified
-    if remove_outliers is True:
-        data = remove_outliers1(data, 'Value')
-    data[value_type] = data['Value']
-    data['Time [h]'] = data['Wall time']
-    data['Time [h]'] = data['Time [h]'].apply(datetime.datetime.fromtimestamp)
-    # Calculate the difference between the first and last datetime values
-    difference = data['Time [h]'].iloc[-1] - data['Time [h]'].iloc[0]
-    # Calculate the difference in hours
-    hours_no_outliers = difference.total_seconds() / 3600
-    # calculate time past since training started
-    data['Time [h]'] = data['Time [h]'].apply(lambda x: (x - data['Time [h]'].iloc[0]).total_seconds() / 3600)
-
-    start_hours = hours - hours_no_outliers
-    # add start hours to the data
-    data['Time [h]'] = data['Time [h]'].apply(lambda x: x + start_hours)
-
-    data_wide = data.pivot(index='Time [h]', columns='Agent', values=value_type)
-    for i in range(len(tensorboard_files)):
-        data_wide[f'Agent {i}'] = data_wide[f'Agent {i}'].ewm(alpha=(1-smoothing)).mean()
 
     # Plot the data
     sns.set_style("darkgrid")
@@ -154,7 +144,7 @@ def plot_training(path, title, value_type='Reward', show_legend=True, smoothing=
     plt.ylabel(f'{value_type } (Exponentiell geglätteter Durchschnitt)')
     # legend
     if show_legend is True:
-        plt.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=1)
+        plt.legend(loc="upper center", bbox_to_anchor=(0.85, 0.35))
     return plt
 
 def check_columns(file_path, columns):
