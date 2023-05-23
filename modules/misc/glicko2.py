@@ -130,8 +130,8 @@ def _calculate_volatility(volatility, delta, v, tau, rating_deviation, epsilon=0
         if iterations > max_iterations:
             print('Max iterations reached')
             break
-        # if abs(B - A) <= epsilon:
-        #     break
+        elif abs(B - A) <= epsilon:
+            break
         else:
             C = A + ((A - B) * f_a) / (f_b - f_a)
             f_c = _calculate_f(C, delta, v, tau, rating_deviation, a)

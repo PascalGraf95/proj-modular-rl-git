@@ -176,9 +176,9 @@ class Trainer:
         """
         # region - Multiprocessing Initialization and Actor Number Determination
         # Initialize ray for parallel multiprocessing.
-        # ray.init()
+        ray.init()
         # Alternatively, use the following code line to enable debugging (with ray >= 2.0.X)
-        ray.init(logging_level=logging.INFO, local_mode=True)
+        # ray.init(logging_level=logging.INFO, local_mode=True)
 
         # If the connection is established directly with the Unity Editor or if we are in testing mode, override
         # the number of actors with 1.
@@ -528,7 +528,7 @@ class Trainer:
         Log rating history for each agent.
         :param idx: index of agent
         :param game_result: game result
-        :param training_step: training step
+        :param mode: 'elo', 'glicko2' or 'both'
         """
         # update elo ratings
         if mode == 'elo' or mode == 'both':
@@ -574,7 +574,7 @@ class Trainer:
             if self.rating_period[idx] >= 10:    
                 # calculate new ratings
                 glicko_rating_model, glicko_rating_deviation_model, glicko_volatility_model = calculate_updated_glicko2(rating=self.ratings[idx]['glicko_model']['rating'], rating_deviation=self.ratings[idx]['glicko_model']['rd'], volatility=self.ratings[idx]['glicko_model']['vol'], opponents_in_period=self.model_game_history, tau=0.2)
-                glicko_rating_clone, glicko_rating_deviation_clone, glicko_volatility_clone = calculate_updated_glicko2(rating=self.ratings[idx]['glicko_clone']['rating'], rating_deviation=self.ratings[idx]['glicko_clone']['rd'], volatility=self.ratings[idx]['glicko_clone']['vol'], opponents_in_period=self.clone_game_history, tau=0.2)
+                glicko_rating_clone, glicko_rating_deviation_clone, glicko_volatility_clone = calculate_updated_glicko2(rating=self.ratings[idx]['glicko_clone']['rating'], rating_deviation=self.ratings[idx]['glicko_clone']['rd'], volatility=self.ratings[idx]['glicko_clone']['vol'], opponents_in_period=self.clone_game_history, tau=0.5)
                 # update rating dictionary with current ratings  
                 self.ratings[idx] = {'elo_model': elo_model, 'elo_clone': elo_clone, 'glicko_model': {'rating': glicko_rating_model, 'rd': glicko_rating_deviation_model, 'vol': glicko_volatility_model}, 'glicko_clone': {'rating': glicko_rating_clone, 'rd': glicko_rating_deviation_clone, 'vol': glicko_volatility_clone}}
             else:
@@ -739,7 +739,7 @@ class Trainer:
                 ray.wait(actors_ready)
                 reset_rating = ray.get(reset_rating)
                 if reset_rating is True:
-                    print(f"{datetime.now()}: Ratings updated with clone network update.")
+                    # print(f"{datetime.now()}: Ratings updated with clone network update.")
                     if self.rating_mode == 'elo' or self.rating_mode == 'both':
                         self.ratings[idx]['elo_clone'] = self.ratings[idx]['elo_model']
                     elif self.rating_mode == 'glicko2' or self.rating_mode == 'both':
