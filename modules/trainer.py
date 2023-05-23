@@ -573,20 +573,19 @@ class Trainer:
             
             if self.rating_period[idx] >= 10:    
                 # calculate new ratings
-                glicko_rating_model, glicko_rating_deviation_model, glicko_volatility_model = calculate_updated_glicko2(rating=self.ratings[idx]['glicko_model']['rating'], rating_deviation=self.ratings[idx]['glicko_model']['rd'], volatility=self.ratings[idx]['glicko_model']['vol'], opponents_in_period=self.model_game_history, tau=0.2)
+                glicko_rating_model, glicko_rating_deviation_model, glicko_volatility_model = calculate_updated_glicko2(rating=self.ratings[idx]['glicko_model']['rating'], rating_deviation=self.ratings[idx]['glicko_model']['rd'], volatility=self.ratings[idx]['glicko_model']['vol'], opponents_in_period=self.model_game_history, tau=0.5)
                 glicko_rating_clone, glicko_rating_deviation_clone, glicko_volatility_clone = calculate_updated_glicko2(rating=self.ratings[idx]['glicko_clone']['rating'], rating_deviation=self.ratings[idx]['glicko_clone']['rd'], volatility=self.ratings[idx]['glicko_clone']['vol'], opponents_in_period=self.clone_game_history, tau=0.5)
                 # update rating dictionary with current ratings  
                 self.ratings[idx] = {'elo_model': elo_model, 'elo_clone': elo_clone, 'glicko_model': {'rating': glicko_rating_model, 'rd': glicko_rating_deviation_model, 'vol': glicko_volatility_model}, 'glicko_clone': {'rating': glicko_rating_clone, 'rd': glicko_rating_deviation_clone, 'vol': glicko_volatility_clone}}
+                # reset rating period counter
+                self.rating_period[idx] = 0
+                # reset game history
+                self.model_game_history = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
+                self.clone_game_history = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
             else:
                 glicko_rating_model, glicko_rating_deviation_model, glicko_volatility_model = self.ratings[idx]['glicko_model']['rating'], self.ratings[idx]['glicko_model']['rd'], self.ratings[idx]['glicko_model']['vol']
-                glicko_rating_clone, glicko_rating_deviation_clone, glicko_volatility_clone = self.ratings[idx]['glicko_clone']['rating'], self.ratings[idx]['glicko_clone']['rd'], self.ratings[idx]['glicko_clone']['vol']
+                glicko_rating_clone, glicko_rating_deviation_clone, glicko_volatility_clone = self.ratings[idx]['glicko_clone']['rating'], self.ratings[idx]['glicko_clone']['rd'], self.ratings[idx]['glicko_clone']['vol']           
             
-            # reset rating period counter
-            self.rating_period[idx] = 0
-            # reset game history
-            self.model_game_history = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
-            self.clone_game_history = pd.DataFrame(columns=['game_id', 'opponent', 'score', 'opponent_score', 'rating_self', 'rating_deviation_self', 'volatility_self', 'rating_opponent', 'rating_deviation_opponent', 'volatility_opponent'])
-
         # update rating dictionary with current ratings 
         if mode == 'elo':
             self.ratings[idx] = {'elo_model': elo_model, 'elo_clone': elo_clone}
