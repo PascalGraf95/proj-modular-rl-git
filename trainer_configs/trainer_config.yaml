@@ -105,11 +105,11 @@ sac:
     Gamma: 0.99
     LearningRateActor: 0.0005
     LearningRateCritic: 0.0005
-    LogAlpha: 0.0
+    LogAlpha: -3.0
     NSteps: 4
     AdaptiveExploration: false
     NetworkUpdateFrequency: 300
-    SelfPlayNetworkUpdateFrequency: 1000000
+    SelfPlayNetworkUpdateFrequency: 20000
     NetworkParameters:
         Filters: 32
         Units: 64
@@ -120,12 +120,12 @@ sac:
     PrioritizedReplay: true
     PriorityAlpha: 0.85
     RewardNormalization: false
-    ReplayCapacity: 300000
+    ReplayCapacity: 350000
     ReplayMinSize: 1000
     SyncMode: soft_sync
     SyncSteps: 500
     Tau: 0.01
-    TrainingID: SAC_Airhockey_Selfplay_SparseContinuedFromNew01
+    TrainingID: SAC_Airhockey_SparseContinuedFromNew01Mod1
     TrainingInterval: 10
 cql:
     Recurrent: false
