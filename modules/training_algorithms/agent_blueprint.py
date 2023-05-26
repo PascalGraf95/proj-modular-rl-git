@@ -342,7 +342,7 @@ class Actor:
     def select_agent_interface(self, interface):
         global AgentInterface
         if interface == "MLAgentsV18":
-            from modules.interfaces.mlagents_v18 import MlAgentsV18Interface as AgentInterface
+            from modules.interfaces.mlagents_v20 import MlAgentsV20Interface as AgentInterface
 
         elif interface == "OpenAIGym":
             from modules.interfaces.openaigym import OpenAIGymInterface as AgentInterface

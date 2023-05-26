@@ -205,7 +205,7 @@ class Trainer:
                                     '/cpu:0') for idx in range(actor_num)]
 
         # Instantiate one environment for each actor and connect them to one another.
-        if self.interface == "MLAgentsV18":
+        if self.interface == "MLAgentsV20":
             [actor.connect_to_unity_environment.remote() for actor in self.actors]
         else:
             [actor.connect_to_gym_environment.remote() for actor in self.actors]
@@ -214,7 +214,7 @@ class Trainer:
         for i, actor in enumerate(self.actors):
             actor.instantiate_modules.remote(self.trainer_configuration)
             # In case of Unity Environments set the rendering and simulation parameters.
-            if self.interface == "MLAgentsV18":
+            if self.interface == "MLAgentsV20":
                 if mode == "training":
                     actor.set_unity_parameters.remote(time_scale=1000,
                                                       width=10, height=10,

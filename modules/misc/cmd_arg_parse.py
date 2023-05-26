@@ -12,8 +12,8 @@ class CmdArgParse:
         parser.add_argument('-cp', '--clone_path', help="If defined this path defines the clone's weights for selfplay "
                                                         "training / testing. Otherwise, model_path will be used.",
                             type=str, required=False, default=None)
-        parser.add_argument('-ti', '--trainer_interface', help="Choose from 'MLAgentsV18' (Unity) and 'OpenAIGym'",
-                            type=str, required=False, default='MLAgentsV18')
+        parser.add_argument('-ti', '--trainer_interface', help="Choose from 'MLAgentsV20' (Unity) and 'OpenAIGym'",
+                            type=str, required=False, default='MLAgentsV20')
         parser.add_argument('-ep', '--env_path', help="If you want to run multiple Unity actors in parallel you need to"
                                                       " specify the path to the Environment '.exe' here. In case of "
                                                       "'OpenAIGym 'enter the desired env name here instead, "

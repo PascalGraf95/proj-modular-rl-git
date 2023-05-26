@@ -336,7 +336,7 @@ class CQLActor(Actor):
 
         global AgentInterface
         if interface == "MLAgentsV18":
-            from ..interfaces.mlagents_v18 import MlAgentsV18Interface as AgentInterface
+            from ..interfaces.mlagents_v20 import MlAgentsV20Interface as AgentInterface
 
         elif interface == "OpenAIGym":
             from ..interfaces.openaigym import OpenAIGymInterface as AgentInterface

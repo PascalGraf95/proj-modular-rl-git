@@ -6,7 +6,7 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 import time
 
 
-class MlAgentsV18Interface:
+class MlAgentsV20Interface:
     """
     This interface translates the universal commands used in this repository for environment communication to
     interact with Unity environments which have installed Ml-AgentsV18.
@@ -77,7 +77,7 @@ class MlAgentsV18Interface:
 
     @staticmethod
     def get_agent_number(env: UnityEnvironment, behavior_name: str):
-        MlAgentsV18Interface.reset(env)
+        MlAgentsV20Interface.reset(env)
         decision_steps, terminal_steps = env.get_steps(behavior_name)
         agent_id_offset = np.min(decision_steps.agent_id)
         return len(decision_steps), agent_id_offset

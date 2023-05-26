@@ -37,7 +37,7 @@ def main():
 
     # Instantiate a Trainer object with certain choices of parameters and algorithms
     trainer = Trainer()
-    trainer.interface = args.trainer_interface  # Choose from "MLAgentsV18" (Unity) and "OpenAIGym"
+    trainer.interface = args.trainer_interface  # Choose from "MLAgentsV20" (Unity) and "OpenAIGym"
     # If you want to run multiple Unity actors in parallel you need to specify the path to the Environment '.exe' here.
     # In case of "OpenAIGym" enter the desired env name here instead, e.g. "LunarLanderContinuous-v2".
     # If you want a CQL agent to learn from demonstrations, an environment can be used to evaluate the model on a
