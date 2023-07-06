@@ -341,7 +341,7 @@ class Actor:
     # region Algorithm Selection
     def select_agent_interface(self, interface):
         global AgentInterface
-        if interface == "MLAgentsV18":
+        if interface == "MLAgentsV20":
             from modules.interfaces.mlagents_v20 import MlAgentsV20Interface as AgentInterface
 
         elif interface == "OpenAIGym":
