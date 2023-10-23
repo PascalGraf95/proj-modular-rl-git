@@ -3,7 +3,7 @@ import ray
 import time
 import tensorflow as tf
 import numpy as np
-from multiprocessing import Process, Manager, Value, Array, Queue
+from multiprocessing import Process, Manager, Value, Array, Queue, cpu_count
 import threading
 
 
@@ -53,6 +53,7 @@ class Learner:
 
 
 if __name__ == '__main__':
+    print(cpu_count())
     # ray.init(local_mode=True)
     buffer = Buffer()
     learner = Learner(buffer)
